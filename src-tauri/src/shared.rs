@@ -73,8 +73,10 @@ pub struct PanelInfo {
 	pub keys_x: u16,
 	pub keys_y: u16,
 	pub key_size: u16,
-	pub pitch_x: u16,
-	pub pitch_y: u16,
+	/// Pitch may be fractional: holding both margins fixed while moving one
+	/// distributes the difference across the gaps.
+	pub pitch_x: f32,
+	pub pitch_y: f32,
 }
 
 pub static DEVICES: LazyLock<DashMap<String, DeviceInfo>> = LazyLock::new(DashMap::new);
