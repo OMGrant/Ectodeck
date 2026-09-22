@@ -1,0 +1,17 @@
+{
+  "Name": "VSDinside MagTran M3",
+  "Description": "Device support plugin for the VSDinside MagTran M3 (5548:1020), including the display behind the keys",
+  "Author": "Grant Garrison",
+  "Version": "0.2.0",
+  "PluginUUID": "com.grantgarrison.opendeck-magtran-m3",
+  "CodePathLin": "opendeck-magtran-m3-linux",
+  "Icon": "assets/icon",
+  "Category": "Hardware",
+  "OS": [
+    {
+      "Platform": "linux"
+    }
+  ],
+  "Actions": [],
+  "DeviceNamespace": "m3"
+}
