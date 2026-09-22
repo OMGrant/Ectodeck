@@ -1,6 +1,6 @@
 # MagDeck
 
-MagDeck is a fork of [OpenDeck](https://github.com/nekename/OpenDeck) for stream controllers that aren't shaped like an Elgato Stream Deck.
+MagDeck is an enhanced fork of [OpenDeck](https://github.com/nekename/OpenDeck) for the VSDinside MagTran M3.
 
 OpenDeck is built around Elgato's hardware: a grid of separate keys, with any dials along the bottom. Some decks are built differently. The VSDinside MagTran M3 has transparent keys over a single display, and its dials run down the right side. MagDeck adds what those decks need and leaves everything else as OpenDeck has it. That includes Elgato hardware, which works exactly as it does in OpenDeck, and support for plugins made for the Stream Deck SDK.
 

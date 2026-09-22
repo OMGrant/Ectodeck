@@ -28,7 +28,7 @@
 		},
 		"publisher": "Aman Khanna (nekename)",
 		"shortDescription": "Use stream controllers",
-		"longDescription": "MagDeck is a fork of OpenDeck, a desktop application for using stream controller devices like the Elgato Stream Deck. It adds support for decks with a display behind the keys and dials down the side, such as the VSDinside MagTran M3, and keeps OpenDeck's support for plugins made for the original Stream Deck SDK.",
+		"longDescription": "MagDeck is an enhanced fork of OpenDeck for the VSDinside MagTran M3. It keeps OpenDeck's support for Elgato Stream Decks and for plugins made for the Stream Deck SDK.",
 		"category": "Productivity",
 		"icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"],
 		"macOS": {
