@@ -111,6 +111,9 @@
 			height: p.height * sy,
 			left: -p.keys_x * sx,
 			top: -p.keys_y * sy,
+			// how far the panel extends past the right edge of the key grid; the
+			// dials sit beside the panel, so they are pushed out by this much
+			overrunRight: Math.max(0, (p.width - p.keys_x - p.keys_width) * sx),
 		};
 	})();
 
@@ -258,7 +261,9 @@
 			class:flex-row={!sideEncoders}
 			class:justify-between={!sideEncoders}
 			role="row"
-			style={sideEncoders ? `height: ${keypadColHeight}px;` : `width: ${keypadRowWidth}px;`}
+			style={sideEncoders
+				? `height: ${keypadColHeight}px; margin-left: ${backdrop ? backdrop.overrunRight : 0}px;`
+				: `width: ${keypadRowWidth}px;`}
 		>
 			{#each { length: device.encoders } as _, i}
 				<Key
