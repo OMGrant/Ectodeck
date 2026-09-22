@@ -105,6 +105,13 @@
 	// centre lands on the first rendered key's centre. Every other key's centre
 	// then lands exactly, whatever fraction of the pitch each side draws its keys
 	// at, and the rest of the panel extends beyond the grid as on the hardware.
+	// OpenDeck draws a key at 118 of its 132-pixel box. When a device declares
+	// how much of its pitch a key window fills, draw the key at that fraction
+	// instead, so the panel visible around and between keys matches the deck.
+	$: keyScale = device.panel && device.panel.pitch_x
+		? (device.panel.key_size / device.panel.pitch_x) / (118 / 132)
+		: 1;
+
 	$: backdrop = (() => {
 		const p = device.panel;
 		if (!p || !gridWidth || !gridHeight || !p.pitch_x || !p.pitch_y) return null;
@@ -255,6 +262,7 @@
 							on:dragstart={(event) => handleDragStart(event, "Keypad", r * device.columns + c)}
 							{handlePaste}
 							size={device.id.startsWith("sd-") && device.rows == 4 && device.columns == 8 ? 192 : 144}
+							scale={keyScale}
 							label="{$t('device_view.key')} {String.fromCharCode(65 + r)}{c + 1}"
 							tabindex={focusedRow === r && focusedCol === c ? 0 : -1}
 						/>
