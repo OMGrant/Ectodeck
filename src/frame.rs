@@ -30,9 +30,29 @@ use tokio::sync::{Mutex, RwLock};
 /// How long a repaint waits for the rest of a burst.
 const SETTLE: Duration = Duration::from_millis(40);
 
+/// How a key's image sits on the panel, chosen per device in OpenDeck.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KeyStyle {
+    /// Fill the key's square with black behind its image, as the deck's own
+    /// key windows do. Off, the panel background shows through wherever the
+    /// image is transparent.
+    pub backdrop: bool,
+}
+
+impl Default for KeyStyle {
+    fn default() -> Self {
+        KeyStyle { backdrop: true }
+    }
+}
+
+/// Corner radius as a fraction of the key's size. Every key is drawn with
+/// these corners, backdrop and image alike.
+const CORNER: f32 = 0.09;
+
 struct Frame {
     /// Cover-fitted to the panel once, when set.
     background: Option<RgbImage>,
+    style: KeyStyle,
     /// As received from OpenDeck, scaled at paint time.
     keys: Vec<Option<DynamicImage>>,
     repaint_scheduled: bool,
@@ -46,6 +66,7 @@ impl Frame {
     fn new() -> Self {
         Frame {
             background: None,
+            style: KeyStyle::default(),
             keys: vec![None; KEY_COUNT],
             repaint_scheduled: false,
             windows_cleared: false,
@@ -82,6 +103,17 @@ pub async fn set_background(id: &str, image: Option<DynamicImage>) {
         return;
     }
     f.background = fitted;
+    schedule(id, &frame, &mut f);
+}
+
+pub async fn set_style(id: &str, style: KeyStyle) {
+    let frame = frame_for(id).await;
+    let mut f = frame.lock().await;
+    if f.style == style {
+        return;
+    }
+    log::info!("Key style: {:?}", style);
+    f.style = style;
     schedule(id, &frame, &mut f);
 }
 
@@ -232,18 +264,75 @@ fn render(frame: &Frame, layout: &Layout) -> RgbImage {
         None => RgbImage::new(PANEL_WIDTH, PANEL_HEIGHT),
     };
     let key = layout.key_px();
+    let style = frame.style;
     for (pos, image) in frame.keys.iter().enumerate() {
         let Some(image) = image else { continue };
-        let tile = image
-            .resize_exact(key, key, imageops::FilterType::Lanczos3)
-            .to_rgb8();
+        let tile = resize_premultiplied(image, key);
         let (x, y) = layout.origin(pos as u8);
-        imageops::replace(&mut canvas, &tile, x, y);
+        draw_key(&mut canvas, &tile, x, y, style);
     }
     if layout.calibrate {
         overlay_guides(&mut canvas, layout);
     }
     canvas
+}
+
+/// Resize a key image with its colour weighted by opacity while filtering.
+/// A plain resize averages the colour of fully transparent pixels (black, as
+/// a browser saves them) into the visible edge, leaving a dark fringe around
+/// every icon drawn without a backdrop.
+fn resize_premultiplied(image: &DynamicImage, size: u32) -> image::RgbaImage {
+    let mut src = image::Rgba32FImage::new(image.width(), image.height());
+    for (x, y, p) in image.to_rgba8().enumerate_pixels() {
+        let a = p[3] as f32 / 255.0;
+        src.put_pixel(x, y, image::Rgba([p[0] as f32 / 255.0 * a, p[1] as f32 / 255.0 * a, p[2] as f32 / 255.0 * a, a]));
+    }
+    let scaled = imageops::resize(&src, size, size, imageops::FilterType::Lanczos3);
+    let mut out = image::RgbaImage::new(size, size);
+    for (x, y, p) in scaled.enumerate_pixels() {
+        let a = p[3].clamp(0.0, 1.0);
+        let un = |c: f32| if a > 0.0 { (c / a * 255.0).clamp(0.0, 255.0).round() as u8 } else { 0 };
+        out.put_pixel(x, y, image::Rgba([un(p[0]), un(p[1]), un(p[2]), (a * 255.0).round() as u8]));
+    }
+    out
+}
+
+/// Composite one key's image onto the panel at (`x`, `y`): over black when
+/// the style has a backdrop, straight over the panel otherwise, then clipped
+/// to rounded corners, with the corner edges antialiased.
+fn draw_key(canvas: &mut RgbImage, tile: &image::RgbaImage, x: i64, y: i64, style: KeyStyle) {
+    let k = tile.width() as f32;
+    let r = (k * CORNER).round();
+    for (tx, ty, px) in tile.enumerate_pixels() {
+        let (cx, cy) = (x + tx as i64, y + ty as i64);
+        if cx < 0 || cy < 0 || cx >= canvas.width() as i64 || cy >= canvas.height() as i64 {
+            continue;
+        }
+        let coverage = corner_coverage(tx as f32 + 0.5, ty as f32 + 0.5, k, r);
+        if coverage <= 0.0 {
+            continue;
+        }
+        let under = *canvas.get_pixel(cx as u32, cy as u32);
+        let a = px[3] as f32 / 255.0;
+        let mut out = [0u8; 3];
+        for c in 0..3 {
+            let base = if style.backdrop { 0.0 } else { under[c] as f32 };
+            let keyed = px[c] as f32 * a + base * (1.0 - a);
+            out[c] = (keyed * coverage + under[c] as f32 * (1.0 - coverage)).round() as u8;
+        }
+        canvas.put_pixel(cx as u32, cy as u32, image::Rgb(out));
+    }
+}
+
+/// How much of the pixel centred at (`px`, `py`) lies inside a `k`-sized
+/// square with corners of radius `r`, from 0 to 1.
+fn corner_coverage(px: f32, py: f32, k: f32, r: f32) -> f32 {
+    let dx = if px < r { r - px } else if px > k - r { px - (k - r) } else { 0.0 };
+    let dy = if py < r { r - py } else if py > k - r { py - (k - r) } else { 0.0 };
+    if dx == 0.0 || dy == 0.0 {
+        return 1.0;
+    }
+    (r - (dx * dx + dy * dy).sqrt() + 0.5).clamp(0.0, 1.0)
 }
 
 /// Outline every key's square and cross its centre, in white with a black
@@ -314,15 +403,59 @@ mod tests {
         let l = Layout { left: 28.0, bottom: 8.0, ..Layout::FIRMWARE };
         let out = render(&f, &l);
         assert_eq!((out.width(), out.height()), (PANEL_WIDTH, PANEL_HEIGHT));
-        // key 1 fills (28,18)..(138,128)
-        assert_eq!(out.get_pixel(28, 18).0, [255, 0, 0]);
-        assert_eq!(out.get_pixel(137, 127).0, [255, 0, 0]);
-        assert_eq!(out.get_pixel(27, 18).0, [0, 0, 0]);
-        assert_eq!(out.get_pixel(138, 18).0, [0, 0, 0]);
+        // key 1 fills (28,18)..(138,128); checked at edge midpoints, clear
+        // of the rounded corners
+        assert_eq!(out.get_pixel(28, 73).0, [255, 0, 0]);
+        assert_eq!(out.get_pixel(137, 73).0, [255, 0, 0]);
+        assert_eq!(out.get_pixel(83, 18).0, [255, 0, 0]);
+        assert_eq!(out.get_pixel(83, 127).0, [255, 0, 0]);
+        assert_eq!(out.get_pixel(27, 73).0, [0, 0, 0]);
+        assert_eq!(out.get_pixel(138, 73).0, [0, 0, 0]);
         // key 15 fills (706,362)..(816,472)
-        assert_eq!(out.get_pixel(706, 362).0, [0, 0, 255]);
-        assert_eq!(out.get_pixel(815, 471).0, [0, 0, 255]);
-        assert_eq!(out.get_pixel(816, 471).0, [0, 0, 0]);
+        assert_eq!(out.get_pixel(706, 417).0, [0, 0, 255]);
+        assert_eq!(out.get_pixel(815, 417).0, [0, 0, 255]);
+        assert_eq!(out.get_pixel(816, 417).0, [0, 0, 0]);
+    }
+
+    #[test]
+    fn a_transparent_key_shows_the_panel_only_without_a_backdrop() {
+        let mut f = Frame::new();
+        f.background = Some(RgbImage::from_pixel(PANEL_WIDTH, PANEL_HEIGHT, image::Rgb([9, 90, 9])));
+        f.keys[7] = Some(DynamicImage::ImageRgba8(image::RgbaImage::new(96, 96)));
+        let l = Layout::FIRMWARE;
+        let centre = (372 + 55, 185 + 55);
+        assert_eq!(render(&f, &l).get_pixel(centre.0, centre.1).0, [0, 0, 0]);
+        f.style.backdrop = false;
+        assert_eq!(render(&f, &l).get_pixel(centre.0, centre.1).0, [9, 90, 9]);
+    }
+
+    #[test]
+    fn resizing_does_not_darken_the_edge_of_a_transparent_icon() {
+        // a white disc on fully transparent black, as a browser saves it
+        let mut src = image::RgbaImage::new(144, 144);
+        for (x, y, p) in src.enumerate_pixels_mut() {
+            let (dx, dy) = (x as f32 - 72.0, y as f32 - 72.0);
+            if dx * dx + dy * dy < 40.0 * 40.0 {
+                *p = image::Rgba([255, 255, 255, 255]);
+            }
+        }
+        let out = resize_premultiplied(&DynamicImage::ImageRgba8(src), 110);
+        for p in out.pixels() {
+            if p[3] > 0 {
+                assert!(p[0] > 240, "edge pixel darkened: {:?}", p);
+            }
+        }
+    }
+
+    #[test]
+    fn rounded_corners_show_the_panel_in_the_corner_only() {
+        let mut f = Frame::new();
+        f.background = Some(RgbImage::from_pixel(PANEL_WIDTH, PANEL_HEIGHT, image::Rgb([9, 90, 9])));
+        f.keys[0] = Some(solid(96, 96, [200, 0, 0]));
+        let out = render(&f, &Layout::FIRMWARE);
+        assert_eq!(out.get_pixel(38, 18).0, [9, 90, 9]);
+        assert_eq!(out.get_pixel(38 + 55, 18).0, [200, 0, 0]);
+        assert_eq!(out.get_pixel(38 + 55, 18 + 55).0, [200, 0, 0]);
     }
 
     #[test]

@@ -268,12 +268,29 @@ pub async fn handle_set_background(device_id: &str, evt: SetImageEvent) -> Resul
     Ok(())
 }
 
+/// The key style chosen in OpenDeck, sent as a `setImage` with a "KeyStyle"
+/// controller whose image field carries JSON: `{"backdrop":bool}`.
+pub async fn handle_key_style(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {
+    let v: serde_json::Value = evt
+        .image
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    let d = crate::frame::KeyStyle::default();
+    let style = crate::frame::KeyStyle {
+        backdrop: v.get("backdrop").and_then(|b| b.as_bool()).unwrap_or(d.backdrop),
+    };
+    crate::frame::set_style(device_id, style).await;
+    Ok(())
+}
+
 /// A key image, a single key cleared, or every key cleared. None of these touch
 /// the hardware directly: the frame repaints with the change in it.
 pub async fn handle_set_image(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {
     match (evt.position, evt.image) {
         (Some(position), image) => {
-            log::info!("Setting image for button {}", position);
+            let kind = image.as_deref().and_then(|i| i.split(';').next()).unwrap_or("clear");
+            log::info!("Setting image for button {} ({})", position, kind);
             crate::frame::set_key(device_id, position, decode(image)?).await;
         }
         (None, None) => crate::frame::clear_keys(device_id).await,
