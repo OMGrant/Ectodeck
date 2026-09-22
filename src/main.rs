@@ -13,6 +13,7 @@ mod background;
 mod device;
 mod inputs;
 mod mappings;
+mod offset;
 mod watcher;
 
 pub static DEVICES: LazyLock<RwLock<HashMap<String, Device>>> =

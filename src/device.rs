@@ -318,6 +318,7 @@ pub async fn handle_set_image(device: &Device, _device_id: String, evt: SetImage
             }
 
             let image = load_from_memory_with_format(body.as_slice(), image::ImageFormat::Jpeg)?;
+            let image = crate::offset::apply(image);
 
             device
                 .set_button_image(
