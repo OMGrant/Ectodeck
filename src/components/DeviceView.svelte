@@ -98,22 +98,33 @@
 	let gridWidth = 0;
 	let gridHeight = 0;
 
-	// Map the panel onto the rendered key grid: scale so the rectangle the keys
-	// occupy on the panel lands exactly on the grid, and let the rest of the
-	// panel extend beyond it, which is what the hardware shows.
+	// Map the panel onto the rendered key grid by pitch and centre: the rendered
+	// grid is device.columns keys across, so its pitch is its width over the
+	// column count, and the first rendered key is centred half a pitch in. Scale
+	// the panel so its pitch matches, then shift it so the first key's window
+	// centre lands on the first rendered key's centre. Every other key's centre
+	// then lands exactly, whatever fraction of the pitch each side draws its keys
+	// at, and the rest of the panel extends beyond the grid as on the hardware.
 	$: backdrop = (() => {
 		const p = device.panel;
-		if (!p || !gridWidth || !gridHeight || !p.keys_width || !p.keys_height) return null;
-		const sx = gridWidth / p.keys_width;
-		const sy = gridHeight / p.keys_height;
+		if (!p || !gridWidth || !gridHeight || !p.pitch_x || !p.pitch_y) return null;
+		const renderedPitchX = gridWidth / device.columns;
+		const renderedPitchY = gridHeight / device.rows;
+		const sx = renderedPitchX / p.pitch_x;
+		const sy = renderedPitchY / p.pitch_y;
+		const firstCentreX = p.keys_x + p.key_size / 2;
+		const firstCentreY = p.keys_y + p.key_size / 2;
+		const left = renderedPitchX / 2 - firstCentreX * sx;
+		const top = renderedPitchY / 2 - firstCentreY * sy;
+		const gridRightOnPanel = p.keys_x + (device.columns - 1) * p.pitch_x + p.key_size;
 		return {
 			width: p.width * sx,
 			height: p.height * sy,
-			left: -p.keys_x * sx,
-			top: -p.keys_y * sy,
+			left,
+			top,
 			// how far the panel extends past the right edge of the key grid; the
 			// dials sit beside the panel, so they are pushed out by this much
-			overrunRight: Math.max(0, (p.width - p.keys_x - p.keys_width) * sx),
+			overrunRight: Math.max(0, left + p.width * sx - gridWidth),
 		};
 	})();
 

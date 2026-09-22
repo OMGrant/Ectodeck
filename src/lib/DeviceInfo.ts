@@ -17,6 +17,7 @@ export type PanelInfo = {
 	height: number;
 	keys_x: number;
 	keys_y: number;
-	keys_width: number;
-	keys_height: number;
+	key_size: number;
+	pitch_x: number;
+	pitch_y: number;
 };

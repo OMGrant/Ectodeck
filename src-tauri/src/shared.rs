@@ -61,16 +61,20 @@ pub struct DeviceInfo {
 	pub r#type: u8,
 }
 
-/// Geometry of a display behind the keys: its size, and the rectangle the key
-/// grid occupies within it.
+/// Geometry of a display behind the keys, in that display's own pixels: its
+/// size, where the first key's window starts, how large a key window is, and
+/// the pitch between key windows on each axis. The device view aligns each
+/// rendered key's centre with its window's centre on the panel, so the same
+/// slice of a background appears behind a key on screen as on the hardware.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PanelInfo {
 	pub width: u16,
 	pub height: u16,
 	pub keys_x: u16,
 	pub keys_y: u16,
-	pub keys_width: u16,
-	pub keys_height: u16,
+	pub key_size: u16,
+	pub pitch_x: u16,
+	pub pitch_y: u16,
 }
 
 pub static DEVICES: LazyLock<DashMap<String, DeviceInfo>> = LazyLock::new(DashMap::new);
