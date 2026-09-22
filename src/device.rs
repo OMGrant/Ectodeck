@@ -25,10 +25,13 @@ pub async fn device_task(candidate: CandidateDevice, token: CancellationToken) {
         // captured from it byte for byte. The second reads as the magnetic
         // switch sensitivity; without it the deck runs at its power-on default
         // and a marginal switch can register presses by itself.
-        let mut qucmd = vec![
-            0x00, b'C', b'R', b'T', 0x00, 0x00, b'Q', b'U', b'C', b'M', b'D',
-            0x1F, 0x11, 0x00, 0x11, 0x00, 0x11, 0x00,
-        ];
+        // The seven parameter bytes are read from
+        // ~/.config/opendeck-magtran-m3/qucmd.json when present, so the grid
+        // placement can be adjusted per unit; otherwise VSD Craft's values.
+        let params = crate::offset::qucmd_params();
+        log::info!("QUCMD params: {:?}", params);
+        let mut qucmd = vec![0x00, b'C', b'R', b'T', 0x00, 0x00, b'Q', b'U', b'C', b'M', b'D'];
+        qucmd.extend_from_slice(&params);
         device.write_extended_data(&mut qucmd).await?;
         let mut sens = vec![
             0x00, b'C', b'R', b'T', 0x00, 0x00, b'S', b'E', b'N', b'S', 0x00, 0x01,

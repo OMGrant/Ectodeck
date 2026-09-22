@@ -49,3 +49,17 @@ pub fn apply(image: DynamicImage) -> DynamicImage {
     }
     DynamicImage::ImageRgb8(out)
 }
+
+/// The seven parameter bytes of the QUCMD configuration command, from
+/// `~/.config/opendeck-magtran-m3/qucmd.json` as a JSON array of seven numbers,
+/// or VSD Craft's captured values when the file is absent or invalid.
+pub fn qucmd_params() -> [u8; 7] {
+    const DEFAULT: [u8; 7] = [0x1F, 0x11, 0x00, 0x11, 0x00, 0x11, 0x00];
+    let Some(dir) = path().and_then(|p| p.parent().map(|d| d.to_path_buf())) else { return DEFAULT };
+    let Ok(text) = std::fs::read_to_string(dir.join("qucmd.json")) else { return DEFAULT };
+    let Ok(v) = serde_json::from_str::<Vec<u8>>(&text) else { return DEFAULT };
+    if v.len() != 7 { return DEFAULT; }
+    let mut out = DEFAULT;
+    out.copy_from_slice(&v);
+    out
+}
