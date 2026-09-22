@@ -1,6 +1,6 @@
 use mirajazz::{
     device::DeviceQuery,
-    types::{HidDeviceInfo, ImageFormat, ImageMirroring, ImageMode, ImageRotation},
+    types::HidDeviceInfo,
 };
 
 /// Must be unique between all the plugins, 2 characters long, and match the
@@ -56,38 +56,8 @@ impl Kind {
             Self::MagtranM3 => 3,
         }
     }
-
-    /// Key images are 96x96 rotated 90 degrees, taken from the vendor SDK's
-    /// `key_image_format()` for this device. The vendor writes PNG to its own
-    /// native library; mirajazz speaks JPEG on the wire like the rest of the family.
-    pub fn image_format(&self) -> ImageFormat {
-        match self {
-            Self::MagtranM3 => ImageFormat {
-                mode: ImageMode::JPEG,
-                size: (96, 96),
-                rotation: ImageRotation::Rot90,
-                mirror: ImageMirroring::None,
-            },
-        }
-    }
 }
 
-/// The M3 addresses key images in a different order than it reports key presses.
-///
-/// Presses arrive in plain reading order, top left first. Image addressing has the
-/// rows reversed: the top row is addressed last. This is taken from the vendor
-/// SDK's `_IMAGE_KEY_MAP`, where logical keys 1-5 map to image indices 11-15,
-/// 6-10 map to themselves, and 11-15 map to 1-5.
-///
-/// OpenDeck always speaks in reading order, so translate on the way out to the
-/// device. Presses need no translation.
-pub fn image_position(position: u8) -> u8 {
-    let row = position as usize / COL_COUNT;
-    let col = position as usize % COL_COUNT;
-    let flipped_row = ROW_COUNT - 1 - row;
-
-    (flipped_row * COL_COUNT + col) as u8
-}
 
 #[derive(Debug, Clone)]
 pub struct CandidateDevice {
@@ -100,21 +70,4 @@ pub struct CandidateDevice {
 mod tests {
     use super::*;
 
-    #[test]
-    fn image_position_flips_rows_and_is_an_involution() {
-        // top row goes to the bottom
-        assert_eq!(image_position(0), 10);
-        assert_eq!(image_position(4), 14);
-        // middle row is unchanged
-        for p in 5..10u8 {
-            assert_eq!(image_position(p), p);
-        }
-        // bottom row goes to the top
-        assert_eq!(image_position(10), 0);
-        assert_eq!(image_position(14), 4);
-        // applying it twice returns the original
-        for p in 0..KEY_COUNT as u8 {
-            assert_eq!(image_position(image_position(p)), p);
-        }
-    }
 }

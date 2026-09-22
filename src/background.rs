@@ -26,7 +26,7 @@
 //! verified by diffing the bytes the vendor put on the wire against both
 //! candidate rotations of the same source image.
 
-use image::{DynamicImage, ImageFormat};
+use image::{DynamicImage, RgbImage, codecs::jpeg::JpegEncoder, imageops};
 use mirajazz::{device::Device, error::MirajazzError};
 use std::io::Cursor;
 
@@ -36,8 +36,8 @@ pub const PANEL_HEIGHT: u32 = 480;
 
 const CHUNK: usize = 1024;
 
-
-
+/// Key icons are small text and thin lines; the default 75 smears them.
+const JPEG_QUALITY: u8 = 88;
 
 /// Scale to cover `w` x `h` preserving aspect ratio, then crop the overflow
 /// equally from both sides.
@@ -53,7 +53,6 @@ pub fn cover_fit(image: &DynamicImage, w: u32, h: u32) -> DynamicImage {
 }
 
 
-/// Paint the whole panel behind the keys.
 /// Build the BGPIC command that opens a background-layer transfer.
 ///
 /// Recovered by emitting the vendor transport's `set_background_frame_stream`
@@ -78,10 +77,11 @@ pub fn cover_fit(image: &DynamicImage, w: u32, h: u32) -> DynamicImage {
 /// after the last data packet. This is the command VSD Craft uses for its
 /// background; `LOG` is the boot logo, a one-shot frame that any later key
 /// write paints over, which is why everything built on it needed a settle.
-fn bgpic_command(len: usize, w: u16, h: u16) -> Vec<u8> {
+fn bgpic_command(len: usize, x: u16, y: u16, w: u16, h: u16) -> Vec<u8> {
     let mut v = vec![0x00, b'C', b'R', b'T', 0x00, 0x00, b'B', b'G', b'P', b'I', b'C', 0x00];
     v.extend_from_slice(&[((len >> 16) & 0xFF) as u8, ((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8]);
-    v.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // x, y
+    v.extend_from_slice(&x.to_be_bytes());
+    v.extend_from_slice(&y.to_be_bytes());
     v.extend_from_slice(&w.to_be_bytes());
     v.extend_from_slice(&h.to_be_bytes());
     v.extend_from_slice(&[0x00, 0x00]); // layer 0
@@ -93,33 +93,42 @@ fn stop_command() -> Vec<u8> {
 }
 
 /// Clear the background layer. `03` is the layer index the vendor uses.
+/// Unused: the plugin always owns the layer, so it replaces rather than clears.
+#[cfg(test)]
 fn bgcle_command() -> Vec<u8> {
     vec![0x00, b'C', b'R', b'T', 0x00, 0x00, b'B', b'G', b'C', b'L', b'E', 0x03]
 }
 
-/// Encode the background layer frame.
+/// Encode a landscape picture for the wire.
 ///
 /// The panel's native framebuffer is portrait, 480 wide by 854 tall, mounted
-/// rotated in the housing. A landscape frame sent as-is comes out rotated and
-/// squeezed, so the image is cover-fitted to the panel as the user sees it,
-/// then rotated 90 degrees counter-clockwise and declared at its true portrait
-/// size, the same transform the boot logo path was proven to need.
-pub fn encode_layer(image: &DynamicImage) -> Result<Vec<u8>, MirajazzError> {
-    let fitted = cover_fit(image, PANEL_WIDTH, PANEL_HEIGHT);
-    let rotated = fitted.rotate270();
+/// rotated in the housing, so pictures are rotated 90 degrees counter-clockwise
+/// and declared at their portrait size.
+fn encode(picture: &RgbImage) -> Result<Vec<u8>, MirajazzError> {
+    let rotated = imageops::rotate270(picture);
     let mut out = Cursor::new(Vec::new());
-    rotated.write_to(&mut out, ImageFormat::Jpeg)?;
+    let encoder = JpegEncoder::new_with_quality(&mut out, JPEG_QUALITY);
+    rotated.write_with_encoder(encoder)?;
     Ok(out.into_inner())
 }
 
-/// Paint the background layer behind the keys. Keys may be written straight
-/// afterwards; the firmware composites them onto the layer.
-pub async fn set_background(device: &Device, image: &DynamicImage) -> Result<usize, MirajazzError> {
-    let jpeg = encode_layer(image)?;
-    log::info!("Setting background layer, {} bytes of JPEG", jpeg.len());
+/// Where a landscape rectangle lands in the portrait framebuffer after that
+/// rotation: landscape (x, y) maps to portrait (y, 854 - x - width).
+/// Confirmed on the deck by sending a tile to one key's rectangle under each
+/// rotation: this one landed on its key upright, the other on the key
+/// diametrically opposite, upside down.
+pub fn portrait_rect(x: u32, y: u32, w: u32, h: u32) -> (u16, u16, u16, u16) {
+    (y as u16, (PANEL_WIDTH - x - w) as u16, h as u16, w as u16)
+}
 
-    // declared at the frame's true, portrait, dimensions
-    let mut cmd = bgpic_command(jpeg.len(), PANEL_HEIGHT as u16, PANEL_WIDTH as u16);
+/// Paint `picture` into the layer with its top-left corner at landscape
+/// (`x`, `y`), leaving the rest of the layer as it was. A whole-panel frame
+/// is the case x = y = 0 at 854x480.
+pub async fn send_region(device: &Device, picture: &RgbImage, x: u32, y: u32) -> Result<usize, MirajazzError> {
+    let jpeg = encode(picture)?;
+    let (px, py, pw, ph) = portrait_rect(x, y, picture.width(), picture.height());
+
+    let mut cmd = bgpic_command(jpeg.len(), px, py, pw, ph);
     device.write_extended_data(&mut cmd).await?;
 
     for chunk in jpeg.chunks(CHUNK) {
@@ -129,21 +138,11 @@ pub async fn set_background(device: &Device, image: &DynamicImage) -> Result<usi
         device.write_extended_data(&mut packet).await?;
     }
 
-    // STP commits the frame. Every sequence that displayed one had it land
-    // after the data; the vendor merely batches it with whatever follows.
+    // STP commits the region.
     let mut stp = stop_command();
     device.write_extended_data(&mut stp).await?;
 
     Ok(jpeg.len())
-}
-
-/// Remove the background layer.
-pub async fn clear_background(device: &Device) -> Result<(), MirajazzError> {
-    log::info!("Clearing background layer");
-    let mut cmd = bgcle_command();
-    device.write_extended_data(&mut cmd).await?;
-    let mut stp = stop_command();
-    device.write_extended_data(&mut stp).await
 }
 
 #[cfg(test)]
@@ -153,7 +152,7 @@ mod tests {
     #[test]
     fn bgpic_header_matches_the_captured_layout() {
         // 7107-byte frame, 854x480 at the origin, layer 0, as captured
-        let c = bgpic_command(7107, 854, 480);
+        let c = bgpic_command(7107, 0, 0, 854, 480);
         assert_eq!(&c[0..12], &[0x00, b'C', b'R', b'T', 0, 0, b'B', b'G', b'P', b'I', b'C', 0]);
         assert_eq!(&c[12..15], &[0x00, 0x1B, 0xC3]);
         assert_eq!(&c[15..19], &[0, 0, 0, 0]);
@@ -178,8 +177,15 @@ mod tests {
     }
 
     #[test]
+    fn portrait_rect_matches_the_deck() {
+        // key 8 of the test layout: landscape (367, 190) -> portrait (190, 377)
+        assert_eq!(portrait_rect(367, 190, 110, 110), (190, 377, 110, 110));
+        assert_eq!(portrait_rect(0, 0, PANEL_WIDTH, PANEL_HEIGHT), (0, 0, 480, 854));
+    }
+
+    #[test]
     fn layer_frame_is_portrait_on_the_wire() {
-        let jpeg = encode_layer(&DynamicImage::new_rgb8(PANEL_WIDTH, PANEL_HEIGHT)).unwrap();
+        let jpeg = encode(&RgbImage::new(PANEL_WIDTH, PANEL_HEIGHT)).unwrap();
         let d = image::load_from_memory(&jpeg).unwrap();
         assert_eq!((d.width(), d.height()), (PANEL_HEIGHT, PANEL_WIDTH));
     }

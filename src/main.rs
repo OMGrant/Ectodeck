@@ -13,7 +13,8 @@ mod background;
 mod device;
 mod inputs;
 mod mappings;
-mod offset;
+mod frame;
+mod layout;
 mod watcher;
 
 pub static DEVICES: LazyLock<RwLock<HashMap<String, Device>>> =
@@ -37,6 +38,7 @@ impl openaction::GlobalEventHandler for GlobalEventHandler {
 
         let token = CancellationToken::new();
         tracker.spawn(watcher_task(token.clone()));
+        tracker.spawn(frame::watch_layout(token.clone()));
 
         TOKENS
             .write()
@@ -61,26 +63,14 @@ impl openaction::GlobalEventHandler for GlobalEventHandler {
             return Ok(());
         }
 
-        // The display behind the keys, sent by OpenDeck as a Background controller
-        if event.controller == Some("Background".to_string()) {
-            let id = event.device.clone();
-            if let Some(device) = DEVICES.read().await.get(&event.device) {
-                if let Err(error) = device::handle_set_background(device, id.clone(), event).await {
-                    handle_error(&id, error).await;
-                }
-            }
-            return Ok(());
-        }
-
         let id = event.device.clone();
-
-        if let Some(device) = DEVICES.read().await.get(&event.device) {
-            handle_set_image(device, id.clone(), event)
-                .await
-                .map_err(async |err| handle_error(&id, err).await)
-                .ok();
+        let result = if event.controller == Some("Background".to_string()) {
+            device::handle_set_background(&id, event).await
         } else {
-            log::error!("Received event for unknown device: {}", event.device);
+            handle_set_image(&id, event).await
+        };
+        if let Err(error) = result {
+            handle_error(&id, error).await;
         }
 
         Ok(())
