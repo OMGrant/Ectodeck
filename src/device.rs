@@ -72,18 +72,19 @@ pub async fn device_task(candidate: CandidateDevice, token: CancellationToken) {
                     "encoder_placement": "right",
                     // The keys are transparent windows onto one 854x480 panel.
                     "has_background": true,
-                    // Where the key grid sits on that panel, in panel pixels.
-                    // Measured on hardware by displaying a labelled ruler as the
-                    // background and reading the labels at the grid's edges: the
-                    // keys run from x 30 to 815 and from y 5 to the bottom edge,
-                    // slightly overrunning the display vertically.
+                    // Where the key windows sit on that panel, in panel pixels.
+                    // Measured from a photograph of the deck displaying a labelled
+                    // 25-pixel grid: windows 110 square on a 167 pitch, both
+                    // axes, the first starting at (38, 18). Columns therefore
+                    // run 38, 205, 372, 539, 706 and rows 18, 185, 352.
                     "panel": {
                         "width": crate::background::PANEL_WIDTH,
                         "height": crate::background::PANEL_HEIGHT,
-                        "keys_x": 30,
-                        "keys_y": 5,
-                        "keys_width": 785,
-                        "keys_height": 475,
+                        "keys_x": 38,
+                        "keys_y": 18,
+                        "key_size": 110,
+                        "pitch_x": 167,
+                        "pitch_y": 167,
                     },
                     "type": 0,
                 }
