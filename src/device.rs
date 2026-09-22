@@ -21,6 +21,20 @@ pub async fn device_task(candidate: CandidateDevice, token: CancellationToken) {
     let device = async || -> Result<Device, MirajazzError> {
         let device = connect(&candidate).await?;
 
+        // Two configuration commands VSD Craft sends on every connection,
+        // captured from it byte for byte. The second reads as the magnetic
+        // switch sensitivity; without it the deck runs at its power-on default
+        // and a marginal switch can register presses by itself.
+        let mut qucmd = vec![
+            0x00, b'C', b'R', b'T', 0x00, 0x00, b'Q', b'U', b'C', b'M', b'D',
+            0x1F, 0x11, 0x00, 0x11, 0x00, 0x11, 0x00,
+        ];
+        device.write_extended_data(&mut qucmd).await?;
+        let mut sens = vec![
+            0x00, b'C', b'R', b'T', 0x00, 0x00, b'S', b'E', b'N', b'S', 0x00, 0x01,
+        ];
+        device.write_extended_data(&mut sens).await?;
+
         // Brightness 100, matching the vendor. mirajazz's own init sends zero
         // first, so anything lower leaves the panel very dim.
         device.set_brightness(100).await?;
