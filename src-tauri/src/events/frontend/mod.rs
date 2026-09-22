@@ -1,3 +1,4 @@
+pub mod devices;
 pub mod instances;
 pub mod plugins;
 pub mod profiles;

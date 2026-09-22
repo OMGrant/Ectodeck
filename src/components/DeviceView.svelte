@@ -6,6 +6,7 @@
 	import type { CopiedItem } from "$lib/propertyInspector";
 
 	import Key from "./Key.svelte";
+	import BackgroundManager from "./BackgroundManager.svelte";
 
 	import { t } from "$lib/i18n";
 	import { inspectedInstance, inspectedParentAction } from "$lib/propertyInspector";
@@ -93,6 +94,8 @@
 	$: keypadColHeight = device.rows * 132;
 	// Devices whose dials run down the side, rather than along the lower edge as
 	// on a Stream Deck Plus. Drawing them underneath misrepresents the hardware.
+	let background: string | null = null;
+
 	$: sideEncoders = device.encoder_placement === "right" && device.encoders > 0;
 
 	function flatIndexFromRowCol(row: number, col: number): number {
@@ -181,8 +184,24 @@
 		on:keydown|capture={handleGridKeydown}
 		on:focusin={handleGridFocusin}
 	>
+		{#if device.has_background}
+			<div class="mb-3 self-center">
+				<BackgroundManager {device} bind:background />
+			</div>
+		{/if}
+
 		<div class="flex" class:flex-row={sideEncoders} class:items-center={sideEncoders} class:flex-col={!sideEncoders}>
-		<div class="flex flex-col" role="rowgroup">
+		<div class="relative">
+			{#if device.has_background && background}
+				<!-- The display behind the keys, drawn where it physically is. -->
+				<img
+					src={background}
+					alt=""
+					aria-hidden="true"
+					class="absolute inset-1 w-[calc(100%-0.5rem)] h-[calc(100%-0.5rem)] object-cover rounded-xl pointer-events-none"
+				/>
+			{/if}
+		<div class="relative flex flex-col" role="rowgroup">
 			{#each { length: device.rows } as _, r}
 				<div class="flex flex-row" role="row">
 					{#each { length: device.columns } as _, c}
@@ -200,6 +219,8 @@
 					{/each}
 				</div>
 			{/each}
+		</div>
+
 		</div>
 
 		<div

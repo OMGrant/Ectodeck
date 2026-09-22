@@ -192,6 +192,10 @@ impl ProfileStores {
 #[derive(Serialize, Deserialize)]
 pub struct DeviceConfig {
 	pub selected_profile: String,
+	/// The image filling the display behind the keys, as a data URL. Only
+	/// meaningful for devices that declare `has_background`.
+	#[serde(default)]
+	pub background: Option<String>,
 }
 
 impl super::NotProfile for DeviceConfig {}
@@ -201,10 +205,25 @@ pub struct DeviceStores {
 }
 
 impl DeviceStores {
+	pub fn get_background(&mut self, device: &str) -> Result<Option<String>, anyhow::Error> {
+		self.get_selected_profile(device)?;
+		Ok(self.stores.get(device).and_then(|s| s.value.background.clone()))
+	}
+
+	pub fn set_background(&mut self, device: &str, image: Option<String>) -> Result<(), anyhow::Error> {
+		self.get_selected_profile(device)?;
+		if let Some(store) = self.stores.get_mut(device) {
+			store.value.background = image;
+			store.save()?;
+		}
+		Ok(())
+	}
+
 	pub fn get_selected_profile(&mut self, device: &str) -> Result<String, anyhow::Error> {
 		if !self.stores.contains_key(device) {
 			let default = DeviceConfig {
 				selected_profile: "Default".to_owned(),
+				background: None,
 			};
 
 			let store = Store::new(device, &config_dir().join("profiles"), default).context(format!("Failed to create store for device config {}", device))?;
@@ -224,7 +243,7 @@ impl DeviceStores {
 			store.value.selected_profile = id;
 			store.save()?;
 		} else {
-			let default = DeviceConfig { selected_profile: id };
+			let default = DeviceConfig { selected_profile: id, background: None };
 
 			let store = Store::new(device, &config_dir().join("profiles"), default).context(format!("Failed to create store for device config {}", device))?;
 			store.save()?;

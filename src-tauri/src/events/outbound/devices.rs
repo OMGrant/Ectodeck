@@ -86,6 +86,29 @@ async fn to_encoder_jpeg_data_uri(context: &crate::shared::Context, image: &str)
 	Ok(format!("data:image/jpeg;base64,{encoded}"))
 }
 
+/// Push the image for the display behind a device's keys.
+///
+/// Reuses the existing `setImage` event with a "Background" controller and no
+/// position, so no new event type is needed and plugins built against the
+/// published crate can handle it without changes.
+pub async fn update_background(device: String, image: Option<String>) -> Result<(), anyhow::Error> {
+	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
+		send_to_plugin(
+			plugin,
+			&SetImageEvent {
+				event: "setImage",
+				device,
+				controller: Some("Background".to_owned()),
+				position: None,
+				image,
+			},
+		)
+		.await?;
+	}
+
+	Ok(())
+}
+
 pub async fn clear_screen(device: String) -> Result<(), anyhow::Error> {
 	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
 		send_to_plugin(

@@ -168,6 +168,9 @@ async fn init(device: AsyncStreamDeck, device_id: String) {
 				infobars: if kind == Kind::Neo { 1 } else { 0 },
 				// Every Elgato device with dials has them along the lower edge.
 				encoder_placement: String::from("bottom"),
+				// No Elgato device has a single display behind its whole keypad;
+				// the Plus and Neo expose strips as touchpoints and infobars.
+				has_background: false,
 				r#type: device_type,
 			},
 		},

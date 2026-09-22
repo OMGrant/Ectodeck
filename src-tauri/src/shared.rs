@@ -48,6 +48,11 @@ pub struct DeviceInfo {
 	/// drawing them underneath misrepresents the hardware.
 	#[serde_inline_default(String::from("bottom"))]
 	pub encoder_placement: String,
+	/// Whether this device has a display behind its keys that can hold a single
+	/// image. Devices that declare this get a background control in the UI and
+	/// are sent a `setImage` with the "Background" controller.
+	#[serde_inline_default(false)]
+	pub has_background: bool,
 	pub r#type: u8,
 }
 

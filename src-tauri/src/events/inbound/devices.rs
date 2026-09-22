@@ -22,6 +22,18 @@ pub async fn register_device(uuid: &str, mut event: PayloadEvent<crate::shared::
 		let _ = crate::events::outbound::devices::device_did_connect(&event.payload.id, (&event.payload).into()).await;
 		DEVICES.insert(event.payload.id.clone(), event.payload.clone());
 		let _ = crate::device_sleep::apply_initial_device_sleep(&event.payload.id).await;
+
+		// The display behind the keys does not survive a power cycle, so repaint it
+		// whenever the device comes back.
+		if event.payload.has_background {
+			let background = {
+				let mut locks = crate::store::profiles::acquire_locks_mut().await;
+				locks.device_stores.get_background(&event.payload.id).unwrap_or(None)
+			};
+			if background.is_some() {
+				let _ = crate::events::outbound::devices::update_background(event.payload.id.clone(), background).await;
+			}
+		}
 		crate::events::frontend::update_devices().await;
 
 		let mut locks = crate::store::profiles::acquire_locks_mut().await;
