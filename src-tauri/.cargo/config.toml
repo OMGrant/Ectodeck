@@ -1,0 +1,6 @@
+# A transitive dependency (expat-sys) vendors an expat whose CMakeLists declares
+# a cmake_minimum_required below 3.5. CMake 4 removed compatibility with that,
+# so the build fails on current distributions (Fedora 42+, Arch, and others).
+# This restores the old policy floor for build scripts only.
+[env]
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"
