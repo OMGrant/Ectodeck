@@ -196,6 +196,23 @@ pub struct DeviceConfig {
 	/// meaningful for devices that declare `has_background`.
 	#[serde(default)]
 	pub background: Option<String>,
+	/// How key images sit on that display. Only meaningful for devices that
+	/// declare `has_background`.
+	#[serde(default)]
+	pub key_style: KeyStyle,
+}
+
+/// Whether a key's image sits on its own black square or straight on the
+/// display behind the keys.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct KeyStyle {
+	pub backdrop: bool,
+}
+
+impl Default for KeyStyle {
+	fn default() -> Self {
+		KeyStyle { backdrop: true }
+	}
 }
 
 impl super::NotProfile for DeviceConfig {}
@@ -219,11 +236,26 @@ impl DeviceStores {
 		Ok(())
 	}
 
+	pub fn get_key_style(&mut self, device: &str) -> Result<KeyStyle, anyhow::Error> {
+		self.get_selected_profile(device)?;
+		Ok(self.stores.get(device).map(|s| s.value.key_style).unwrap_or_default())
+	}
+
+	pub fn set_key_style(&mut self, device: &str, style: KeyStyle) -> Result<(), anyhow::Error> {
+		self.get_selected_profile(device)?;
+		if let Some(store) = self.stores.get_mut(device) {
+			store.value.key_style = style;
+			store.save()?;
+		}
+		Ok(())
+	}
+
 	pub fn get_selected_profile(&mut self, device: &str) -> Result<String, anyhow::Error> {
 		if !self.stores.contains_key(device) {
 			let default = DeviceConfig {
 				selected_profile: "Default".to_owned(),
 				background: None,
+				key_style: KeyStyle::default(),
 			};
 
 			let store = Store::new(device, &config_dir().join("profiles"), default).context(format!("Failed to create store for device config {}", device))?;
@@ -243,7 +275,7 @@ impl DeviceStores {
 			store.value.selected_profile = id;
 			store.save()?;
 		} else {
-			let default = DeviceConfig { selected_profile: id, background: None };
+			let default = DeviceConfig { selected_profile: id, background: None, key_style: KeyStyle::default() };
 
 			let store = Store::new(device, &config_dir().join("profiles"), default).context(format!("Failed to create store for device config {}", device))?;
 			store.save()?;

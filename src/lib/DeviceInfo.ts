@@ -21,3 +21,7 @@ export type PanelInfo = {
 	pitch_x: number;
 	pitch_y: number;
 };
+
+export type KeyStyle = {
+	backdrop: boolean;
+};

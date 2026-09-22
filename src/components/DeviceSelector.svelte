@@ -4,6 +4,7 @@
 
 	import { t } from "$lib/i18n";
 	import { profileManager } from "$lib/singletons";
+	import { transparentKeyDevices } from "$lib/rendererHelper";
 
 	import { invoke } from "@tauri-apps/api/core";
 	import { listen } from "@tauri-apps/api/event";
@@ -17,6 +18,8 @@
 	$: {
 		if (!value || !devices[value]) value = Object.keys(devices).sort()[0];
 		for (const [id, device] of Object.entries(devices)) {
+			// before the profile is selected, so its first key images keep transparency
+			if (device.has_background) transparentKeyDevices.add(id);
 			if (!registered.includes(id)) {
 				(async () => {
 					let profile: Profile = await invoke("get_selected_profile", { device: device.id });

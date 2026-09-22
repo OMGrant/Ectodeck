@@ -74,6 +74,8 @@ async fn main() {
 			frontend::get_devices,
 			frontend::devices::get_device_background,
 			frontend::devices::set_device_background,
+			frontend::devices::get_device_key_style,
+			frontend::devices::set_device_key_style,
 			frontend::get_port_base,
 			frontend::get_categories,
 			frontend::get_localisations,

@@ -32,6 +32,8 @@ pub async fn register_device(uuid: &str, mut event: PayloadEvent<crate::shared::
 		// images have to be drawn on top of it afterwards. It also does not
 		// survive a power cycle, hence repainting on every registration.
 		if event.payload.has_background {
+			let style = locks.device_stores.get_key_style(&event.payload.id).unwrap_or_default();
+			let _ = crate::events::outbound::devices::update_key_style(event.payload.id.clone(), style).await;
 			let background = locks.device_stores.get_background(&event.payload.id).unwrap_or(None);
 			if background.is_some() {
 				let _ = crate::events::outbound::devices::update_background(event.payload.id.clone(), background).await;

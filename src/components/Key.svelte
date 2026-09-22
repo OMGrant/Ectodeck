@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { KeyStyle } from "$lib/DeviceInfo";
 	import type { ActionInstance } from "$lib/ActionInstance";
 	import type { ActionState } from "$lib/ActionState";
 	import type { Context } from "$lib/Context";
@@ -12,7 +13,7 @@
 
 	import { t } from "$lib/i18n";
 	import { copiedItem, inspectedInstance, inspectedParentAction, openContextMenu } from "$lib/propertyInspector";
-	import { CanvasLock, renderImage } from "$lib/rendererHelper";
+	import { CanvasLock, KEY_CORNER, renderImage } from "$lib/rendererHelper";
 	import { settings } from "$lib/settings";
 
 	import { invoke } from "@tauri-apps/api/core";
@@ -38,6 +39,10 @@
 
 	export let active: boolean = true;
 	export let scale: number = 1;
+	// On a device that draws keys onto its own display, how they sit on it:
+	// without a backdrop the display shows through. Such keys are drawn with
+	// the tighter corners the plugin paints on the hardware.
+	export let keyStyle: KeyStyle | null = null;
 	export let isTouchPoint: boolean = false;
 	let pressed: boolean = false;
 
@@ -168,7 +173,7 @@
 			const unlock = await lock.lock();
 			try {
 				let fallback = sl.action.states[sl.current_state]?.image ?? sl.action.icon;
-				if (state) await renderImage(canvas, context, state, fallback, showOk, showAlert, true, active, pressed, $settings?.rotation);
+				if (state) await renderImage(canvas, context, state, fallback, showOk, showAlert, true, active, pressed, $settings?.rotation, keyStyle ? !keyStyle.backdrop : false);
 			} finally {
 				unlock();
 			}
@@ -195,11 +200,14 @@
 	<canvas
 		bind:this={canvas}
 		class="relative border-3 border-neutral-700 rounded-3xl outline-none outline-offset-2 outline-blue-500"
-		style={`margin: ${-((size + 3 * 2 /* border */ - 132) /* desired outer size */ / 2)}px;`}
+		style={`margin: ${-((size + 3 * 2 /* border */ - 132) /* desired outer size */ / 2)}px;` +
+			// the image inside is clipped to KEY_CORNER of its width; the border's
+			// outer radius is that plus the border's own width, so the two meet
+			(keyStyle ? ` border-radius: ${width * KEY_CORNER + 3}px;` : "")}
 		class:outline-solid={active && ((slot && $inspectedInstance == slot.context) || (context && $inspectedInstance == context))}
 		class:rounded-full!={context?.controller == "Encoder"}
 		class:rounded-lg!={context?.controller == "Infobar"}
-		class:bg-black={slot != null}
+		class:bg-black={slot != null && (keyStyle?.backdrop ?? true)}
 		{width}
 		{height}
 		draggable={slot != null}

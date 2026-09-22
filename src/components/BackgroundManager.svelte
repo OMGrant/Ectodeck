@@ -1,16 +1,28 @@
 <script lang="ts">
 	import { invoke } from "@tauri-apps/api/core";
 	import { t } from "$lib/i18n";
-	import type { DeviceInfo } from "$lib/DeviceInfo";
+	import type { DeviceInfo, KeyStyle } from "$lib/DeviceInfo";
 
 	export let device: DeviceInfo;
 	export let background: string | null = null;
+	export let keyStyle: KeyStyle = { backdrop: true };
 
 	let fileInput: HTMLInputElement;
 
 	async function load(device: DeviceInfo) {
 		if (!device.has_background) return;
 		background = await invoke<string | null>("get_device_background", { device: device.id });
+		keyStyle = await invoke<KeyStyle>("get_device_key_style", { device: device.id });
+	}
+
+	const backdropOptions = [
+		{ value: true, label: "device_view.key_background.show" },
+		{ value: false, label: "device_view.key_background.hide" },
+	];
+
+	async function setStyle(change: Partial<KeyStyle>) {
+		keyStyle = { ...keyStyle, ...change };
+		await invoke("set_device_key_style", { device: device.id, style: keyStyle });
 	}
 	$: load(device);
 
@@ -86,5 +98,24 @@
 		{/if}
 
 		<input type="file" accept="image/*" class="hidden" bind:this={fileInput} on:change={choose} />
+
+		<span class="ml-4 text-neutral-400">{$t("device_view.key_background")}</span>
+		<div class="flex flex-row border border-neutral-600 rounded-lg overflow-hidden" role="radiogroup" aria-label={$t("device_view.key_background")}>
+			{#each backdropOptions as { value, label }}
+				<button
+					class="px-2 py-0.5 transition-colors"
+					class:bg-neutral-600={keyStyle.backdrop === value}
+					class:text-neutral-100={keyStyle.backdrop === value}
+					class:bg-neutral-800={keyStyle.backdrop !== value}
+					class:text-neutral-400={keyStyle.backdrop !== value}
+					class:hover:bg-neutral-700={keyStyle.backdrop !== value}
+					role="radio"
+					aria-checked={keyStyle.backdrop === value}
+					on:click={() => setStyle({ backdrop: value })}
+				>
+					{$t(label)}
+				</button>
+			{/each}
+		</div>
 	</div>
 {/if}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ActionInstance } from "$lib/ActionInstance";
 	import type { Context } from "$lib/Context";
-	import type { DeviceInfo } from "$lib/DeviceInfo";
+	import type { DeviceInfo, KeyStyle } from "$lib/DeviceInfo";
 	import type { Profile } from "$lib/Profile";
 	import type { CopiedItem } from "$lib/propertyInspector";
 
@@ -95,6 +95,7 @@
 	// Devices whose dials run down the side, rather than along the lower edge as
 	// on a Stream Deck Plus. Drawing them underneath misrepresents the hardware.
 	let background: string | null = null;
+	let keyStyle: KeyStyle = { backdrop: true };
 
 	// Map the panel onto the rendered key grid by pitch and centre: the rendered
 	// grid is device.columns keys across, so its pitch is its width over the
@@ -120,6 +121,9 @@
 			// OpenDeck draws a key at 118 px inside a 132 px box; scale the drawing so
 			// it comes out at the window's size, and centre the box on the window
 			keyScale: keyPx / 118,
+			// top edge of the first row and bottom edge of the last, as drawn
+			gridTop: p.keys_y * scale,
+			gridBottom: (p.keys_y + (device.rows - 1) * p.pitch_y + p.key_size) * scale,
 			keyAt: (r: number, c: number) => ({
 				left: (p.keys_x + c * p.pitch_x) * scale + keyPx / 2 - 66,
 				top: (p.keys_y + r * p.pitch_y) * scale + keyPx / 2 - 66,
@@ -128,6 +132,11 @@
 	})();
 
 	$: sideEncoders = device.encoder_placement === "right" && device.encoders > 0;
+	// Beside a panel the dials are drawn a little smaller than the keys and
+	// held off the screen's edge, as they sit on the hardware.
+	$: sideDials = sideEncoders && !!panelLayout;
+	const DIAL_BOX = 96;
+	const DIAL_GAP = 20;
 
 	function flatIndexFromRowCol(row: number, col: number): number {
 		let index = 0;
@@ -217,7 +226,7 @@
 	>
 		{#if device.has_background}
 			<div class="mb-3 self-center">
-				<BackgroundManager {device} bind:background />
+				<BackgroundManager {device} bind:background bind:keyStyle />
 			</div>
 		{/if}
 
@@ -242,6 +251,7 @@
 										{handlePaste}
 										size={144}
 										scale={panelLayout.keyScale}
+										{keyStyle}
 										label="{$t('device_view.key')} {String.fromCharCode(65 + r)}{c + 1}"
 										tabindex={focusedRow === r && focusedCol === c ? 0 : -1}
 									/>
@@ -288,15 +298,39 @@
 		<div
 			class="flex"
 			class:flex-col={sideEncoders}
-			class:justify-center={sideEncoders}
+			class:justify-center={sideEncoders && !sideDials}
 			class:flex-row={!sideEncoders}
-			class:justify-between={!sideEncoders}
+			class:justify-between={!sideEncoders || sideDials}
 			role="row"
 			style={sideEncoders
-				? `height: ${panelLayout ? panelLayout.height : keypadColHeight}px;`
+				? sideDials && panelLayout
+					? `height: ${panelLayout.height}px; margin-left: ${DIAL_GAP}px; padding-top: ${panelLayout.gridTop}px; padding-bottom: ${panelLayout.height - panelLayout.gridBottom}px;`
+					: `height: ${panelLayout ? panelLayout.height : keypadColHeight}px;`
 				: `width: ${keypadRowWidth}px;`}
 		>
 			{#each { length: device.encoders } as _, i}
+				{#if sideDials}
+				<!-- A dial beside the panel, drawn smaller than a key. OpenDeck draws a
+				     key at 118 px inside a 132 px box, so scaling by DIAL/118 makes the
+				     drawing exactly DIAL across, and the box is sized to the drawing so
+				     the first and last dials' edges line up with the grid's. -->
+				<div class="relative" style="width:{DIAL_BOX}px;height:{DIAL_BOX}px;">
+					<div class="absolute" style="left:{(DIAL_BOX - 132) / 2}px;top:{(DIAL_BOX - 132) / 2}px;width:132px;height:132px;">
+						<Key
+							context={{ device: device.id, profile: profile.id, controller: "Encoder", position: i }}
+							bind:inslot={profile.sliders[i]}
+							on:dragover={handleDragOver}
+							on:drop={(event) => handleDrop(event, "Encoder", i)}
+							on:dragstart={(event) => handleDragStart(event, "Encoder", i)}
+							{handlePaste}
+							size={144}
+							scale={DIAL_BOX / 118}
+							label="{$t('device_view.encoder')} {i + 1}"
+							tabindex={focusedRow === encoderRowIndex && focusedCol === i ? 0 : -1}
+						/>
+					</div>
+				</div>
+				{:else}
 				<Key
 					context={{ device: device.id, profile: profile.id, controller: "Encoder", position: i }}
 					bind:inslot={profile.sliders[i]}
@@ -308,6 +342,7 @@
 					label="{$t('device_view.encoder')} {i + 1}"
 					tabindex={focusedRow === encoderRowIndex && focusedCol === i ? 0 : -1}
 				/>
+				{/if}
 			{/each}
 		</div>
 

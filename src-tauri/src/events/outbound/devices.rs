@@ -109,6 +109,29 @@ pub async fn update_background(device: String, image: Option<String>) -> Result<
 	Ok(())
 }
 
+/// Push how key images sit on the display behind the keys.
+///
+/// Like the background, this rides on `setImage`, with a "KeyStyle"
+/// controller and the style as JSON in the image field, so a plugin that does
+/// not know it simply ignores a controller it does not recognise.
+pub async fn update_key_style(device: String, style: crate::store::profiles::KeyStyle) -> Result<(), anyhow::Error> {
+	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
+		send_to_plugin(
+			plugin,
+			&SetImageEvent {
+				event: "setImage",
+				device,
+				controller: Some("KeyStyle".to_owned()),
+				position: None,
+				image: Some(serde_json::to_string(&style)?),
+			},
+		)
+		.await?;
+	}
+
+	Ok(())
+}
+
 pub async fn clear_screen(device: String) -> Result<(), anyhow::Error> {
 	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
 		send_to_plugin(

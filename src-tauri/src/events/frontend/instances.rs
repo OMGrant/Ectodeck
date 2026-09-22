@@ -38,7 +38,7 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 
 		if parent.action.uuid == "opendeck.toggleaction" && parent.states.len() < children.len() {
 			parent.states.push(crate::shared::ActionState {
-				image: "opendeck/toggle-action.png".to_owned(),
+				image: "opendeck/toggle-action.svg".to_owned(),
 				..Default::default()
 			});
 			let _ = update_state(&app, parent.context.clone(), &mut locks).await;
