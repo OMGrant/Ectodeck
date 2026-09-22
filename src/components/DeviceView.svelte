@@ -95,6 +95,24 @@
 	// Devices whose dials run down the side, rather than along the lower edge as
 	// on a Stream Deck Plus. Drawing them underneath misrepresents the hardware.
 	let background: string | null = null;
+	let gridWidth = 0;
+	let gridHeight = 0;
+
+	// Map the panel onto the rendered key grid: scale so the rectangle the keys
+	// occupy on the panel lands exactly on the grid, and let the rest of the
+	// panel extend beyond it, which is what the hardware shows.
+	$: backdrop = (() => {
+		const p = device.panel;
+		if (!p || !gridWidth || !gridHeight || !p.keys_width || !p.keys_height) return null;
+		const sx = gridWidth / p.keys_width;
+		const sy = gridHeight / p.keys_height;
+		return {
+			width: p.width * sx,
+			height: p.height * sy,
+			left: -p.keys_x * sx,
+			top: -p.keys_y * sy,
+		};
+	})();
 
 	$: sideEncoders = device.encoder_placement === "right" && device.encoders > 0;
 
@@ -194,14 +212,24 @@
 		<div class="relative">
 			{#if device.has_background && background}
 				<!-- The display behind the keys, drawn where it physically is. -->
-				<img
-					src={background}
-					alt=""
-					aria-hidden="true"
-					class="absolute inset-1 w-[calc(100%-0.5rem)] h-[calc(100%-0.5rem)] object-cover rounded-xl pointer-events-none"
-				/>
+				{#if backdrop}
+					<img
+						src={background}
+						alt=""
+						aria-hidden="true"
+						class="absolute max-w-none object-fill rounded-xl pointer-events-none"
+						style="width:{backdrop.width}px;height:{backdrop.height}px;left:{backdrop.left}px;top:{backdrop.top}px"
+					/>
+				{:else}
+					<img
+						src={background}
+						alt=""
+						aria-hidden="true"
+						class="absolute inset-1 w-[calc(100%-0.5rem)] h-[calc(100%-0.5rem)] object-cover rounded-xl pointer-events-none"
+					/>
+				{/if}
 			{/if}
-		<div class="relative flex flex-col" role="rowgroup">
+		<div class="relative flex flex-col" role="rowgroup" bind:clientWidth={gridWidth} bind:clientHeight={gridHeight}>
 			{#each { length: device.rows } as _, r}
 				<div class="flex flex-row" role="row">
 					{#each { length: device.columns } as _, c}

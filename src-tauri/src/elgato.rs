@@ -171,6 +171,7 @@ async fn init(device: AsyncStreamDeck, device_id: String) {
 				// No Elgato device has a single display behind its whole keypad;
 				// the Plus and Neo expose strips as touchpoints and infobars.
 				has_background: false,
+				panel: None,
 				r#type: device_type,
 			},
 		},

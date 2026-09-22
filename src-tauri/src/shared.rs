@@ -53,7 +53,24 @@ pub struct DeviceInfo {
 	/// are sent a `setImage` with the "Background" controller.
 	#[serde_inline_default(false)]
 	pub has_background: bool,
+	/// Where the keys sit on the display behind them, in that display's own
+	/// pixels. Lets the device view show the same slice of a background behind
+	/// each key that the hardware does. Absent means the keys span the panel.
+	#[serde(default)]
+	pub panel: Option<PanelInfo>,
 	pub r#type: u8,
+}
+
+/// Geometry of a display behind the keys: its size, and the rectangle the key
+/// grid occupies within it.
+#[derive(Clone, Deserialize, Serialize)]
+pub struct PanelInfo {
+	pub width: u16,
+	pub height: u16,
+	pub keys_x: u16,
+	pub keys_y: u16,
+	pub keys_width: u16,
+	pub keys_height: u16,
 }
 
 pub static DEVICES: LazyLock<DashMap<String, DeviceInfo>> = LazyLock::new(DashMap::new);

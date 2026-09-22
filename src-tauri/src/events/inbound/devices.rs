@@ -23,20 +23,21 @@ pub async fn register_device(uuid: &str, mut event: PayloadEvent<crate::shared::
 		DEVICES.insert(event.payload.id.clone(), event.payload.clone());
 		let _ = crate::device_sleep::apply_initial_device_sleep(&event.payload.id).await;
 
-		// The display behind the keys does not survive a power cycle, so repaint it
-		// whenever the device comes back.
+		crate::events::frontend::update_devices().await;
+
+		let mut locks = crate::store::profiles::acquire_locks_mut().await;
+
+		// Painted before the key slots. The panel covers the whole surface on
+		// these devices, keys included, so it is the base layer and the key
+		// images have to be drawn on top of it afterwards. It also does not
+		// survive a power cycle, hence repainting on every registration.
 		if event.payload.has_background {
-			let background = {
-				let mut locks = crate::store::profiles::acquire_locks_mut().await;
-				locks.device_stores.get_background(&event.payload.id).unwrap_or(None)
-			};
+			let background = locks.device_stores.get_background(&event.payload.id).unwrap_or(None);
 			if background.is_some() {
 				let _ = crate::events::outbound::devices::update_background(event.payload.id.clone(), background).await;
 			}
 		}
-		crate::events::frontend::update_devices().await;
 
-		let mut locks = crate::store::profiles::acquire_locks_mut().await;
 		let selected_profile = locks.device_stores.get_selected_profile(&event.payload.id)?;
 		let profile = locks.profile_stores.get_profile_store(&DEVICES.get(&event.payload.id).unwrap(), &selected_profile)?;
 		for instance in profile
