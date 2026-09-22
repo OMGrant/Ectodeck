@@ -3,7 +3,6 @@
 
 mod application_watcher;
 mod device_sleep;
-mod panel_override;
 mod elgato;
 mod encoder_layouts;
 mod events;
@@ -215,7 +214,6 @@ If you have already donated, thank you so much for your support!"#,
 			plugins::initialise_plugins();
 			application_watcher::init_application_watcher();
 			device_sleep::init_device_sleep();
-			panel_override::init_panel_overrides();
 			power_events::init_power_events();
 
 			let label = IconMenuItemBuilder::with_id("label", PRODUCT_NAME)
