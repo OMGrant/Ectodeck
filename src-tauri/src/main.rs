@@ -128,6 +128,15 @@ async fn main() {
 				let _ = std::fs::rename(old, app.path().app_config_dir().unwrap());
 			}
 
+			// MagDeck keeps its own configuration, so it can run beside OpenDeck.
+			// On first run, start from the user's OpenDeck setup: copied, not
+			// moved, so OpenDeck keeps working as it was.
+			let magdeck = app.path().app_config_dir().unwrap();
+			let opendeck = app.path().config_dir().unwrap().join("opendeck");
+			if !magdeck.exists() && opendeck.exists() {
+				let _ = shared::copy_dir(&opendeck, &magdeck);
+			}
+
 			let mut settings = store::get_settings();
 			use std::cmp::Ordering;
 			use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
