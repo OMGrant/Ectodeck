@@ -95,8 +95,6 @@
 	// Devices whose dials run down the side, rather than along the lower edge as
 	// on a Stream Deck Plus. Drawing them underneath misrepresents the hardware.
 	let background: string | null = null;
-	let gridWidth = 0;
-	let gridHeight = 0;
 
 	// Map the panel onto the rendered key grid by pitch and centre: the rendered
 	// grid is device.columns keys across, so its pitch is its width over the
@@ -105,33 +103,27 @@
 	// centre lands on the first rendered key's centre. Every other key's centre
 	// then lands exactly, whatever fraction of the pitch each side draws its keys
 	// at, and the rest of the panel extends beyond the grid as on the hardware.
-	// OpenDeck draws a key at 118 of its 132-pixel box. When a device declares
-	// how much of its pitch a key window fills, draw the key at that fraction
-	// instead, so the panel visible around and between keys matches the deck.
-	$: keyScale = device.panel && device.panel.pitch_x
-		? (device.panel.key_size / device.panel.pitch_x) / (118 / 132)
-		: 1;
-
-	$: backdrop = (() => {
+	// When a device declares a panel, the panel is the fixed thing: it is drawn
+	// at one scale, sized to the width the key grid would otherwise take, and the
+	// keys are placed on it from the declared geometry. Their spacing follows the
+	// declared pitch, so adjusting a margin moves the keys, not the picture.
+	$: panelLayout = (() => {
 		const p = device.panel;
-		if (!p || !gridWidth || !gridHeight || !p.pitch_x || !p.pitch_y) return null;
-		const renderedPitchX = gridWidth / device.columns;
-		const renderedPitchY = gridHeight / device.rows;
-		const sx = renderedPitchX / p.pitch_x;
-		const sy = renderedPitchY / p.pitch_y;
-		const firstCentreX = p.keys_x + p.key_size / 2;
-		const firstCentreY = p.keys_y + p.key_size / 2;
-		const left = renderedPitchX / 2 - firstCentreX * sx;
-		const top = renderedPitchY / 2 - firstCentreY * sy;
-		const gridRightOnPanel = p.keys_x + (device.columns - 1) * p.pitch_x + p.key_size;
+		if (!p || !p.width || !p.height || !p.pitch_x || !p.pitch_y) return null;
+		const scale = (device.columns * 132) / p.width;
+		const keyPx = p.key_size * scale;
 		return {
-			width: p.width * sx,
-			height: p.height * sy,
-			left,
-			top,
-			// how far the panel extends past the right edge of the key grid; the
-			// dials sit beside the panel, so they are pushed out by this much
-			overrunRight: Math.max(0, left + p.width * sx - gridWidth),
+			scale,
+			width: p.width * scale,
+			height: p.height * scale,
+			keyPx,
+			// OpenDeck draws a key at 118 px inside a 132 px box; scale the drawing so
+			// it comes out at the window's size, and centre the box on the window
+			keyScale: keyPx / 118,
+			keyAt: (r: number, c: number) => ({
+				left: (p.keys_x + c * p.pitch_x) * scale + keyPx / 2 - 66,
+				top: (p.keys_y + r * p.pitch_y) * scale + keyPx / 2 - 66,
+			}),
 		};
 	})();
 
@@ -230,27 +222,47 @@
 		{/if}
 
 		<div class="flex" class:flex-row={sideEncoders} class:items-center={sideEncoders} class:flex-col={!sideEncoders}>
+		{#if panelLayout}
+			<!-- The panel, at fixed scale, with the keys placed on it by geometry. -->
+			<div class="relative" style="width:{panelLayout.width}px;height:{panelLayout.height}px;">
+				{#if device.has_background && background}
+					<img src={background} alt="" aria-hidden="true" class="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none" />
+				{/if}
+				<div role="rowgroup" class="contents">
+					{#each { length: device.rows } as _, r}
+						<div class="contents" role="row">
+							{#each { length: device.columns } as _, c}
+								<div class="absolute" style="left:{panelLayout.keyAt(r, c).left}px;top:{panelLayout.keyAt(r, c).top}px;width:132px;height:132px;">
+									<Key
+										context={{ device: device.id, profile: profile.id, controller: "Keypad", position: r * device.columns + c }}
+										bind:inslot={profile.keys[r * device.columns + c]}
+										on:dragover={handleDragOver}
+										on:drop={(event) => handleDrop(event, "Keypad", r * device.columns + c)}
+										on:dragstart={(event) => handleDragStart(event, "Keypad", r * device.columns + c)}
+										{handlePaste}
+										size={144}
+										scale={panelLayout.keyScale}
+										label="{$t('device_view.key')} {String.fromCharCode(65 + r)}{c + 1}"
+										tabindex={focusedRow === r && focusedCol === c ? 0 : -1}
+									/>
+								</div>
+							{/each}
+						</div>
+					{/each}
+				</div>
+			</div>
+		{:else}
 		<div class="relative">
 			{#if device.has_background && background}
 				<!-- The display behind the keys, drawn where it physically is. -->
-				{#if backdrop}
-					<img
-						src={background}
-						alt=""
-						aria-hidden="true"
-						class="absolute max-w-none object-fill rounded-xl pointer-events-none"
-						style="width:{backdrop.width}px;height:{backdrop.height}px;left:{backdrop.left}px;top:{backdrop.top}px"
-					/>
-				{:else}
-					<img
-						src={background}
-						alt=""
-						aria-hidden="true"
-						class="absolute inset-1 w-[calc(100%-0.5rem)] h-[calc(100%-0.5rem)] object-cover rounded-xl pointer-events-none"
-					/>
-				{/if}
+				<img
+					src={background}
+					alt=""
+					aria-hidden="true"
+					class="absolute inset-1 w-[calc(100%-0.5rem)] h-[calc(100%-0.5rem)] object-cover rounded-xl pointer-events-none"
+				/>
 			{/if}
-		<div class="relative flex flex-col" role="rowgroup" bind:clientWidth={gridWidth} bind:clientHeight={gridHeight}>
+		<div class="relative flex flex-col" role="rowgroup">
 			{#each { length: device.rows } as _, r}
 				<div class="flex flex-row" role="row">
 					{#each { length: device.columns } as _, c}
@@ -262,7 +274,6 @@
 							on:dragstart={(event) => handleDragStart(event, "Keypad", r * device.columns + c)}
 							{handlePaste}
 							size={device.id.startsWith("sd-") && device.rows == 4 && device.columns == 8 ? 192 : 144}
-							scale={keyScale}
 							label="{$t('device_view.key')} {String.fromCharCode(65 + r)}{c + 1}"
 							tabindex={focusedRow === r && focusedCol === c ? 0 : -1}
 						/>
@@ -270,8 +281,9 @@
 				</div>
 			{/each}
 		</div>
-
 		</div>
+		{/if}
+
 
 		<div
 			class="flex"
@@ -281,7 +293,7 @@
 			class:justify-between={!sideEncoders}
 			role="row"
 			style={sideEncoders
-				? `height: ${keypadColHeight}px; margin-left: ${backdrop ? backdrop.overrunRight : 0}px;`
+				? `height: ${panelLayout ? panelLayout.height : keypadColHeight}px;`
 				: `width: ${keypadRowWidth}px;`}
 		>
 			{#each { length: device.encoders } as _, i}
