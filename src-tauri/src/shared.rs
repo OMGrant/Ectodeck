@@ -42,6 +42,12 @@ pub struct DeviceInfo {
 	pub touchpoints: u8,
 	#[serde_inline_default(0)]
 	pub infobars: u8,
+	/// Where the encoders physically sit relative to the key grid. "bottom" is
+	/// the default and matches the Stream Deck Plus, whose dials run along the
+	/// lower edge. "right" is for devices whose dials run down the side, where
+	/// drawing them underneath misrepresents the hardware.
+	#[serde_inline_default(String::from("bottom"))]
+	pub encoder_placement: String,
 	pub r#type: u8,
 }
 

@@ -75,8 +75,8 @@
 		}
 	}
 
-	$: overflowsX = Math.max(device.columns, device.encoders, device.touchpoints) > 8;
-	$: overflowsY = device.rows + Math.min(device.encoders, 1) + Math.min(device.touchpoints, 1) > 4;
+	$: overflowsX = Math.max(device.columns + (sideEncoders ? 1 : 0), sideEncoders ? 0 : device.encoders, device.touchpoints) > 8;
+	$: overflowsY = device.rows + (sideEncoders ? 0 : Math.min(device.encoders, 1)) + Math.min(device.touchpoints, 1) > 4;
 
 	// Grid navigation: track focused cell and compute row lengths for arrow key movement.
 	let focusedRow = 0;
@@ -90,6 +90,10 @@
 	$: encoderRowIndex = device.rows;
 	$: touchpointRowIndex = device.rows + (device.encoders > 0 ? 1 : 0);
 	$: keypadRowWidth = device.columns * 132;
+	$: keypadColHeight = device.rows * 132;
+	// Devices whose dials run down the side, rather than along the lower edge as
+	// on a Stream Deck Plus. Drawing them underneath misrepresents the hardware.
+	$: sideEncoders = device.encoder_placement === "right" && device.encoders > 0;
 
 	function flatIndexFromRowCol(row: number, col: number): number {
 		let index = 0;
@@ -177,6 +181,7 @@
 		on:keydown|capture={handleGridKeydown}
 		on:focusin={handleGridFocusin}
 	>
+		<div class="flex" class:flex-row={sideEncoders} class:items-center={sideEncoders} class:flex-col={!sideEncoders}>
 		<div class="flex flex-col" role="rowgroup">
 			{#each { length: device.rows } as _, r}
 				<div class="flex flex-row" role="row">
@@ -197,7 +202,15 @@
 			{/each}
 		</div>
 
-		<div class="flex flex-row justify-between" role="row" style={`width: ${keypadRowWidth}px;`}>
+		<div
+			class="flex"
+			class:flex-col={sideEncoders}
+			class:justify-center={sideEncoders}
+			class:flex-row={!sideEncoders}
+			class:justify-between={!sideEncoders}
+			role="row"
+			style={sideEncoders ? `height: ${keypadColHeight}px;` : `width: ${keypadRowWidth}px;`}
+		>
 			{#each { length: device.encoders } as _, i}
 				<Key
 					context={{ device: device.id, profile: profile.id, controller: "Encoder", position: i }}
@@ -211,6 +224,8 @@
 					tabindex={focusedRow === encoderRowIndex && focusedCol === i ? 0 : -1}
 				/>
 			{/each}
+		</div>
+
 		</div>
 
 		<div class="flex flex-row items-center" role="row">
