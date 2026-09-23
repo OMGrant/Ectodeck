@@ -1,9 +1,79 @@
 /*{
-  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace from it: the stars stretch into streaks racing out from the key, you ride the blue tunnel for a moment, then drop back out among the stars. The Background preset action changes the colour of hyperspace.",
+  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace from it: the stars stretch into streaks racing out from the key, you ride the blue tunnel for a moment, then drop back out among the stars. Switch presets in Adjust, or with the Background preset action.",
   "INPUTS": [
-    { "NAME": "speed", "TYPE": "float", "LABEL": "Cruising speed", "DEFAULT": 1.0, "MIN": 0.1, "MAX": 4.0 },
-    { "NAME": "tunnel", "TYPE": "color", "LABEL": "Hyperspace", "DEFAULT": [0.35, 0.55, 1.0, 1] },
-    { "NAME": "density", "TYPE": "float", "LABEL": "Stars", "DEFAULT": 1.0, "MIN": 0.3, "MAX": 2.0 }
+    {
+      "NAME": "speed",
+      "TYPE": "float",
+      "LABEL": "Cruising speed",
+      "DEFAULT": 1.0,
+      "MIN": 0.1,
+      "MAX": 4.0
+    },
+    {
+      "NAME": "tunnel",
+      "TYPE": "color",
+      "LABEL": "Hyperspace",
+      "DEFAULT": [
+        0.35,
+        0.55,
+        1.0,
+        1
+      ]
+    },
+    {
+      "NAME": "density",
+      "TYPE": "float",
+      "LABEL": "Stars",
+      "DEFAULT": 1.0,
+      "MIN": 0.3,
+      "MAX": 2.0
+    }
+  ],
+  "PRESETS": [
+    {
+      "NAME": "Blue",
+      "VALUES": {
+        "tunnel": [
+          0.35,
+          0.55,
+          1.0,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Red",
+      "VALUES": {
+        "tunnel": [
+          1.0,
+          0.3,
+          0.25,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Green",
+      "VALUES": {
+        "tunnel": [
+          0.35,
+          1.0,
+          0.45,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Gold",
+      "VALUES": {
+        "tunnel": [
+          1.0,
+          0.8,
+          0.35,
+          1
+        ]
+      }
+    }
   ]
 }*/
 
@@ -19,9 +89,7 @@ const float STRETCH = 0.7;   // seconds for the stars to pull into streaks
 const float DROP = 3.0;      // when the jump ends
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    // the Background preset action: your colour, then red, green and gold
-    int n = int(mod(floor(iLook + 0.5), 4.0));
-    vec3 hyper = n == 0 ? tunnel.rgb : n == 1 ? vec3(1.0, 0.3, 0.25) : n == 2 ? vec3(0.35, 1.0, 0.45) : vec3(1.0, 0.8, 0.35);
+    vec3 hyper = tunnel.rgb;
     vec2 centre = 0.5 * iResolution.xy;
     vec4 p = iKeyPresses[0];
     bool jumping = p.w >= 0.0 && p.z < DROP + 0.6;

@@ -50,7 +50,7 @@
 	async function addAction(action: Action) {
 		if (
 			(parentUuid == "opendeck.multiaction" && !action.supported_in_multi_actions) ||
-			(parentUuid == "opendeck.toggleaction" && (action.uuid == "opendeck.multiaction" || action.uuid == "opendeck.toggleaction"))
+			(parentUuid == "opendeck.toggleaction" && (action.uuid == "opendeck.multiaction" || action.uuid == "opendeck.toggleaction" || action.uuid == "opendeck.backgroundpreset"))
 		) {
 			return;
 		}

@@ -35,6 +35,10 @@ pub async fn key_down(device: &str, key: u8) -> Result<(), anyhow::Error> {
 	KEY_DOWN_TARGETS.insert((device.to_owned(), key), context.clone());
 
 	let Some(instance) = get_slot_mut(&context, &mut locks).await? else { return Ok(()) };
+	if instance.action.uuid == crate::shared::BACKGROUND_PRESET {
+		crate::events::frontend::devices::step_background_preset(device, 1);
+		return Ok(());
+	}
 	if instance.action.uuid == "opendeck.multiaction" {
 		let children = instance.children.clone().unwrap_or_default();
 		let delays: Vec<u64> = instance

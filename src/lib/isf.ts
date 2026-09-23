@@ -70,3 +70,41 @@ export function fromHex(hex: string, alpha = 1): number[] {
 	const n = parseInt(hex.slice(1), 16);
 	return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, alpha].map((x) => Math.round(x * 1000) / 1000);
 }
+
+// Presets: named sets of settings a background offers, switched from the
+// Preset menu or the Background preset action. A header lists them as
+// PRESETS: [{ NAME, VALUES: { input: value } }], or marks one "long" input
+// with PRESET: true, whose choices then are the presets.
+export type Preset = { name: string; values: Record<string, unknown> };
+
+function header(source: string, kind: "shader" | "web"): unknown {
+	const match = kind == "shader" ? /^\s*\/\*([\s\S]*?)\*\//.exec(source) : /<script[^>]*id=["']ectodeck-inputs["'][^>]*>([\s\S]*?)<\/script>/i.exec(source);
+	if (!match) return null;
+	try {
+		return JSON.parse(match[1]);
+	} catch {
+		return null;
+	}
+}
+
+export function presetsOf(source: string, kind: "shader" | "web"): Preset[] {
+	const h = header(source, kind) as { PRESETS?: { NAME?: string; VALUES?: Record<string, unknown> }[]; INPUTS?: (IsfInput & { PRESET?: boolean })[] } | null;
+	if (!h) return [];
+	if (Array.isArray(h.PRESETS)) {
+		return h.PRESETS.filter((p) => typeof p?.NAME == "string" && p.VALUES && typeof p.VALUES == "object").map((p) => ({ name: p.NAME!, values: p.VALUES! }));
+	}
+	const input = h.INPUTS?.find((i) => i?.PRESET && i.TYPE == "long");
+	if (!input) return [];
+	return (input.VALUES ?? []).map((v, i) => ({ name: input.LABELS?.[i] ?? String(v), values: { [input.NAME]: v } }));
+}
+
+// Which preset the settings match, if any; values not set count as their defaults.
+export function currentPreset(presets: Preset[], params: Record<string, unknown>, inputs: IsfInput[]): number {
+	const valueOf = (name: string) => {
+		if (name in params) return params[name];
+		const input = inputs.find((i) => i.NAME == name);
+		return input ? defaultValue(input) : undefined;
+	};
+	const same = (a: unknown, b: unknown) => JSON.stringify(a) == JSON.stringify(b) || (typeof a == "number" && typeof b == "number" && Math.abs(a - b) < 1e-6) || (Array.isArray(a) && Array.isArray(b) && a.length >= 3 && a.slice(0, 3).every((x, i) => Math.abs(Number(x) - Number(b[i])) < 1e-3));
+	return presets.findIndex((p) => Object.entries(p.values).every(([k, v]) => same(valueOf(k), v)));
+}

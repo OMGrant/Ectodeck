@@ -44,13 +44,18 @@ pub fn wanted_by_shader(code: &str) -> bool {
 }
 
 pub fn wanted_by_page(url: &str) -> bool {
-    // a page kept on this computer, given as a path or a file:// address
+    page_mentions(url, "ectodeck:audio")
+}
+
+/// Does a page kept on this computer (a path or a file:// address) mention
+/// this text, such as an event it listens for?
+pub fn page_mentions(url: &str, text: &str) -> bool {
     let local = url.strip_prefix("file://").unwrap_or(url);
     if !local.starts_with('/') {
         return false;
     }
     let path = local.split(['#', '?']).next().unwrap_or(local);
-    std::fs::read_to_string(path).map(|page| page.contains("ectodeck:audio")).unwrap_or(false)
+    std::fs::read_to_string(path).map(|page| page.contains(text)).unwrap_or(false)
 }
 
 pub struct AudioTap {

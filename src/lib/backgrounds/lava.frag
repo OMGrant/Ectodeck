@@ -1,21 +1,134 @@
 /*{
-  "DESCRIPTION": "Lava Lamp: warm wax rising, merging and splitting in a glowing glass. A key press releases a hot blob that climbs from the key. The Background preset action turns its colours round the colour wheel.",
+  "DESCRIPTION": "Lava Lamp: warm wax rising, merging and splitting in a glowing glass. A key press releases a hot blob that climbs from the key. Switch presets in Adjust, or with the Background preset action.",
   "INPUTS": [
-    { "NAME": "wax", "TYPE": "color", "LABEL": "Wax", "DEFAULT": [1.0, 0.36, 0.12, 1] },
-    { "NAME": "glass", "TYPE": "color", "LABEL": "Liquid", "DEFAULT": [0.35, 0.05, 0.3, 1] },
-    { "NAME": "speed", "TYPE": "float", "LABEL": "Speed", "DEFAULT": 1.0, "MIN": 0.2, "MAX": 3.0 },
-    { "NAME": "amount", "TYPE": "float", "LABEL": "Wax", "DEFAULT": 1.0, "MIN": 0.5, "MAX": 1.6 }
+    {
+      "NAME": "wax",
+      "TYPE": "color",
+      "LABEL": "Wax",
+      "DEFAULT": [
+        1.0,
+        0.36,
+        0.12,
+        1
+      ]
+    },
+    {
+      "NAME": "glass",
+      "TYPE": "color",
+      "LABEL": "Liquid",
+      "DEFAULT": [
+        0.35,
+        0.05,
+        0.3,
+        1
+      ]
+    },
+    {
+      "NAME": "speed",
+      "TYPE": "float",
+      "LABEL": "Speed",
+      "DEFAULT": 1.0,
+      "MIN": 0.2,
+      "MAX": 3.0
+    },
+    {
+      "NAME": "amount",
+      "TYPE": "float",
+      "LABEL": "Wax",
+      "DEFAULT": 1.0,
+      "MIN": 0.5,
+      "MAX": 1.6
+    }
+  ],
+  "PRESETS": [
+    {
+      "NAME": "Classic",
+      "VALUES": {
+        "wax": [
+          1.0,
+          0.36,
+          0.12,
+          1
+        ],
+        "glass": [
+          0.35,
+          0.05,
+          0.3,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Blue",
+      "VALUES": {
+        "wax": [
+          0.2,
+          0.6,
+          1.0,
+          1
+        ],
+        "glass": [
+          0.05,
+          0.08,
+          0.3,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Green",
+      "VALUES": {
+        "wax": [
+          0.5,
+          1.0,
+          0.25,
+          1
+        ],
+        "glass": [
+          0.25,
+          0.2,
+          0.05,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Pink",
+      "VALUES": {
+        "wax": [
+          1.0,
+          0.4,
+          0.7,
+          1
+        ],
+        "glass": [
+          0.12,
+          0.05,
+          0.35,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Gold",
+      "VALUES": {
+        "wax": [
+          1.0,
+          0.78,
+          0.2,
+          1
+        ],
+        "glass": [
+          0.3,
+          0.08,
+          0.08,
+          1
+        ]
+      }
+    }
   ]
 }*/
 
-// the Background preset action turns the colours a quarter of the way round
-// the colour wheel per step, keeping their brightness
-vec3 lookTurn(vec3 c) {
-    float a = iLook * 1.5707963;
-    const vec3 k = vec3(0.57735);
-    float cosA = cos(a);
-    return c * cosA + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cosA);
-}
 
 
 float hash(float n) { return fract(sin(n) * 43758.5453); }
@@ -80,5 +193,5 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     }
     // the glow the wax casts into the liquid
     col += wax.rgb * 0.18 * smoothstep(0.5, 1.0, f) * (1.0 - edge);
-    fragColor = vec4(max(lookTurn(col), 0.0), 1.0);
+    fragColor = vec4(col, 1.0);
 }

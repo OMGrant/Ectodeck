@@ -104,10 +104,6 @@ fn encode(s: &str) -> String {
 pub enum Input {
     /// A key pressed or released; centre in panel pixels, top-left origin.
     Key { index: u8, down: bool, x: f32, y: f32 },
-    /// The "Background preset" action: steps to the next preset (positive) or
-    /// the previous one. Dials reach a background only through this action,
-    /// never by themselves.
-    Look { steps: i16 },
 }
 
 /// The deck's controls as the shader thread reads them.
@@ -115,7 +111,6 @@ pub enum Input {
 struct Interaction {
     mouse: [f32; 4],
     pressed_at: Vec<(f32, f32, Instant, f32)>,
-    look: f32,
 }
 
 impl Interaction {
@@ -123,7 +118,6 @@ impl Interaction {
         crate::shader::Interaction {
             mouse: self.mouse,
             presses: self.pressed_at.iter().map(|&(x, y, at, key)| (x, y, at.elapsed().as_secs_f32(), key)).collect(),
-            look: self.look,
             ..Default::default()
         }
     }
@@ -164,18 +158,19 @@ impl Animation {
                     // Chrome can exit under us (a crash, an update replacing
                     // its files); start it again, backing off if it keeps
                     // failing
-                    Source::Web { url, params } => {
+                    Source::Web { url, .. } => {
                         // a page that dances to music gets the sound as events,
                         // sent from a thread of their own while the page runs
                         if crate::audio::wanted_by_page(&url) {
                             let (s2, p2, c2) = (s.clone(), p.clone(), c.clone());
                             let _ = std::thread::Builder::new().name("audio-events".into()).spawn(move || feed_page_audio(&s2, &p2, &c2));
                         }
-                        let url = web_address(&url, &params);
                         let mut delay = Duration::from_secs(2);
                         while !s.load(Ordering::SeqCst) {
                             let started = Instant::now();
-                            if let Err(e) = run_web(&url, &l, &s, &p, &c, &rate) {
+                            // with the settings as they are now, if Chrome has to start again
+                            let now = web_address(&url, &pr.lock().map(|p| p.clone()).unwrap_or_default());
+                            if let Err(e) = run_web(&now, &l, &s, &p, &c, &rate) {
                                 log::error!("Web background stopped: {e}");
                             }
                             if let Ok(mut chrome) = c.lock() {
@@ -219,7 +214,19 @@ impl Animation {
         if let Source::Web { url, params } = source {
             if let Ok(mut chrome) = self.chrome.lock() {
                 if let Some(c) = chrome.as_mut() {
-                    let _ = c.send("Page.navigate", serde_json::json!({ "url": web_address(url, params) }), true);
+                    // A page that listens for ectodeck:params takes new settings in
+                    // place, so a scene keeps running; any other page reloads with
+                    // them in its address.
+                    if crate::audio::page_mentions(url, "ectodeck:params") {
+                        let script = format!(
+                            "history.replaceState(null, '', {}); window.dispatchEvent(new CustomEvent('ectodeck:params', {{ detail: {} }}))",
+                            serde_json::Value::String(web_address(url, params)),
+                            serde_json::Value::Object(params.clone())
+                        );
+                        let _ = c.send("Runtime.evaluate", serde_json::json!({ "expression": script }), true);
+                    } else {
+                        let _ = c.send("Page.navigate", serde_json::json!({ "url": web_address(url, params) }), true);
+                    }
                 }
             }
         }
@@ -241,7 +248,6 @@ impl Animation {
                         ia.mouse[3] = -ia.mouse[3].abs();
                     }
                 }
-                Input::Look { steps } => ia.look += steps as f32,
             }
         }
         if let Ok(mut chrome) = self.chrome.lock() {
@@ -396,9 +402,6 @@ impl ChromeHandle {
                     x / PANEL_WIDTH as f32,
                     y / PANEL_HEIGHT as f32
                 )
-            }
-            Input::Look { steps } => {
-                format!("window.dispatchEvent(new CustomEvent('ectodeck:look', {{ detail: {{ steps: {steps} }} }}))")
             }
         };
         self.send("Runtime.evaluate", serde_json::json!({ "expression": script }), true)?;

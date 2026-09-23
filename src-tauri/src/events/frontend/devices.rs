@@ -4,6 +4,16 @@ use super::Error;
 use crate::shared::DEVICES;
 use crate::store::profiles::{AnimatedBackground, KeyStyle, acquire_locks_mut};
 
+/// The Background preset action: tell the interface, which knows each
+/// background's presets, to switch the device's background by some steps.
+/// The switch is an ordinary settings change, so it is saved and shown.
+pub fn step_background_preset(device: &str, steps: i16) {
+	use tauri::{Emitter, Manager};
+	if let Some(window) = crate::APP_HANDLE.get().and_then(|app| app.get_webview_window("main")) {
+		let _ = window.emit("background_preset", serde_json::json!({ "device": device, "steps": steps }));
+	}
+}
+
 /// The image currently filling the display behind a device's keys, if any.
 #[command]
 pub async fn get_device_background(device: String) -> Result<Option<String>, Error> {

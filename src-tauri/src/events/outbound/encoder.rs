@@ -34,6 +34,10 @@ pub async fn dial_rotate(device: &str, index: u8, ticks: i16) -> Result<(), anyh
 		index: 0,
 	};
 	let Some(instance) = get_instance_mut(&context, &mut locks).await? else { return Ok(()) };
+	if instance.action.uuid == crate::shared::BACKGROUND_PRESET {
+		crate::events::frontend::devices::step_background_preset(device, ticks);
+		return Ok(());
+	}
 
 	send_to_plugin(
 		&instance.action.plugin,
@@ -82,6 +86,12 @@ pub async fn dial_press(device: &str, event: &'static str, index: u8) -> Result<
 	};
 	let Some(instance) = get_instance_mut(&context, &mut locks).await? else { return Ok(()) };
 	let _ = crate::frontend::instances::key_moved(crate::APP_HANDLE.get().unwrap(), context.into(), event == "dialDown").await;
+	if instance.action.uuid == crate::shared::BACKGROUND_PRESET {
+		if event == "dialDown" {
+			crate::events::frontend::devices::step_background_preset(device, 1);
+		}
+		return Ok(());
+	}
 
 	send_to_plugin(
 		&instance.action.plugin,

@@ -5,17 +5,17 @@
 <title>Sky</title>
 <!--
   Ectodeck's built-in Sky: drifting clouds under a low sun, from Vanta (MIT,
-  Teng Bao) on three.js (MIT). A key press breaks the clouds at that key and lets sunbeams through; the
-  Background preset action moves the sun from morning through sunset to night.
+  Teng Bao) on three.js (MIT). A key press breaks the clouds at that key and lets sunbeams through; its
+  presets are the time of day, from morning through sunset to night.
 
   Built by scripts/build_backgrounds.py, which inlines the libraries from
   third_party; edit this source, not the built page.
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "Soft clouds drifting past a low sun. Press a key and the clouds break open there, letting sunbeams through; the Background preset action moves the sun from morning to sunset to night. From Vanta (MIT) on three.js (MIT).",
+  "DESCRIPTION": "Soft clouds drifting past a low sun. Press a key and the clouds break open there, letting sunbeams through; its presets are the time of day, from morning to sunset to night. From Vanta (MIT) on three.js (MIT).",
   "INPUTS": [
-    { "NAME": "time", "TYPE": "long", "LABEL": "Time of day", "DEFAULT": 1, "VALUES": [0, 1, 2, 3], "LABELS": ["Morning", "Afternoon", "Sunset", "Night"] },
+    { "NAME": "time", "TYPE": "long", "LABEL": "Time of day", "DEFAULT": 1, "VALUES": [0, 1, 2, 3], "LABELS": ["Morning", "Afternoon", "Sunset", "Night"], "PRESET": true },
     { "NAME": "speed", "TYPE": "float", "LABEL": "Wind", "DEFAULT": 0.8, "MIN": 0.2, "MAX": 3 }
   ]
 }
@@ -56,9 +56,15 @@
   window.addEventListener('ectodeck:press', function (e) {
     if (e.detail.down) breaks.push({ x: e.detail.x * innerWidth, y: e.detail.y * innerHeight, born: performance.now(), seed: Math.random() * 10 });
   });
-  window.addEventListener('ectodeck:look', function (e) {
-    time = ((time + e.detail.steps) % 4 + 4) % 4;
-    effect.setOptions(TIMES[time]);
+  // a new time of day or wind arrives in place, so the clouds keep drifting; any other
+  // setting starts the page again with the new address, already in place
+  var startQuery = location.search;
+  window.addEventListener('ectodeck:params', function (e) {
+    var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
+    var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
+    for (var i = 0; i < keys.length; i++) if (['time', 'speed'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
+    if (p.time !== undefined) { time = Math.round(p.time) % 4; effect.setOptions(TIMES[time]); }
+    if (p.speed !== undefined) { base = Number(p.speed); effect.setOptions({ speed: base }); }
   });
   var hexRgb = function (h) { return [(h >> 16) & 255, (h >> 8) & 255, h & 255]; };
   (function draw(now) {

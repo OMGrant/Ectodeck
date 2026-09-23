@@ -224,7 +224,6 @@ pub async fn input(id: &str, input: crate::animation::Input) {
                 let half = lay.key_px() as f32 / 2.0;
                 crate::animation::Input::Key { index, down, x: x as f32 + half, y: y as f32 + half }
             }
-            other => other,
         };
         animation.input(input);
     }

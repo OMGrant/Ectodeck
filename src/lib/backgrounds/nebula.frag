@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other, as a fluid. A key press stirs a broad puff of turbulence into the smoke around the key. The Background preset action turns its colours round the colour wheel.",
+  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other, as a fluid. A key press stirs a broad puff of turbulence into the smoke around the key. Switch presets in Adjust, or with the Background preset action.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -233,17 +233,103 @@
       "FLOAT": true
     },
     {}
+  ],
+  "PRESETS": [
+    {
+      "NAME": "Orchid",
+      "VALUES": {
+        "colour1": [
+          0.22,
+          0.05,
+          0.38,
+          1
+        ],
+        "colour2": [
+          0.8,
+          0.18,
+          0.56,
+          1
+        ],
+        "colour3": [
+          0.4,
+          0.62,
+          1.0,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Deep sea",
+      "VALUES": {
+        "colour1": [
+          0.02,
+          0.1,
+          0.25,
+          1
+        ],
+        "colour2": [
+          0.1,
+          0.5,
+          0.7,
+          1
+        ],
+        "colour3": [
+          0.5,
+          0.95,
+          0.85,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Supernova",
+      "VALUES": {
+        "colour1": [
+          0.3,
+          0.05,
+          0.02,
+          1
+        ],
+        "colour2": [
+          1.0,
+          0.45,
+          0.1,
+          1
+        ],
+        "colour3": [
+          1.0,
+          0.9,
+          0.5,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Emerald",
+      "VALUES": {
+        "colour1": [
+          0.02,
+          0.18,
+          0.1,
+          1
+        ],
+        "colour2": [
+          0.2,
+          0.75,
+          0.4,
+          1
+        ],
+        "colour3": [
+          0.8,
+          1.0,
+          0.5,
+          1
+        ]
+      }
+    }
   ]
 }*/
 
-// the Background preset action turns the colours a quarter of the way round
-// the colour wheel per step, keeping their brightness
-vec3 lookTurn(vec3 c) {
-    float a = iLook * 1.5707963;
-    const vec3 k = vec3(0.57735);
-    float cosA = cos(a);
-    return c * cosA + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cosA);
-}
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -357,6 +443,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         vec3 carried = at(smoke, uv - at(flow, uv).xy * SIM / RENDERSIZE).rgb;
         fragColor = vec4(mix(carried, base, 0.008), 1.0);
     } else {
-        fragColor = vec4(max(lookTurn(at(smoke, uv).rgb), 0.0), 1.0);
+        fragColor = vec4(at(smoke, uv).rgb, 1.0);
     }
 }

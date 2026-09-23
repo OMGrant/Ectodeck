@@ -17,6 +17,7 @@
       "NAME": "mode",
       "TYPE": "long",
       "LABEL": "Preset",
+      "PRESET": true,
       "DEFAULT": 0,
       "VALUES": [
         0,
@@ -742,14 +743,6 @@
     var f = 1 / Math.tan(0.42), asp = canvas.clientWidth / canvas.clientHeight;
     return [plan.offset[0] * f / asp / 4.2, plan.offset[1] * f / 4.2];
   }
-  // the Background preset action moves to the next preset; the look is read
-  // once when the page starts, so the page starts again with the new one
-  window.addEventListener('ectodeck:look', function (e) {
-    var q = new URLSearchParams(location.search), n = 7;
-    var mode = q.has('mode') ? Math.round(parseFloat(q.get('mode'))) : 0;
-    q.set('mode', String(((mode + e.detail.steps) % n + n) % n));
-    location.replace(location.pathname + '?' + q.toString() + location.hash);
-  });
   window.addEventListener('ectodeck:press', function (e) {
     if (!ECTODECK.react || !e.detail.down) return;
     var x = e.detail.x * 2 - 1, y = 1 - e.detail.y * 2;

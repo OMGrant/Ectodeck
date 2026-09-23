@@ -1,11 +1,147 @@
 /*{
-  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down to the horizon above the key; where it lands, the horizon flashes and a pulse of light races down the grid. The Background preset action moves through four colour schemes.",
+  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down to the horizon above the key; where it lands, the horizon flashes and a pulse of light races down the grid. Switch presets in Adjust, or with the Background preset action.",
   "INPUTS": [
-    { "NAME": "sky", "TYPE": "color", "LABEL": "Sky", "DEFAULT": [0.42, 0.1, 0.55, 1] },
-    { "NAME": "sun", "TYPE": "color", "LABEL": "Sun", "DEFAULT": [1.0, 0.82, 0.25, 1] },
-    { "NAME": "grid", "TYPE": "color", "LABEL": "Grid", "DEFAULT": [1.0, 0.2, 0.75, 1] },
-    { "NAME": "speed", "TYPE": "float", "LABEL": "Speed", "DEFAULT": 1.0, "MIN": 0.0, "MAX": 3.0 },
-    { "NAME": "stars", "TYPE": "bool", "LABEL": "Stars", "DEFAULT": true }
+    {
+      "NAME": "sky",
+      "TYPE": "color",
+      "LABEL": "Sky",
+      "DEFAULT": [
+        0.42,
+        0.1,
+        0.55,
+        1
+      ]
+    },
+    {
+      "NAME": "sun",
+      "TYPE": "color",
+      "LABEL": "Sun",
+      "DEFAULT": [
+        1.0,
+        0.82,
+        0.25,
+        1
+      ]
+    },
+    {
+      "NAME": "grid",
+      "TYPE": "color",
+      "LABEL": "Grid",
+      "DEFAULT": [
+        1.0,
+        0.2,
+        0.75,
+        1
+      ]
+    },
+    {
+      "NAME": "speed",
+      "TYPE": "float",
+      "LABEL": "Speed",
+      "DEFAULT": 1.0,
+      "MIN": 0.0,
+      "MAX": 3.0
+    },
+    {
+      "NAME": "stars",
+      "TYPE": "bool",
+      "LABEL": "Stars",
+      "DEFAULT": true
+    }
+  ],
+  "PRESETS": [
+    {
+      "NAME": "Sunset",
+      "VALUES": {
+        "sky": [
+          0.42,
+          0.1,
+          0.55,
+          1
+        ],
+        "sun": [
+          1.0,
+          0.82,
+          0.25,
+          1
+        ],
+        "grid": [
+          1.0,
+          0.2,
+          0.75,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Ocean",
+      "VALUES": {
+        "sky": [
+          0.05,
+          0.22,
+          0.5,
+          1
+        ],
+        "sun": [
+          0.5,
+          1.0,
+          0.95,
+          1
+        ],
+        "grid": [
+          0.2,
+          0.7,
+          1.0,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Jungle",
+      "VALUES": {
+        "sky": [
+          0.05,
+          0.3,
+          0.2,
+          1
+        ],
+        "sun": [
+          0.85,
+          1.0,
+          0.35,
+          1
+        ],
+        "grid": [
+          0.3,
+          1.0,
+          0.5,
+          1
+        ]
+      }
+    },
+    {
+      "NAME": "Blood moon",
+      "VALUES": {
+        "sky": [
+          0.35,
+          0.02,
+          0.06,
+          1
+        ],
+        "sun": [
+          1.0,
+          0.35,
+          0.15,
+          1
+        ],
+        "grid": [
+          1.0,
+          0.15,
+          0.1,
+          1
+        ]
+      }
+    }
   ]
 }*/
 
@@ -23,17 +159,8 @@ float ridge(float x) {
     return h * (0.35 + 0.65 * smoothstep(0.05, 0.42, abs(x - 0.5)));
 }
 
-// the Background preset action moves through colour schemes: the one you set,
-// then ocean, jungle and blood moon
-vec3 scheme(vec3 mine, vec3 ocean, vec3 jungle, vec3 blood) {
-    int n = int(mod(floor(iLook + 0.5), 4.0));
-    return n == 0 ? mine : n == 1 ? ocean : n == 2 ? jungle : blood;
-}
-
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec3 skyC = scheme(sky.rgb, vec3(0.05, 0.22, 0.5), vec3(0.05, 0.3, 0.2), vec3(0.35, 0.02, 0.06));
-    vec3 sunC = scheme(sun.rgb, vec3(0.5, 1.0, 0.95), vec3(0.85, 1.0, 0.35), vec3(1.0, 0.35, 0.15));
-    vec3 gridC = scheme(grid.rgb, vec3(0.2, 0.7, 1.0), vec3(0.3, 1.0, 0.5), vec3(1.0, 0.15, 0.1));
+    vec3 skyC = sky.rgb, sunC = sun.rgb, gridC = grid.rgb;
     vec2 uv = fragCoord / iResolution.xy;
     float aspect = iResolution.x / iResolution.y;
     float ride = iTime * speed;

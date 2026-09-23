@@ -18,6 +18,8 @@
 	let plugins: any[] = [];
 	// the selected deck: a deck driver's own actions show only for its decks
 	export let deviceId: string | undefined = undefined;
+	// Background preset belongs to decks with a display behind their keys
+	export let hasBackground = false;
 	$: foreign = new Set(plugins.filter((p) => p.device_namespace && !(deviceId ?? "").startsWith(p.device_namespace)).map((p) => p.id));
 	export async function reload() {
 		categories = await invoke("get_categories");
@@ -39,7 +41,7 @@
 				if (!categoryName.toLowerCase().includes(lowerCaseQuery)) {
 					actions = actions.filter((action) => action.name.toLowerCase().includes(lowerCaseQuery));
 				}
-				actions = actions.filter((action) => !foreign.has(action.plugin));
+				actions = actions.filter((action) => !foreign.has(action.plugin) && (hasBackground || action.uuid != "opendeck.backgroundpreset"));
 				return [categoryName, { icon, actions }];
 			})
 			.filter(([name, { actions }]) => actions.length > 0 && (!only || name == only));

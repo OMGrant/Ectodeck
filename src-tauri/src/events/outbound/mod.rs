@@ -55,6 +55,11 @@ impl GenericInstancePayload {
 }
 
 async fn send_to_plugin(plugin: &str, data: &impl Serialize) -> Result<(), anyhow::Error> {
+	// the app's own built-in actions have no plugin to hear them; queuing their
+	// events would keep them forever
+	if plugin == "opendeck" {
+		return Ok(());
+	}
 	let message = tokio_tungstenite::tungstenite::Message::Text(serde_json::to_string(data)?.into());
 	let mut sockets = super::PLUGIN_SOCKETS.lock().await;
 

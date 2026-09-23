@@ -4,7 +4,9 @@
 	import type { AnimatedBackground, DeviceInfo, KeyStyle } from "$lib/DeviceInfo";
 	import ChoiceMenu, { type ChoiceSection } from "./ChoiceMenu.svelte";
 	import ParameterControls from "./ParameterControls.svelte";
-	import { type IsfInput, pageInputs, shaderInputs } from "$lib/isf";
+	import { currentPreset, type IsfInput, pageInputs, type Preset, presetsOf, shaderInputs } from "$lib/isf";
+	import { listen } from "@tauri-apps/api/event";
+	import { onDestroy } from "svelte";
 	import { getWebserverUrl } from "$lib/ports";
 	import { devicePreviews } from "$lib/deviceLook";
 	import Sparkle from "phosphor-svelte/lib/Sparkle";
@@ -71,22 +73,60 @@
 
 	// The current animation's adjustable parameters, from its ISF inputs.
 	let inputs: IsfInput[] = [];
-	async function readInputs(a: AnimatedBackground | null) {
-		if (!a) return [];
-		if (a.kind == "shader") return shaderInputs(a.source);
+	let presets: Preset[] = [];
+	// the background's own source, where its settings and presets are declared
+	async function readSource(a: AnimatedBackground | null): Promise<string> {
+		if (!a) return "";
+		if (a.kind == "shader") return a.source;
 		const builtin = builtinPages.find((p) => p.name == a.name);
-		if (builtin) return pageInputs(await builtin.load());
+		if (builtin) return await builtin.load();
 		// a page kept on disk can be read back through the local file server
 		if (a.url.startsWith("/")) {
 			try {
-				return pageInputs(await (await fetch(getWebserverUrl(a.url.slice(1)))).text());
+				return await (await fetch(getWebserverUrl(a.url.slice(1)))).text();
 			} catch {
-				return [];
+				return "";
 			}
 		}
-		return [];
+		return "";
 	}
-	$: readInputs(animated).then((i) => (inputs = i));
+	let readFor = "";
+	$: {
+		const a = animated;
+		const key = a ? a.name + ":" + (a.kind == "shader" ? a.source.length : a.url) : "";
+		if (key != readFor) {
+			readFor = key;
+			readSource(a).then((text) => {
+				if (!a) {
+					inputs = [];
+					presets = [];
+					return;
+				}
+				inputs = a.kind == "shader" ? shaderInputs(text) : pageInputs(text);
+				presets = presetsOf(text, a.kind);
+			});
+		}
+	}
+
+	// Presets: the menu, and the Background preset action from a key or dial.
+	$: presetIndex = animated && presets.length ? currentPreset(presets, animated.params ?? {}, inputs) : -1;
+	$: presetSections = [{ items: presets.map((p, i) => ({ id: String(i), label: p.name, selected: i == presetIndex })) }] as ChoiceSection[];
+	function applyPreset(index: number) {
+		if (!animated || !presets[index]) return;
+		const next = { ...animated, params: { ...(animated.params ?? {}), ...presets[index].values } } as AnimatedBackground;
+		setAnimated(next);
+	}
+	function stepPreset(steps: number) {
+		if (!presets.length || !steps) return;
+		const n = presets.length;
+		// from settings that match no preset, the first step lands on the first or last
+		const from = presetIndex == -1 ? (steps > 0 ? -1 : 0) : presetIndex;
+		applyPreset((((from + steps) % n) + n) % n);
+	}
+	const unlistenPreset = listen<{ device: string; steps: number }>("background_preset", ({ payload }) => {
+		if (payload.device == device.id) stepPreset(payload.steps);
+	});
+	onDestroy(() => unlistenPreset.then((f) => f()));
 
 	// Parameter changes go out after a short pause: at once for a shader, which
 	// updates live, and after a longer one for a page, which reloads.
@@ -345,8 +385,16 @@
 				<ParameterControls {inputs} values={animated.params ?? {}} on:change={(e) => changeParams(e.detail)} />
 			</div>
 		{/if}
-		{#if animated || background}
+		{#if animated && presets.length}
 			<div class="insp-row mt-2">
+				<span class="lb">{$t("device_view.preset")}</span>
+				<div class="flex-1 min-w-0">
+					<ChoiceMenu variant="field" label={$t("device_view.preset")} current={presetIndex == -1 ? $t("device_view.preset.custom") : presets[presetIndex].name} sections={presetSections} on:choose={(e) => applyPreset(Number(e.detail))} />
+				</div>
+			</div>
+		{/if}
+		{#if animated || background}
+			<div class="insp-row" class:mt-2={!(animated && presets.length)}>
 				<label class="lb" for="bg-brightness">{$t("device_view.bg_brightness")}</label>
 				<input
 					id="bg-brightness"

@@ -288,5 +288,7 @@
 	"device_view.fps": "Frame rate",
 	"device_view.fps.hint": "Frames a second on the deck. Higher is smoother and uses more of the computer's power.",
 	"device_view.bg_brightness": "Brightness",
-	"inspector.no_settings": "This action has no settings."
+	"inspector.no_settings": "This action has no settings.",
+	"device_view.preset": "Preset",
+	"device_view.preset.custom": "Your own settings"
 }

@@ -6,8 +6,8 @@
 <!--
   Ectodeck's built-in Ink: Pavel Dobryakov's WebGL fluid simulation (MIT),
   with bloom and sun rays. A key press throws a burst of ink from that key;
-  slow splashes keep it moving when nobody is pressing. The Background
-  preset action moves to the next set of colours.
+  slow splashes keep it moving when nobody is pressing. Its presets are
+  the sets of colours.
 
   Built by scripts/build_backgrounds.py, which inlines the simulation from
   third_party/webgl-fluid; edit this source, not the built page.
@@ -16,7 +16,7 @@
 {
   "DESCRIPTION": "Glowing ink in water, from Pavel Dobryakov's WebGL fluid simulation (MIT). Each key press throws a burst of ink from that key; slow splashes keep it moving between presses.",
   "INPUTS": [
-    { "NAME": "palette", "TYPE": "long", "LABEL": "Colours", "DEFAULT": 0, "VALUES": [0, 1, 2, 3], "LABELS": ["Rainbow", "Ember", "Ocean", "Ectonomic"] },
+    { "NAME": "palette", "TYPE": "long", "LABEL": "Colours", "DEFAULT": 0, "VALUES": [0, 1, 2, 3], "LABELS": ["Rainbow", "Ember", "Ocean", "Ectonomic"], "PRESET": true },
     { "NAME": "fade", "TYPE": "float", "LABEL": "Fade", "DEFAULT": 1, "MIN": 0.2, "MAX": 3 },
     { "NAME": "swirl", "TYPE": "float", "LABEL": "Swirl", "DEFAULT": 30, "MIN": 0, "MAX": 60 },
     { "NAME": "drift", "TYPE": "bool", "LABEL": "Drift between presses", "DEFAULT": true },
@@ -68,11 +68,14 @@
     // the simulation measures from the bottom left
     if (e.detail.down) burst(e.detail.x, 1 - e.detail.y, 0.8);
   });
-  // the Background preset action moves to the next set of colours
-  var paletteIndex = Math.round(num('palette'));
-  window.addEventListener('ectodeck:look', function (e) {
-    paletteIndex = ((paletteIndex + e.detail.steps) % PALETTES.length + PALETTES.length) % PALETTES.length;
-    palette = PALETTES[paletteIndex];
+  // a new set of colours arrives in place, so the ink already on screen stays; any other
+  // setting starts the page again with the new address, already in place
+  var startQuery = location.search;
+  window.addEventListener('ectodeck:params', function (e) {
+    var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
+    var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
+    for (var i = 0; i < keys.length; i++) if (['palette'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
+    if (p.palette !== undefined) palette = PALETTES[Math.round(p.palette)] || null;
   });
 
   if (flag('drift')) {

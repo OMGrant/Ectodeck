@@ -6,14 +6,14 @@
 <!--
   Ectodeck's built-in Aquarium: a planted tank drawn with the 2D canvas.
   A key press sprinkles food at that key and the fish nearby come to eat;
-  two quick presses on one key tap the glass and scatter them. The
-  Background preset action steps through the time of day.
+  two quick presses on one key tap the glass and scatter them. Its presets
+  are the time of day, and new settings arrive without restarting the tank.
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "A planted tank with clownfish, a blue tang, angelfish and a school of neon tetras. Press a key to feed the fish there; press it twice quickly to tap the glass. The Background preset action steps through the time of day.",
+  "DESCRIPTION": "A planted tank with clownfish, a blue tang, angelfish and a school of neon tetras. Press a key to feed the fish there; press it twice quickly to tap the glass. Its presets are the time of day.",
   "INPUTS": [
-    { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 0, "VALUES": [0, 1, 2], "LABELS": ["Day", "Dusk", "Night"] },
+    { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 0, "VALUES": [0, 1, 2], "LABELS": ["Day", "Dusk", "Night"], "PRESET": true },
     { "NAME": "fish", "TYPE": "float", "LABEL": "Fish", "DEFAULT": 1, "MIN": 0.3, "MAX": 2 },
     { "NAME": "bubbles", "TYPE": "bool", "LABEL": "Bubbler", "DEFAULT": true }
   ]
@@ -142,8 +142,16 @@
     if (lastPress.key === d.key && now - lastPress.at < 380) { tap(x, y); lastPress.key = -1; }
     else { feed(x, y); lastPress = { key: d.key, at: now }; }
   });
-  // the Background preset action steps through the time of day
-  window.addEventListener('ectodeck:look', function (e) { light = ((light + e.detail.steps) % 3 + 3) % 3; });
+  // a new time of day or bubbler arrives in place, so the fish keep swimming; any other
+  // setting starts the page again with the new address, already in place
+  var startQuery = location.search;
+  window.addEventListener('ectodeck:params', function (e) {
+    var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
+    var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
+    for (var i = 0; i < keys.length; i++) if (['time', 'bubbles'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
+    if (p.time !== undefined) light = Math.round(p.time) % 3;
+    if (p.bubbles !== undefined) bubbler = !!p.bubbles && p.bubbles !== '0';
+  });
 
   // ---- movement
   function steer(f, dt, t) {

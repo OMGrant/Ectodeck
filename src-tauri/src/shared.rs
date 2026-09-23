@@ -479,6 +479,9 @@ pub struct Profile {
 	pub stale: bool,
 }
 
+/// The built-in action that switches an animated background's preset.
+pub const BACKGROUND_PRESET: &str = "opendeck.backgroundpreset";
+
 /// A map of category names to a list of actions in that category.
 pub static CATEGORIES: LazyLock<RwLock<HashMap<String, Category>>> = LazyLock::new(|| {
 	let mut hashmap = HashMap::new();
@@ -509,6 +512,19 @@ pub static CATEGORIES: LazyLock<RwLock<HashMap<String, Category>>> = LazyLock::n
 						"tooltip": "Cycle through multiple actions",
 						"controllers": [ "Keypad" ],
 						"states": [ { "image": "opendeck/toggle-action.svg" } ],
+						"supported_in_multi_actions": false
+					}
+				))
+				.unwrap(),
+				serde_json::from_value(serde_json::json!(
+					{
+						"name": "Background preset",
+						"icon": "opendeck/background-preset.svg",
+						"plugin": "opendeck",
+						"uuid": BACKGROUND_PRESET,
+						"tooltip": "Switches the animated background to its next preset, as listed in Adjust. On a key, each press moves to the next. On a dial, turn right to go forward and left to go back; pressing the dial moves to the next.",
+						"controllers": [ "Keypad", "Encoder" ],
+						"states": [ { "image": "opendeck/background-preset.svg" } ],
 						"supported_in_multi_actions": false
 					}
 				))

@@ -1,10 +1,10 @@
 //! Renders a background shader offline through the plugin's own renderer,
 //! so a new effect can be looked at exactly as the deck will draw it.
 //!
-//! cargo run --release --example render -- <shader> <out-dir> [times] [presses] [look]
+//! cargo run --release --example render -- <shader> <out-dir> [times] [presses] [params-json]
 //!   times:   seconds to capture, e.g. 1,3,6          (default 1,3,6)
 //!   presses: key@seconds, e.g. 7@2.0,12@4.5          (keys 0-14, row by row)
-//!   look:    the look step, as the "Background look" action sets it, e.g. 2
+//!   params:  settings to render with, as JSON, e.g. {"style":2}
 //!   music:   "music" plays a synthetic 120 bpm beat into iAudioBands and iAudioLevel
 #[path = "../src/shader.rs"]
 #[allow(dead_code)]
@@ -30,8 +30,9 @@ fn main() {
 		.filter(|s| !s.is_empty())
 		.map(|s| s.split(',').map(|p| { let (k, t) = p.split_once('@').unwrap(); (k.parse().unwrap(), t.parse().unwrap()) }).collect())
 		.unwrap_or_default();
-	let look: f32 = args.get(5).and_then(|s| s.split(',').next()?.parse().ok()).unwrap_or(0.0);
-	let (_, defaults) = shader::parse_inputs(&source);
+	let overrides: serde_json::Map<String, serde_json::Value> = args.get(5).filter(|s| !s.is_empty()).and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
+	let (_, mut defaults) = shader::parse_inputs(&source);
+	defaults.extend(overrides);
 	let mut renderer = ShaderRenderer::new(&source, 854, 480).expect("compile");
 	// step through time at the deck's 30 frames a second, so simulations and
 	// feedback buffers evolve as they would, saving the requested moments
@@ -47,7 +48,7 @@ fn main() {
 		recent.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
 		recent.truncate(8);
 		let mouse = recent.first().map(|p| [p.0, p.1, p.0, p.1]).unwrap_or([0.0; 4]);
-		let mut controls = Interaction { mouse, presses: recent, look, ..Default::default() };
+		let mut controls = Interaction { mouse, presses: recent, ..Default::default() };
 		if args.get(6).map(|a| a == "music").unwrap_or(false) {
 			let kick = (-((t * 2.0) % 1.0) * 9.0).exp();
 			let hat = (-((t * 8.0) % 1.0) * 14.0).exp() * 0.4;

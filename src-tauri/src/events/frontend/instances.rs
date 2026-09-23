@@ -11,6 +11,10 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 	if !action.controllers.contains(&context.controller) {
 		return Ok(None);
 	}
+	// Background preset belongs to decks with a display behind their keys
+	if action.uuid == crate::shared::BACKGROUND_PRESET && !crate::shared::DEVICES.get(&context.device).map(|d| d.has_background).unwrap_or(false) {
+		return Ok(None);
+	}
 	// an action from a deck's own driver plugin works on that plugin's decks only
 	if let Ok(manifest) = crate::plugins::manifest::read_manifest(&crate::shared::config_dir().join("plugins").join(&action.plugin)) {
 		if let Some(namespace) = manifest.device_namespace {

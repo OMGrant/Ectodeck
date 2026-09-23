@@ -1,10 +1,59 @@
 /*{
-  "DESCRIPTION": "Spectrum: glowing bars that dance to whatever your computer is playing, bass on the left and treble on the right, with the beat pulsing through the background. A key press flashes the bars under it. The Background preset action steps through the styles.",
+  "DESCRIPTION": "Spectrum: glowing bars that dance to whatever your computer is playing, bass on the left and treble on the right, with the beat pulsing through the background. A key press flashes the bars under it. Switch presets in Adjust, or with the Background preset action.",
   "INPUTS": [
-    { "NAME": "low", "TYPE": "color", "LABEL": "Bass", "DEFAULT": [1.0, 0.25, 0.55, 1] },
-    { "NAME": "high", "TYPE": "color", "LABEL": "Treble", "DEFAULT": [0.25, 0.8, 1.0, 1] },
-    { "NAME": "style", "TYPE": "long", "LABEL": "Style", "DEFAULT": 0, "VALUES": [0, 1, 2, 3, 4, 5], "LABELS": ["From the floor", "From the middle", "LED meter", "Mirror", "Ring", "Wave"] },
-    { "NAME": "gain", "TYPE": "float", "LABEL": "Height", "DEFAULT": 1.0, "MIN": 0.4, "MAX": 2.0 }
+    {
+      "NAME": "low",
+      "TYPE": "color",
+      "LABEL": "Bass",
+      "DEFAULT": [
+        1.0,
+        0.25,
+        0.55,
+        1
+      ]
+    },
+    {
+      "NAME": "high",
+      "TYPE": "color",
+      "LABEL": "Treble",
+      "DEFAULT": [
+        0.25,
+        0.8,
+        1.0,
+        1
+      ]
+    },
+    {
+      "NAME": "style",
+      "TYPE": "long",
+      "LABEL": "Style",
+      "DEFAULT": 0,
+      "VALUES": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "LABELS": [
+        "From the floor",
+        "From the middle",
+        "LED meter",
+        "Mirror",
+        "Ring",
+        "Wave"
+      ],
+      "PRESET": true
+    },
+    {
+      "NAME": "gain",
+      "TYPE": "float",
+      "LABEL": "Height",
+      "DEFAULT": 1.0,
+      "MIN": 0.4,
+      "MAX": 2.0
+    }
   ]
 }*/
 
@@ -26,8 +75,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
     float aspect = iResolution.x / iResolution.y;
     float beat = iAudioLevel;
-    // the Background preset action steps through the styles from the one chosen
-    int look = int(mod(float(style) + floor(iLook + 0.5), 6.0));
+    int look = style;
 
     // flash under a fresh press, by how close it is across the picture
     float flashAt = 0.0;

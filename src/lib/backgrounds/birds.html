@@ -7,14 +7,14 @@
   Ectodeck's built-in Birds: a murmuration of starlings over a treeline at
   dusk, drawn with the 2D canvas. A key press startles the birds at that
   key: they burst away from it, the shock runs through the flock as a wave,
-  and the whole flock veers from the key before gathering again. The
-  Background preset action moves the light from late afternoon to night.
+  and the whole flock veers from the key before gathering again. Its presets
+  are the time of day, from late afternoon to night.
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "A murmuration of starlings wheeling over a treeline at dusk. Press a key and the birds there burst away from it; the shock runs through the whole flock. The Background preset action moves the light from afternoon to night.",
+  "DESCRIPTION": "A murmuration of starlings wheeling over a treeline at dusk. Press a key and the birds there burst away from it; the shock runs through the whole flock. Its presets are the time of day, from afternoon to night.",
   "INPUTS": [
-    { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 1, "VALUES": [0, 1, 2], "LABELS": ["Afternoon", "Dusk", "Night"] },
+    { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 1, "VALUES": [0, 1, 2], "LABELS": ["Afternoon", "Dusk", "Night"], "PRESET": true },
     { "NAME": "birds", "TYPE": "float", "LABEL": "Birds", "DEFAULT": 1, "MIN": 0.3, "MAX": 2 }
   ]
 }
@@ -85,7 +85,15 @@
       if (d < 0.14) b.fear = 1;
     });
   });
-  window.addEventListener('ectodeck:look', function (e) { light = ((light + e.detail.steps) % 3 + 3) % 3; });
+  // a new time of day arrives in place, and the light eases to it; any other
+  // setting starts the page again with the new address, already in place
+  var startQuery = location.search;
+  window.addEventListener('ectodeck:params', function (e) {
+    var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
+    var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
+    for (var i = 0; i < keys.length; i++) if (['time'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
+    if (p.time !== undefined) light = Math.round(p.time) % 3;
+  });
 
   // a grid of cells, so each bird only looks at its neighbours
   var CELL = 0.05, grid = new Map();
