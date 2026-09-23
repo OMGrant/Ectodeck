@@ -5,7 +5,7 @@
 <title>Sky</title>
 <!--
   Ectodeck's built-in Sky: drifting clouds under a low sun, from Vanta (MIT,
-  Teng Bao) on three.js (MIT). A key press breaks the clouds at that key and lets sunbeams through; its
+  Teng Bao) on three.js (MIT). Its
   presets are the time of day, from morning through sunset to night.
 
   Built by scripts/build_backgrounds.py, which inlines the libraries from
@@ -13,7 +13,7 @@
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "Soft clouds drifting past a low sun. Press a key and the clouds break open there, letting sunbeams through; its presets are the time of day, from morning to sunset to night, or Automatic to follow your clock. From Vanta (MIT) on three.js (MIT).",
+  "DESCRIPTION": "Soft clouds drifting past a low sun. Its presets are the time of day, from morning to sunset to night, or Automatic to follow your clock. From Vanta (MIT) on three.js (MIT).",
   "INPUTS": [
     { "NAME": "time", "TYPE": "long", "LABEL": "Time of day", "DEFAULT": 1, "VALUES": [-1, 0, 1, 2, 3], "LABELS": ["Automatic", "Morning", "Afternoon", "Sunset", "Night"], "PRESET": true },
     { "NAME": "speed", "TYPE": "float", "LABEL": "Wind", "DEFAULT": 0.8, "MIN": 0.2, "MAX": 3 }
@@ -72,12 +72,6 @@
   TIMES.forEach(function (t) { t.backgroundColor = t.skyColor; });
   var effect = VANTA.CLOUDS(Object.assign({ el: '#sky', THREE: THREE, mouseControls: false, touchControls: false, gyroControls: false, speed: base }, TIMES[time]));
 
-  // a press breaks the clouds at the key: a soft bright opening that swells
-  // quickly, shafts of sunlight falling from it, then the cloud closes again
-  var breaks = [];
-  window.addEventListener('ectodeck:press', function (e) {
-    if (e.detail.down) breaks.push({ x: e.detail.x * innerWidth, y: e.detail.y * innerHeight, born: performance.now(), seed: Math.random() * 10 });
-  });
   // a new time of day or wind arrives in place, so the clouds keep drifting; any other
   // setting starts the page again with the new address, already in place
   var startQuery = location.search;
@@ -91,67 +85,6 @@
   setInterval(function () {
     if (timeSetting < 0 && clockTime() !== time) { time = clockTime(); effect.setOptions(TIMES[time]); }
   }, 60000);
-  // The light is drawn by the clouds' own WebGL renderer, straight after the
-  // clouds, screened over them. A second canvas stacked over the clouds made
-  // headless Chrome send whole frames of white now and then: the flicker.
-  var renderer = effect.renderer;
-  var slots = []; for (var i = 0; i < 8; i++) slots.push(new THREE.Vector4(0, 0, -1, 0));
-  var light = new THREE.ShaderMaterial({
-    uniforms: { u_breaks: { value: slots }, u_sun: { value: new THREE.Color() }, u_size: { value: new THREE.Vector2() }, u_ratio: { value: 1 }, u_time: { value: 0 } },
-    vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
-    fragmentShader: [
-      'uniform vec4 u_breaks[8];  // x and y in page pixels from the top left, age in seconds (below 0: none), seed',
-      'uniform vec3 u_sun; uniform vec2 u_size; uniform float u_ratio; uniform float u_time;',
-      'vec3 screen(vec3 a, vec3 b) { return 1.0 - (1.0 - a) * (1.0 - b); }',
-      'void main() {',
-      '  vec2 p = gl_FragCoord.xy / u_ratio; p.y = u_size.y - p.y;',
-      '  vec3 col = vec3(0.0);',
-      '  for (int k = 0; k < 8; k++) {',
-      '    vec4 b = u_breaks[k]; float age = b.z; if (age < 0.0) continue;',
-      '    float open = min(1.0, age / 0.35) * (1.0 - max(0.0, (age - 2.5) / 3.5));',
-      '    float r = 30.0 + 60.0 * min(1.0, age / 0.6);',
-      // the opening: warm white at the centre, through the sun's colour, to nothing
-      '    float t = length(p - b.xy) / (r * 1.6);',
-      '    float a = t < 0.2 ? mix(0.95, 0.7, t / 0.2) : t < 0.45 ? mix(0.7, 0.35, (t - 0.2) / 0.25) : mix(0.35, 0.0, clamp((t - 0.45) / 0.55, 0.0, 1.0));',
-      '    col = screen(col, mix(vec3(1.0, 0.988, 0.941), u_sun, smoothstep(0.0, 0.2, t)) * a * open);',
-      // shafts of light falling from it, slightly fanned, shimmering
-      '    for (int i = 0; i < 5; i++) {',
-      '      float fi = float(i), off = (fi - 2.0) * r * 0.32, spread = (fi - 2.0) * 0.12;',
-      '      float len = u_size.y - b.y + 40.0, w = r * (0.18 + 0.1 * sin(b.w + fi * 2.1));',
-      '      float v = (p.y - b.y) / len; if (v < 0.0 || v > 1.0) continue;',
-      '      float spreadHalf = mix(w * 0.5, w * 1.6, v), dx = abs(p.x - (b.x + off + spread * len * v));',
-      '      float sa = open * (0.22 + 0.12 * sin(u_time * 2.5 + b.w + fi));',
-      '      col = screen(col, u_sun * sa * (1.0 - v) * (1.0 - smoothstep(spreadHalf - 1.0, spreadHalf + 1.0, dx)));',
-      '    }',
-      '  }',
-      '  gl_FragColor = vec4(col, 1.0);',
-      '}'
-    ].join('\n'),
-    // screen blending onto the clouds: src * (1 - dst) + dst
-    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneMinusDstColorFactor, blendDst: THREE.OneFactor,
-    depthTest: false, depthWrite: false, transparent: true
-  });
-  var lightScene = new THREE.Scene(), lightCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  lightScene.add(new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), light));
-  var drawScene = renderer.render.bind(renderer);
-  renderer.render = function (scene, camera) {
-    drawScene(scene, camera);
-    var now = performance.now();
-    breaks = breaks.filter(function (b) { return now - b.born < 6000; }).slice(-8);
-    if (!breaks.length) return;
-    slots.forEach(function (slot, i) {
-      var b = breaks[i];
-      if (b) slot.set(b.x, b.y, (now - b.born) / 1000, b.seed); else slot.z = -1;
-    });
-    light.uniforms.u_sun.value.setHex(TIMES[time].sunColor);
-    light.uniforms.u_size.value.set(innerWidth, innerHeight);
-    light.uniforms.u_ratio.value = renderer.getPixelRatio();
-    light.uniforms.u_time.value = now / 1000;
-    var keep = renderer.autoClear;
-    renderer.autoClear = false;
-    drawScene(lightScene, lightCamera);
-    renderer.autoClear = keep;
-  };
 })();
 </script>
 </body>
