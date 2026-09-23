@@ -25,31 +25,40 @@
 
 	$: for (const id of Object.keys(devices)) ensureLook(id);
 
-	// The stage draws the deck to fit the room it has, and leaves the tray
-	// under it at least enough height for a row of actions.
-	// The tray's share can be dragged; double-clicking the divider hides the
-	// tray (and shows it again) so the deck can take the whole column.
+	// The stage draws the deck to fit the room it has. On its own it takes the
+	// height the deck needs and leaves the tray at least a row of actions.
+	// The divider between them is a split: dragging it sets the stage's height
+	// directly, so it follows the pointer from the first pixel, and the deck
+	// shrinks to fit only once that height gets tight. Dragging it to the
+	// bottom, or double-clicking it, hides the tray; doing it again shows it.
 	const TRAY_DEFAULT = 168;
-	let trayMin = TRAY_DEFAULT;
-	let lastTray = TRAY_DEFAULT;
+	const TRAY_SNAP = 60;
+	let stageEl: HTMLDivElement;
+	let stageH: number | null = null;
+	let trayHidden = false;
 	function dragDivider(event: PointerEvent) {
+		if (event.button != 0) return;
 		const startY = event.clientY;
-		const start = trayMin;
+		const start = trayHidden ? columnHeight - 5 : stageEl.getBoundingClientRect().height;
 		const target = event.currentTarget as HTMLElement;
 		target.setPointerCapture(event.pointerId);
-		const move = (e: PointerEvent) => (trayMin = Math.max(0, Math.min(columnHeight - 160, start - (e.clientY - startY))));
+		const move = (e: PointerEvent) => {
+			const h = Math.max(120, Math.min(columnHeight - 5, start + (e.clientY - startY)));
+			trayHidden = columnHeight - 5 - h < TRAY_SNAP;
+			stageH = trayHidden ? null : h;
+		};
 		const up = () => {
 			target.removeEventListener("pointermove", move);
 			target.removeEventListener("pointerup", up);
-			if (trayMin < 60) trayMin = 0;
-			if (trayMin) lastTray = trayMin;
 		};
 		target.addEventListener("pointermove", move);
 		target.addEventListener("pointerup", up);
 	}
 	function toggleTray() {
-		trayMin = trayMin ? 0 : lastTray || TRAY_DEFAULT;
+		trayHidden = !trayHidden;
 	}
+	// a window made smaller keeps the tray reachable
+	$: if (stageH != null && columnHeight && stageH > columnHeight - TRAY_SNAP - 5) stageH = Math.max(120, columnHeight - TRAY_SNAP - 5);
 	let columnWidth = 0;
 	let columnHeight = 0;
 	function measure(node: HTMLElement) {
@@ -69,7 +78,7 @@
 		};
 	}
 	$: stageWidth = columnWidth - 56;
-	$: stageHeight = columnHeight - trayMin - 38 - 5;
+	$: stageHeight = trayHidden ? columnHeight - 38 - 5 - 48 : stageH != null ? stageH - 38 : columnHeight - TRAY_DEFAULT - 38 - 5;
 
 	initPortBase();
 </script>
@@ -113,8 +122,10 @@
 			<div class="flex flex-col flex-1 min-w-0" use:measure inert={$place.name != "deck" || undefined}>
 				<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 				<div
-					class="flex flex-row justify-center shrink-0 px-7 pt-5 pb-[18px] bg-stage"
-					class:flex-1={trayMin == 0}
+					bind:this={stageEl}
+					class="flex flex-row justify-center items-center shrink-0 px-7 pt-5 pb-[18px] bg-stage"
+					class:flex-1={trayHidden}
+					style={!trayHidden && stageH != null ? `height: ${stageH}px;` : ""}
 					on:click={() => {
 						$inspectedInstance = null;
 						$inspectedParentAction = null;
@@ -126,21 +137,21 @@
 						{/if}
 					{/each}
 				</div>
-				{#if trayMin == 0}
+				{#if trayHidden}
 					<div class="flex justify-center shrink-0 pb-3 bg-stage">
 						<button class="btn quiet" on:click={toggleTray}>{$t("tray.show")}</button>
 					</div>
 				{/if}
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				<div
-					class="group relative shrink-0 h-[5px] -my-0.5 z-10 cursor-row-resize"
+					class="group relative shrink-0 h-[11px] -my-[3px] z-10 cursor-row-resize touch-none"
 					title={$t("tray.divider")}
 					on:pointerdown={dragDivider}
 					on:dblclick={toggleTray}
 				>
 					<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-1 rounded-full bg-neutral-700 group-hover:bg-neutral-500 transition-colors"></div>
 				</div>
-				<div class="flex flex-col min-h-0" class:flex-1={trayMin > 0} class:hidden={trayMin == 0}>
+				<div class="flex flex-col flex-1 min-h-0" class:hidden={trayHidden}>
 					<ActionList bind:this={$actionList} />
 				</div>
 			</div>
