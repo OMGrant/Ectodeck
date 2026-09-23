@@ -55,7 +55,7 @@
 			<MagnifyingGlass size="13" class="shrink-0 text-neutral-500" />
 			<input bind:value={query} class="w-full min-w-0 bg-transparent text-neutral-200 placeholder:text-neutral-500 outline-none" placeholder={$t("action_list.search_placeholder")} type="search" spellcheck="false" />
 		</label>
-		<div class="flex flex-row items-center gap-0.5 min-w-0 overflow-hidden">
+		<div class="chips flex flex-row items-center gap-0.5 min-w-0 overflow-x-auto">
 			<button class="chip" class:on={!only} on:click={() => (only = null)}>{$t("action_list.all")}</button>
 			{#each categoryNames as name}
 				<button class="chip" class:on={only == name} on:click={() => (only = only == name ? null : name)}>{name}</button>
@@ -74,7 +74,7 @@
 				<div class="flex flex-row flex-wrap gap-1">
 					{#each actions as action}
 						<div
-							class="flex flex-col items-center gap-1.5 w-[78px] px-1 pt-2 pb-[7px] rounded-lg text-center text-[11.5px] leading-tight text-neutral-300 hover:bg-neutral-750 cursor-grab active:cursor-grabbing outline-none focus:bg-neutral-750 focus:ring-1 focus:ring-blue-500 transition-colors"
+							class="flex flex-col items-center gap-1.5 w-[78px] px-1 pt-2 pb-[7px] rounded-lg text-center text-[11.5px] leading-tight text-neutral-300 hover:bg-neutral-750 cursor-grab active:cursor-grabbing outline-none focus-visible:bg-neutral-750 focus-visible:ring-1 focus-visible:ring-blue-500 transition-colors"
 							draggable="true"
 							title={$localisations?.[action.plugin]?.[action.uuid]?.Tooltip ?? action.tooltip}
 							role="option"

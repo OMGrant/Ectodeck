@@ -32,6 +32,7 @@
 
 	export let device: DeviceInfo;
 	export let profile: Profile;
+	export let deviceCount = 1;
 
 	// Plugin names, for the line under an action's name.
 	let pluginNames: { [id: string]: string } = {};
@@ -67,7 +68,12 @@
 
 	// The selected key's instance, and its settings tab or looks tab.
 	$: instance = selection.kind == "instance" ? (profile[selection.array][selection.position] as ActionInstance) : selection.kind == "parent" ? profile.keys[selection.position] : null;
-	$: hasScreen = !(selection.kind == "instance" && selection.context.controller == "Encoder" && device.encoder_placement == "right");
+	// Elgato's Pedal has no screens at all; of the decks with dials, only the
+	// Stream Deck + and + XL show pictures for them, on their touch strip.
+	$: elgato = device.id.startsWith("sd-");
+	$: pedal = elgato && device.type == 5;
+	$: dialScreens = elgato && (device.type == 7 || device.type == 13);
+	$: hasScreen = !pedal && !(selection.kind == "instance" && selection.context.controller == "Encoder" && !dialScreens);
 	$: if (!hasScreen && $inspectorTab == "appearance") $inspectorTab = "action";
 	// a new selection opens on what the action does (Edit then switches to its looks)
 	let lastSelection = "";
@@ -132,7 +138,7 @@
 			<div class="min-w-0">
 				<h3 class="truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] text-neutral-100">{device.name}</h3>
 				<div class="mt-0.5 text-xs text-neutral-400">
-					{$t("inspector.keys", { n: device.rows * device.columns })}{#if device.encoders} · {$t("inspector.dials", { n: device.encoders })}{/if}
+					{$t("inspector.keys", { n: device.rows * device.columns })}{#if device.encoders}{" · "}{$t("inspector.dials", { n: device.encoders })}{/if}
 				</div>
 			</div>
 		{:else if selection.kind == "empty"}
@@ -144,7 +150,9 @@
 		{:else if instance}
 			<div class="relative shrink-0 w-12 h-12">
 				<div class="absolute" style="left: -42px; top: -42px; width: 132px; height: 132px;">
-					<Key inslot={instance} context={null} active={false} size={144} scale={48 / 118} role="presentation" tabindex={-1} keyStyle={$deviceLooks[device.id]?.keyStyle ?? null} />
+					{#key JSON.stringify(instance.states[instance.current_state])}
+						<Key inslot={instance} context={null} active={false} size={144} scale={48 / 118} role="presentation" tabindex={-1} keyStyle={$deviceLooks[device.id]?.keyStyle ?? null} />
+					{/key}
 				</div>
 			</div>
 			<div class="min-w-0">
@@ -171,9 +179,12 @@
 	<div class="flex flex-col flex-1 min-h-0 overflow-y-auto px-4 pt-1.5 pb-4">
 		<!-- The device: always mounted, so its background loads before anything is chosen. -->
 		<div class:hidden={selection.kind != "device"}>
-			{#if $settings}
+			{#if pedal}
+				<p class="mt-1 text-[12.5px] leading-normal text-neutral-400">{$t("inspector.pedal")}</p>
+			{:else if $settings}
 				<section class="insp-sect">
 					<h4>{$t("inspector.screen")}</h4>
+					{#if deviceCount > 1}<p class="setting-desc -mt-1">{$t("inspector.all_devices")}</p>{/if}
 					<div class="insp-row">
 						<label class="lb" for="insp-brightness">{$t("inspector.brightness")}</label>
 						<input id="insp-brightness" type="range" min="0" max="100" class="range flex-1" bind:value={$settings.brightness} />

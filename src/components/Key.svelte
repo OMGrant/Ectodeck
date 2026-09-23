@@ -45,6 +45,8 @@
 	export let keyStyle: KeyStyle | null = null;
 	export let isTouchPoint: boolean = false;
 	let pressed: boolean = false;
+	// an action or key being dragged over this one
+	let dropping = false;
 
 	let state: ActionState | undefined;
 	$: {
@@ -215,12 +217,18 @@
 <div class="relative" style={`transform: scale(${(112 /* desired inner size */ / size) * scale});`}>
 	<canvas
 		bind:this={canvas}
-		class="relative border-3 border-neutral-700 rounded-3xl outline-none outline-offset-2 outline-blue-500"
+		class="relative border-3 border-neutral-700 rounded-3xl outline-none outline-offset-2 outline-blue-500 transition-colors"
+		class:cursor-pointer={active}
+		class:hover:border-neutral-500={active && !dropping}
+		class:border-blue-500!={dropping}
 		style={`margin: ${-((size + 3 * 2 /* border */ - 132) /* desired outer size */ / 2)}px;` +
 			// the image inside is clipped to KEY_CORNER of its width; the border's
 			// outer radius is that plus the border's own width, so the two meet
 			(keyStyle ? ` border-radius: ${width * KEY_CORNER + 3}px;` : "")}
-		class:outline-solid={active && ((slot && $inspectedInstance == slot.context) || (context && $inspectedInstance == context))}
+		class:outline-solid={active &&
+			((slot && $inspectedInstance == slot.context) ||
+				(context && $inspectedInstance == context) ||
+				(context && $inspectedParentAction && contextKey($inspectedParentAction) == contextKey(context)))}
 		class:rounded-full!={context?.controller == "Encoder"}
 		class:bg-neutral-900={context?.controller == "Encoder"}
 		class:border-neutral-600!={context?.controller == "Encoder"}
@@ -235,6 +243,9 @@
 		on:dragstart
 		on:dragover
 		on:drop
+		on:dragenter={() => active && (dropping = true)}
+		on:dragleave={() => (dropping = false)}
+		on:drop={() => (dropping = false)}
 		on:click|stopPropagation={select}
 		on:dblclick|stopPropagation={triggerVirtualPress}
 		on:keydown={(e) => {

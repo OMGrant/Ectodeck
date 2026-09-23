@@ -56,7 +56,7 @@
 	$: family = instance?.states[state].family;
 	$: fontSections = [
 		{ items: BUILTIN_FONTS.map((f) => ({ id: f, label: f, selected: family == f })) },
-		...(fonts.length ? [{ heading: $t("instance_editor.font.system"), items: fonts.map((f) => ({ id: f, label: f, selected: family == f })) }] : []),
+		...(fonts.length ? [{ heading: $t("instance_editor.font.system"), items: fonts.filter((f) => !BUILTIN_FONTS.includes(f)).map((f) => ({ id: f, label: f, selected: family == f })) }] : []),
 	] as ChoiceSection[];
 
 	function setStyle() {

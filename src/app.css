@@ -297,3 +297,10 @@ input[type="color"] {
 .setting-desc {
 	@apply mb-2 max-w-[56ch] text-xs leading-normal text-neutral-500;
 }
+.chips {
+	scrollbar-width: none;
+	mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+.chips::-webkit-scrollbar {
+	display: none;
+}

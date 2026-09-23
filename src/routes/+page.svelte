@@ -110,6 +110,11 @@
 						{/if}
 					{/each}
 				</div>
+				{#if trayMin == 0}
+					<div class="flex justify-center shrink-0 pb-3 bg-stage">
+						<button class="btn quiet" on:click={toggleTray}>{$t("tray.show")}</button>
+					</div>
+				{/if}
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				<div
 					class="group relative shrink-0 h-[5px] -my-0.5 z-10 cursor-row-resize"
@@ -125,7 +130,7 @@
 			</div>
 
 			{#if selectedProfiles[selectedDevice] && devices[selectedDevice]}
-				<Inspector device={devices[selectedDevice]} bind:profile={selectedProfiles[selectedDevice]} />
+				<Inspector device={devices[selectedDevice]} bind:profile={selectedProfiles[selectedDevice]} deviceCount={Object.keys(devices).length} />
 			{/if}
 		{:else}
 			<NoDevicesDetected />

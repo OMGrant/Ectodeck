@@ -34,9 +34,17 @@
 	let root: HTMLDivElement;
 	let menu: HTMLDivElement;
 
+	// Menus open downwards, or upwards when the window has more room above.
+	let above = false;
+	let maxHeight = 320;
 	async function toggle() {
 		open = !open;
 		if (open) {
+			const r = root.getBoundingClientRect();
+			const below = innerHeight - r.bottom - 12;
+			const over = r.top - 12;
+			above = below < 240 && over > below;
+			maxHeight = Math.min(320, above ? over : below);
 			await tick();
 			const selected = menu?.querySelector<HTMLButtonElement>("[aria-checked='true']") ?? menu?.querySelector<HTMLButtonElement>("button");
 			selected?.focus();
@@ -68,7 +76,7 @@
 	}
 
 	const triggers = {
-		button: "gap-2 px-2 py-0.5 text-neutral-300 bg-neutral-700 hover:bg-neutral-600 border border-neutral-600 rounded-lg max-w-56",
+		button: "gap-1.5 h-[30px] px-[11px] font-medium text-neutral-200 bg-neutral-750 hover:bg-neutral-700 border border-neutral-600 rounded-[7px] max-w-56",
 		field: "w-full gap-1.5 h-[30px] pl-2.5 pr-2 text-neutral-200 bg-neutral-750 hover:bg-neutral-700 border border-neutral-700 rounded-[7px]",
 		crumb: "gap-1.5 h-[26px] px-[7px] font-medium text-neutral-200 hover:bg-neutral-700 rounded-md max-w-72",
 		icon: "justify-center w-7 h-7 text-neutral-400 hover:text-neutral-100 hover:bg-neutral-700 rounded-md",
@@ -98,8 +106,13 @@
 			bind:this={menu}
 			role="menu"
 			aria-label={label}
-			class="absolute top-full mt-1 min-w-full w-max max-w-80 max-h-80 overflow-y-auto p-[5px] text-[13px] text-neutral-200 bg-neutral-800 border border-neutral-600 rounded-[10px] shadow-xl shadow-black/50 z-40"
+			style="max-height: {maxHeight}px;"
+			class="absolute min-w-full w-max max-w-80 overflow-y-auto p-[5px] text-[13px] text-neutral-200 bg-neutral-800 border border-neutral-600 rounded-[10px] shadow-xl shadow-black/50 z-40"
 			class:min-w-60={variant == "crumb"}
+			class:top-full={!above}
+			class:mt-1={!above}
+			class:bottom-full={above}
+			class:mb-1={above}
 			class:left-0={variant != "icon"}
 			class:right-0={variant == "icon"}
 			class:min-w-44={variant == "icon"}

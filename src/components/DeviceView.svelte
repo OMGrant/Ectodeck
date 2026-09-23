@@ -61,6 +61,7 @@
 			}
 			array[position] = await invoke("create_instance", { context, action });
 			profile = profile;
+			selectPlaced(context, array[position]);
 		} else if (dataTransfer?.getData("controller")) {
 			let oldController = dataTransfer?.getData("controller");
 			let oldArray = oldController == "Encoder" ? profile.sliders : oldController == "Infobar" ? profile.infobars : profile.keys;
@@ -74,6 +75,7 @@
 				array[position] = response;
 				oldArray[oldPosition] = null;
 				profile = profile;
+				selectPlaced(context, response);
 			}
 		}
 	}
@@ -96,13 +98,32 @@
 	}
 
 
+	// Whatever was just put on a key is what you want to set up next.
+	function selectPlaced(context: Context, instance: ActionInstance | null) {
+		if (!instance) return;
+		if (instance.action.uuid == "opendeck.multiaction" || instance.action.uuid == "opendeck.toggleaction") {
+			$inspectedInstance = null;
+			$inspectedParentAction = context;
+		} else {
+			$inspectedParentAction = null;
+			$inspectedInstance = instance.context;
+		}
+	}
+
 	$: if ($placeAction && selectedDevice == device.id && !$inspectedParentAction) {
-		const target = $inspectedInstance;
+		let target = $inspectedInstance;
+		// with no empty key selected, the action goes on the first empty key
+		if (!target || typeof target == "string" || target.device != device.id) {
+			const free = profile.keys.findIndex((k, i) => !k && i < device.rows * device.columns);
+			target = free == -1 ? null : { device: device.id, profile: profile.id, controller: "Keypad", position: free };
+		}
 		if (target && typeof target == "object" && target.device == device.id) {
 			const action = $placeAction;
 			$placeAction = null;
-			handlePaste({ type: "action", action }, target).then(() => {
-				$inspectedInstance = `${target.device}.${target.profile}.${target.controller}.${target.position}.0`;
+			const destination = target;
+			handlePaste({ type: "action", action }, destination).then(() => {
+				const array = destination.controller == "Encoder" ? profile.sliders : profile.keys;
+				selectPlaced(destination, array[destination.position]);
 			});
 		}
 	}

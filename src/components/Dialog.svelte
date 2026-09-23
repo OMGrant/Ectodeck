@@ -16,7 +16,9 @@
 	let previousFocus: HTMLElement | null = null;
 	$: if (show) {
 		previousFocus = document.activeElement as HTMLElement | null;
-		tick().then(() => box?.focus());
+		tick().then(() => {
+			if (!box?.contains(document.activeElement)) box?.focus();
+		});
 	} else if (previousFocus) {
 		previousFocus.focus();
 		previousFocus = null;

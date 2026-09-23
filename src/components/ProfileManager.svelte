@@ -11,6 +11,7 @@
 	import X from "phosphor-svelte/lib/X";
 	import ChoiceMenu, { type ChoiceSection } from "./ChoiceMenu.svelte";
 	import Dialog from "./Dialog.svelte";
+	import { tick } from "svelte";
 
 	import { t } from "$lib/i18n";
 	import { inspectedInstance } from "$lib/propertyInspector";
@@ -177,17 +178,19 @@
 	// a profile in a folder.
 	const NAME = /^[a-zA-Z0-9_ ]+(\/[a-zA-Z0-9_ ]+)?$/;
 	const FOLDER = /^[a-zA-Z0-9_ ]+$/;
+	// Default first, then by name, with numbers in number order ("2" before "10").
+	const byName = (a: string, b: string) => (a == "Default" ? -1 : b == "Default" ? 1 : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
 	const leaf = (id: string) => (id.includes("/") ? id.split("/")[1] : id);
 
 	$: menuSections = [
-		{ heading: $t("profile_manager.menu_heading"), items: (folders[""] ?? []).slice().sort().map((id) => ({ id, label: id, selected: id == value })) },
+		{ heading: $t("profile_manager.menu_heading"), items: (folders[""] ?? []).slice().sort(byName).map((id) => ({ id, label: id, selected: id == value })) },
 		...Object.entries(folders)
 			.filter(([folder, ids]) => folder && ids.length)
-			.sort()
+			.sort(([a], [b]) => byName(a, b))
 			.map(([folder, ids]) => ({
 				heading: folder,
 				headingIcon: FolderSimple,
-				items: ids.slice().sort().map((id) => ({ id, label: leaf(id), selected: id == value, indent: true })),
+				items: ids.slice().sort(byName).map((id) => ({ id, label: leaf(id), selected: id == value, indent: true })),
 			})),
 		{
 			items: [
@@ -212,7 +215,8 @@
 		creating = kind;
 		createName = "";
 	}
-	$: if (createInput) createInput.focus();
+	// after the dialog has opened and placed its own focus
+	$: if (createInput) tick().then(() => tick()).then(() => createInput?.focus());
 	$: createValid = creating == "folder" ? FOLDER.test(createName.trim()) : NAME.test(createName.trim());
 	async function create() {
 		const name = createName.trim();
@@ -229,11 +233,11 @@
 	function profileChoices(selected: string | undefined, allowNone: boolean) {
 		return [
 			...(allowNone ? [{ items: [{ id: "", label: $t("profile_manager.no_switch"), selected: !selected }] }] : []),
-			{ items: (folders[""] ?? []).slice().sort().map((id) => ({ id, label: id, selected: id == selected })) },
+			{ items: (folders[""] ?? []).slice().sort(byName).map((id) => ({ id, label: id, selected: id == selected })) },
 			...Object.entries(folders)
 				.filter(([folder, ids]) => folder && ids.length)
-				.sort()
-				.map(([folder, ids]) => ({ heading: folder, headingIcon: FolderSimple, items: ids.slice().sort().map((id) => ({ id, label: leaf(id), selected: id == selected, indent: true })) })),
+				.sort(([a], [b]) => byName(a, b))
+				.map(([folder, ids]) => ({ heading: folder, headingIcon: FolderSimple, items: ids.slice().sort(byName).map((id) => ({ id, label: leaf(id), selected: id == selected, indent: true })) })),
 		] as ChoiceSection[];
 	}
 	function setAppProfile(appName: string, id: string) {
@@ -293,13 +297,13 @@
 	{/if}
 
 	<div role="list">
-		{#each Object.entries(folders).sort() as [folder, profiles]}
+		{#each Object.entries(folders).sort(([a], [b]) => (a == "" ? -1 : b == "" ? 1 : byName(a, b))) as [folder, profiles]}
 			{#if folder && profiles.length}
 				<div class="flex flex-row items-center gap-2.5 h-[38px] px-2.5 text-neutral-200 font-medium">
 					<FolderSimple size="15" class="text-neutral-400" />{folder}
 				</div>
 			{/if}
-			{#each profiles.slice().sort() as id}
+			{#each profiles.slice().sort(byName) as id}
 				{#if id == renamingProfile}
 					<div class="py-1 pr-2.5" class:pl-[34px]={folder} class:pl-2.5={!folder}>
 						<div class="flex flex-row gap-1.5">
