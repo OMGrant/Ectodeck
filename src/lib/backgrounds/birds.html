@@ -70,13 +70,10 @@
   }
   // the point the flock drifts around, wandering slowly across the sky
   var home = { x: 0.5, y: 0.4 };
-  // startles waiting to happen: the shock spreads from bird to bird
-  var shocks = [];
 
   window.addEventListener('ectodeck:press', function (e) {
     if (!e.detail.down) return;
     var kx = e.detail.x, ky = e.detail.y;
-    shocks.push({ x: kx, y: ky, age: 0 });
     birds.forEach(function (b) {
       var dx = (b.x - kx) * W / H, dy = b.y - ky, d = Math.hypot(dx, dy) || 1e-3;
       // right at the key, a burst; further off, a turn away that weakens with distance
@@ -143,8 +140,6 @@
       b.fear = Math.max(0, b.fear - dt * 1.4);
       b.flap += dt * (9 + b.fear * 14 + sp * 10);
     });
-    shocks.forEach(function (s) { s.age += dt; });
-    shocks = shocks.filter(function (s) { return s.age < 1; });
 
     // sky
     var g = c.createLinearGradient(0, 0, 0, H);
@@ -173,14 +168,6 @@
       c.stroke();
       c.fillStyle = c.strokeStyle;
       c.beginPath(); c.ellipse(x + dir * size * 0.15, y + size * 0.05, size * 0.35, size * 0.16, 0, 0, 6.283); c.fill();
-    });
-
-    // the startle: a faint ring of disturbed air at the key, for a moment
-    shocks.forEach(function (s) {
-      var r = 6 + s.age * 150;
-      c.strokeStyle = rgb(L.sun, 0.35 * (1 - s.age));
-      c.lineWidth = 1.5;
-      c.beginPath(); c.arc(s.x * W, s.y * H, r, 0, 6.283); c.stroke();
     });
 
     // the treeline
