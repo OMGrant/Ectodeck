@@ -1,3 +1,5 @@
+<img src="src-tauri/icons/mark.svg" alt="" width="96">
+
 # Ectodeck
 
 Ectodeck is an enhanced fork of [OpenDeck](https://github.com/nekename/OpenDeck) for the VSDinside MagTran M3.
