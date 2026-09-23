@@ -6,12 +6,12 @@
 <!--
   Ectodeck's built-in Blob: the orb from ectonomic.com. orb.js is included
   with small changes, each marked below: its colours, speed and the other
-  settings come from the page address, and a key press on the deck swells
-  the body out under the key.
+  settings come from the page address, and a key press on the deck pokes
+  the body under the key.
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "The Ectonomic blob, a living body lit from inside. A key press swells it out under the key, and it settles back.",
+  "DESCRIPTION": "The Ectonomic blob, a living body lit from inside. A key press pokes it: a small dent, and a ripple across the skin like tapping a water balloon.",
   "INPUTS": [
     {
       "NAME": "mode",
@@ -241,6 +241,20 @@
     '        + sin(o.x*4.3+o.y*3.7+t*0.4)*0.035) * amp;' +
     '}' +
     'vec3 surf(vec3 o){ return o * (1.0 + bump(o)); }' +
+    'float pokeHeight(vec2 at, float aspect){' +
+    '  float h = 0.0;' +
+    '  for (int i = 0; i < 4; i++) {' +
+    '    if (pokes[i].w <= 0.0) continue;' +
+    '    float age = pokes[i].z;' +
+    '    vec2 d = (at - pokes[i].xy) * vec2(aspect, 1.0);' +
+    '    float r = length(d);' +
+    '    float dent = -0.13 * exp(-r * r / 0.018) * min(1.0, age * 10.0) * exp(-age * 2.0);' +
+    '    float rr = r - age * 0.85;' +
+    '    float ripple = 0.045 * sin(rr * 26.0) * exp(-rr * rr / 0.035) * exp(-age * 1.5) * smoothstep(0.0, 0.12, r);' +
+    '    h += (dent + ripple) * pokes[i].w;' +
+    '  }' +
+    '  return h;' +
+    '}' +
     'void main(){' +
     '  float d = bump(p);' +
     '  vec3 s = p * (1.0 + d);' +
@@ -258,19 +272,13 @@
     '  vP = q;' +
     '  q.z -= 4.2;' +
     '  vN = rot * n;' +
-    // Ectodeck: key-press swells, placed on the screen so each rises exactly
-    // under its key. pokes[i] = (key x, key y in NDC, unused, strength);
-    // the skin within about half a key of that point pushes out along its
-    // normal, toward the viewer where it faces them.
+    // Ectodeck: a key press pokes the skin, placed on the screen so it lands
+    // exactly under the key. pokes[i] = (key x, key y in NDC, seconds since
+    // the press, strength). The skin there dents in, and a ripple runs out
+    // across it, like tapping a water balloon; see pokeHeight.
     '  vec4 clip = proj * vec4(q, 1.0);' +
-    '  vec2 ndc = clip.xy / clip.w;' +
     '  float aspect = proj[1][1] / proj[0][0];' +
-    '  float swell = 0.0;' +
-    '  for (int i = 0; i < 4; i++) {' +
-    '    vec2 d = (ndc - pokes[i].xy) * vec2(aspect, 1.0);' +
-    '    swell += pokes[i].w * exp(-dot(d, d) / 0.045);' +
-    '  }' +
-    '  q += normalize(vN) * swell * scale;' +
+    '  q += normalize(vN) * pokeHeight(clip.xy / clip.w, aspect) * scale;' +
     '  vV = normalize(-q);' +
     '  vD = q.z;';
 
@@ -367,8 +375,22 @@
     'uniform float glowAmp; uniform float glowSize;' +
     // shared with the vertex stage, so highp to match
     'uniform highp float amp; uniform highp mat3 rot;' +
-    // Ectodeck: the key-press swells, as in the vertex stage, in screen space
+    // Ectodeck: the key-press pokes, as in the vertex stage
     'uniform highp vec4 pokes[4];' +
+    'float pokeHeight(vec2 at, float aspect){' +
+    '  float h = 0.0;' +
+    '  for (int i = 0; i < 4; i++) {' +
+    '    if (pokes[i].w <= 0.0) continue;' +
+    '    float age = pokes[i].z;' +
+    '    vec2 d = (at - pokes[i].xy) * vec2(aspect, 1.0);' +
+    '    float r = length(d);' +
+    '    float dent = -0.13 * exp(-r * r / 0.018) * min(1.0, age * 10.0) * exp(-age * 2.0);' +
+    '    float rr = r - age * 0.85;' +
+    '    float ripple = 0.045 * sin(rr * 26.0) * exp(-rr * rr / 0.035) * exp(-age * 1.5) * smoothstep(0.0, 0.12, r);' +
+    '    h += (dent + ripple) * pokes[i].w;' +
+    '  }' +
+    '  return h;' +
+    '}' +
     // The same displacement the vertex shader applies, evaluated per pixel
     // from the interpolated body direction, so the shading normal is exact
     // everywhere instead of being the vertex normal smeared across a
@@ -399,16 +421,13 @@
     '}' +
     'void main(){' +
     '  vec3 n = normalize(rot * skinNormal(normalize(vO)));' +
-    // the swell's slopes face away from its centre, so its edges catch the rim
+    // the dent's and ripple's slopes tilt the surface, so they catch the light
     '  vec2 fndc = gl_FragCoord.xy / res * 2.0 - 1.0;' +
     '  float faspect = res.x / res.y;' +
-    '  float rise = 0.0;' +
-    '  for (int i = 0; i < 4; i++) {' +
-    '    vec2 d = (fndc - pokes[i].xy) * vec2(faspect, 1.0);' +
-    '    float w = pokes[i].w * exp(-dot(d, d) / 0.045);' +
-    '    rise += w;' +
-    '    n = normalize(n + vec3(d, 0.0) * (w / 0.045) * 2.2);' +
-    '  }' +
+    '  vec2 e = 2.0 / res;' +
+    '  vec2 slope = vec2(pokeHeight(fndc + vec2(e.x, 0.0), faspect) - pokeHeight(fndc - vec2(e.x, 0.0), faspect),' +
+    '                    pokeHeight(fndc + vec2(0.0, e.y), faspect) - pokeHeight(fndc - vec2(0.0, e.y), faspect)) / (2.0 * e);' +
+    '  n = normalize(n - vec3(slope, 0.0) * 0.3);' +
     '  vec3 v = normalize(vV);' +
     '  vec3 L = normalize(lightDir);' +
     '  float fres = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 3.2);' +
@@ -425,9 +444,7 @@
     '         + DEEP * diff * 0.09' +
     '         + LIME * fres * 0.62' +
     '         + LIME * glow * glowAmp' +
-    '         + mix(vec3(1.0), LIME, 0.45) * spec * 0.55' +
-    // the swelling skin takes on a little of the lime as it rises
-    '         + LIME * clamp(rise / 0.1, 0.0, 1.2) * (0.13 + fres * 0.45);' +
+    '         + mix(vec3(1.0), LIME, 0.45) * spec * 0.55;' +
     // dissolve the far side into the black behind it
     '  float fog = clamp((vD + 7.6) / 4.2, 0.0, 1.0);' +
     '  c *= fog * fog;' +
@@ -704,9 +721,9 @@
     })();
   }
 
-  // Ectodeck: a key press swells the body out under the key, and it settles
-  // back with a soft wobble. The swell is placed on the screen, at the key.
-  // A key that is not over the body swells the nearest part of its edge:
+  // Ectodeck: a key press pokes the body under the key: a small dent, and a
+  // ripple running out across the skin. It is placed on the screen, at the
+  // key. A key that is not over the body pokes the nearest part of its edge:
   // the target slides from the key toward the body until it meets it.
   var pokeList = [], pokeData = new Float32Array(16);
   function bodyScreenCentre() {
@@ -728,9 +745,8 @@
     pokeList = pokeList.filter(function (k) { return real - k.t < 3; });
     pokeList.forEach(function (k, i) {
       var age = real - k.t;
-      // out quickly, then back with a soft overshoot
-      var swell = Math.min(1, age * 9) * Math.exp(-age * 2.4) * (1 + 0.35 * Math.sin(age * 8.0));
-      pokeData.set([k.at[0], k.at[1], 0, 0.1 * swell], i * 4);
+      // the shaders shape the dent and ripple from the age
+      pokeData.set([k.at[0], k.at[1], age, 1], i * 4);
     });
   }
 

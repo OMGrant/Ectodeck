@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other. A key press is a drop falling into them, spreading and billowing out.",
+  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other. A key press is a drop falling into them, and the smoke sinks away from it.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -79,12 +79,13 @@ float fbm(vec2 p) {
     return v;
 }
 
-// A press is a drop falling into smoky liquid. The disturbance swells out
-// from nothing at the key (no point at its centre), spreads, and slows; its
-// front billows, warped by the smoke's own texture, and it shoulders the
-// smoke aside rather than rippling it like glass.
-vec2 drop(vec2 uv, out float stir) {
+// A press is a drop falling into smoky liquid, and the smoke sinks away from
+// it: around the key the smoke draws in and shrinks toward the centre, as if
+// receding into depth, then fills back. It swells from nothing at the key
+// (no point at its centre), and its edge billows with the smoke's texture.
+vec2 drop(vec2 uv, out float stir, out float sink) {
     stir = 0.0;
+    sink = 0.0;
     vec2 at = uv;
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
@@ -93,15 +94,16 @@ vec2 drop(vec2 uv, out float stir) {
         vec2 c = (p.xy - 0.5 * iResolution.xy) / iResolution.y;
         vec2 d = uv - c;
         // spreads fast at first, then slows, like a drop settling
-        float reach = 0.06 + 0.32 * (1.0 - exp(-age * 1.6));
+        float reach = 0.05 + 0.2 * (1.0 - exp(-age * 1.6));
         // the smoke's texture makes the front uneven
         float billow = 1.0 + 0.45 * (fbm(uv * 3.5 + vec2(age * 0.4, -age * 0.3)) - 0.5);
         float x = length(d) * billow / reach;
         float strength = 0.11 * smoothstep(0.0, 0.25, age) * exp(-age * 0.9);
         float shape = exp(-x * x);
         // d / reach is smooth through the centre, so nothing pinches there
-        at -= d / reach * strength * shape;
+        at += d / reach * strength * shape;
         stir += strength * shape * x;
+        sink += strength * shape;
     }
     return at;
 }
@@ -109,8 +111,8 @@ vec2 drop(vec2 uv, out float stir) {
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     float t = iTime * 0.03 * speed;
-    float stir = 0.0;
-    if (react) uv = drop(uv, stir);
+    float stir = 0.0, sink = 0.0;
+    if (react) uv = drop(uv, stir, sink);
     vec2 q = vec2(fbm(uv * zoom + t), fbm(uv * zoom - t + 4.7));
     vec2 r = vec2(fbm(uv * zoom + 3.0 * q + vec2(1.7, 9.2) + t * 1.5), fbm(uv * zoom + 3.0 * q + vec2(8.3, 2.8) - t));
     float f = fbm(uv * zoom + 3.5 * r);
@@ -118,6 +120,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     col = mix(col, colour2.rgb, 0.75 * smoothstep(0.45, 0.85, length(q) * f * 1.6));
     col = mix(col, colour3.rgb, smoothstep(0.55, 0.9, r.x * f * 1.5) * 0.6);
     col *= (0.25 + 0.65 * smoothstep(0.25, 0.8, f)) * brightness;
-    col += colour2.rgb * stir * 1.2 * brightness;
+    // the middle of the sink darkens a little as it recedes
+    col *= 1.0 - clamp(sink * 3.0, 0.0, 0.25);
     fragColor = vec4(pow(col, vec3(1.1)), 1.0);
 }

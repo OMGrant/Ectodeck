@@ -76,14 +76,16 @@ float fbm(vec2 p) {
 // A press sends a surge along the curtain: the aurora brightens at the key
 // and the brightening rolls away sideways in both directions, fading as it
 // goes, the way real auroras pulse.
-float surge(vec2 uv) {
+float surge(vec2 uv, float band) {
     float s = 0.0;
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
         if (p.w < 0.0 || p.z > 3.0) continue;
         float x = p.x / iResolution.x, age = p.z;
         float spread = age * 0.32;
-        float fade = exp(-age * 1.3) * smoothstep(0.0, 0.25, age);
+        // only a key near the curtain sets it off; others get just their ray
+        float near = exp(-pow((p.y / iResolution.y - band) / 0.12, 2.0));
+        float fade = exp(-age * 1.3) * smoothstep(0.0, 0.25, age) * near;
         s += (exp(-pow((uv.x - x - spread) / 0.09, 2.0)) + exp(-pow((uv.x - x + spread) / 0.09, 2.0))) * fade;
     }
     return s;
@@ -112,7 +114,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
     float t = iTime * 0.05 * speed;
     vec3 col = mix(vec3(0.01, 0.015, 0.035), vec3(0.02, 0.04, 0.07), uv.y);
-    float lift = react ? surge(uv) : 0.0;
+    float lift = react ? surge(uv, height + 0.13) : 0.0;
     for (int i = 0; i < 3; i++) {
         float fi = float(i);
         float wave = height + 0.13 * fi + 0.18 * (fbm(vec2(uv.x * 2.0 + t * (1.0 + fi * 0.4), fi * 3.1 + t)) - 0.5);
