@@ -30,6 +30,19 @@
 	// Built-in web pages, written to the configuration directory when chosen,
 	// since the page renderer opens files rather than the app's own assets.
 	const builtinPages = [{ id: "blob", name: "Blob", file: "blob.html", html: blob }];
+
+	// A built-in page's address carries a fingerprint of its contents, so a
+	// newer version of the page is a different address: the renderer loads
+	// it afresh instead of keeping the copy written when it was first chosen.
+	function fingerprint(text: string): string {
+		let h = 2166136261;
+		for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+		return (h >>> 0).toString(36);
+	}
+	async function writeBuiltinPage(page: (typeof builtinPages)[number]): Promise<string> {
+		const path = await invoke<string>("save_background_page", { name: page.file, contents: page.html });
+		return path + "#" + fingerprint(page.html);
+	}
 	const isBuiltin = (a: AnimatedBackground | null) =>
 		!!a &&
 		((a.kind == "shader" && builtinShaders.some((s) => s.name == a.name)) || (a.kind == "web" && builtinPages.some((p) => p.name == a.name)));
@@ -119,8 +132,7 @@
 			const page = builtinPages.find((p) => "page:" + p.id == id);
 			if (!page) return;
 			try {
-				const path = await invoke<string>("save_background_page", { name: page.file, contents: page.html });
-				await setAnimated({ kind: "web", name: page.name, url: path, params: {} });
+				await setAnimated({ kind: "web", name: page.name, url: await writeBuiltinPage(page), params: {} });
 			} catch (error) {
 				animationError = String(error);
 			}
@@ -164,6 +176,12 @@
 		background = await invoke<string | null>("get_device_background", { device: device.id });
 		keyStyle = await invoke<KeyStyle>("get_device_key_style", { device: device.id });
 		animated = await invoke<AnimatedBackground | null>("get_device_animated_background", { device: device.id });
+		// bring a built-in page chosen under an older version up to date
+		const current = animated;
+		const page = current?.kind == "web" ? builtinPages.find((p) => p.name == current.name) : undefined;
+		if (current?.kind == "web" && page && !current.url.endsWith("#" + fingerprint(page.html))) {
+			await setAnimated({ ...current, url: await writeBuiltinPage(page) });
+		}
 	}
 
 	const backdropOptions = [

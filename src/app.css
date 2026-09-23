@@ -11,6 +11,12 @@
 	color-scheme: dark;
 }
 
+.wordmark {
+	font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+	font-weight: 600;
+	letter-spacing: -0.04em;
+}
+
 option,
 optgroup {
 	@apply bg-neutral-800 text-neutral-200;

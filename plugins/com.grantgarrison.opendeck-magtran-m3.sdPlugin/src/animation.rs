@@ -75,7 +75,12 @@ pub fn web_address(url: &str, params: &Params) -> String {
             format!("{}={}", encode(k), encode(&value))
         })
         .collect();
-    format!("{url}{}{}", if url.contains('?') { '&' } else { '?' }, query.join("&"))
+    // the query goes before any #fragment
+    let (base, fragment) = match url.split_once('#') {
+        Some((b, f)) => (b, format!("#{f}")),
+        None => (url, String::new()),
+    };
+    format!("{base}{}{}{fragment}", if base.contains('?') { '&' } else { '?' }, query.join("&"))
 }
 
 fn encode(s: &str) -> String {
@@ -538,4 +543,22 @@ fn run_web(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn web_address_puts_parameters_before_the_fragment() {
+        let mut p = Params::new();
+        p.insert("speed".into(), serde_json::json!(1.2));
+        p.insert("react".into(), serde_json::json!(false));
+        p.insert("glow".into(), serde_json::json!([1, 0.5, 0, 1]));
+        assert_eq!(
+            web_address("file:///x/blob.html#v1", &p),
+            "file:///x/blob.html?glow=1,0.5,0,1&react=0&speed=1.2#v1"
+        );
+        assert_eq!(web_address("https://a.b/?q=1", &Params::new()), "https://a.b/?q=1");
+    }
 }

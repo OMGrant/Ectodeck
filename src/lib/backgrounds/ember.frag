@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Ember: a warm glow flowing slowly between three colours.",
+  "DESCRIPTION": "Ember: a warm glow flowing slowly between three colours. A key press lifts a few sparks off the key.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -70,21 +70,33 @@ float fbm(vec2 p) {
     return v;
 }
 
-// Light where keys are pressed: a soft bloom and a ring spreading out from
-// the key, fading over a second or so. iKeyPresses is filled by Ectodeck.
-float pressLight(vec2 fragCoord) {
-    float light = 0.0;
+// A press lifts a few sparks off the key. Each drifts upward with its own
+// speed and sway, flickers, and dims as it rises.
+float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+vec3 sparks(vec2 frag, vec3 warm, vec3 hot) {
+    vec3 light = vec3(0.0);
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
-        if (p.w < 0.0) continue;
+        if (p.w < 0.0 || p.z > 2.2) continue;
         float age = p.z;
-        float r = length(fragCoord - p.xy);
-        float ring = exp(-pow((r - age * 380.0) / 26.0, 2.0)) * exp(-age * 2.0);
-        float bloom = exp(-r * r / 7000.0) * exp(-age * 2.8);
-        light += ring * 0.55 + bloom * 0.9;
+        for (int j = 0; j < 9; j++) {
+            float seed = p.w * 13.0 + float(j) * 7.3 + floor(p.x + p.y);
+            float life = 1.2 + 0.9 * h1(seed);
+            if (age > life) continue;
+            float k = age / life;
+            vec2 at = p.xy + vec2((h1(seed + 1.0) - 0.5) * 70.0, (h1(seed + 2.0) - 0.5) * 40.0);
+            at.y += (60.0 + 90.0 * h1(seed + 3.0)) * age;
+            at.x += sin(age * (3.0 + 3.0 * h1(seed + 4.0)) + seed) * 14.0 * k;
+            float r = length(frag - at);
+            float flicker = 0.75 + 0.25 * sin(age * 40.0 + seed * 5.0);
+            float fade = (1.0 - k) * (1.0 - k) * smoothstep(0.0, 0.08, age);
+            light += mix(warm, hot, 0.6) * exp(-r * r / 11.0) * fade * flicker * 1.3;
+            light += warm * exp(-r * r / 110.0) * fade * 0.22;
+        }
     }
     return light;
 }
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
     vec2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
@@ -97,6 +109,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     col = mix(col, c, smoothstep(0.58, 0.8, h + (0.5 - uv.y) * 0.2));
     float glow = smoothstep(0.2, 0.75, g);
     col *= (0.1 + 0.75 * glow * glow) * brightness;
-    if (react) col += mix(a, b, 0.5) * pressLight(fragCoord) * 0.7;
+    if (react) col += sparks(fragCoord, a, vec3(1.0, 0.9, 0.7));
     fragColor = vec4(col, 1.0);
 }

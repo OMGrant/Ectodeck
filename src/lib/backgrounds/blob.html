@@ -6,12 +6,12 @@
 <!--
   Ectodeck's built-in Blob: the orb from ectonomic.com. orb.js is included
   with small changes, each marked below: its colours, speed and the other
-  settings come from the page address, and a key press on the deck flares
-  its inner light toward that key.
+  settings come from the page address, and a key press on the deck pokes
+  the body, which wobbles back.
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "The Ectonomic blob, a living body lit from inside. A key press flares its light toward that key.",
+  "DESCRIPTION": "The Ectonomic blob, a living body lit from inside. A key press pokes it, and it wobbles back.",
   "INPUTS": [
     {
       "NAME": "mode",
@@ -228,14 +228,19 @@
     'uniform float amp;' +
     'uniform float scale;' +
     'uniform vec2 offset;' +
+    // Ectodeck: up to four pokes from key presses, each a direction on the
+    // body (xyz) and how far it is pressed in right now (w)
+    'uniform vec4 pokes[4];' +
     'varying vec3 vN;' +
     'varying vec3 vV;' +
     'varying vec3 vP;' +
     'varying vec3 vO;' +
     'varying float vD;' +
     'float bump(vec3 o){' +
+    '  float poke = 0.0;' +
+    '  for (int i = 0; i < 4; i++) poke += pokes[i].w * exp((dot(o, pokes[i].xyz) - 1.0) * 5.0);' +
     '  return (sin(o.x*2.1+t*0.6)*cos(o.y*1.8+t*0.5)*sin(o.z*2.4+t*0.7)*0.09' +
-    '        + sin(o.x*4.3+o.y*3.7+t*0.4)*0.035) * amp;' +
+    '        + sin(o.x*4.3+o.y*3.7+t*0.4)*0.035) * amp - poke;' +
     '}' +
     'vec3 surf(vec3 o){ return o * (1.0 + bump(o)); }' +
     'void main(){' +
@@ -446,7 +451,7 @@
     }
     var u = {};
     ['proj', 'rot', 't', 'amp', 'scale', 'offset', 'alpha', 'scan', 'pulse', 'wet',
-     'dpr', 'res', 'heart', 'glowAmp', 'glowSize', 'lightDir', 'glowPos', 'grainT', 'dbg'].forEach(function (n) {
+     'dpr', 'res', 'heart', 'glowAmp', 'glowSize', 'lightDir', 'glowPos', 'grainT', 'dbg', 'pokes'].forEach(function (n) {
       u[n] = gl.getUniformLocation(prog, n);
     });
     return { prog: prog, u: u, aP: gl.getAttribLocation(prog, 'p') };
@@ -575,6 +580,7 @@
         rot[6] * gx + rot[7] * gy + rot[8] * gz);
     }
     if (P.u.grainT) gl.uniform1f(P.u.grainT, 0.0);
+    if (P.u.pokes) gl.uniform4fv(P.u.pokes, pokeData);
     if (P.u.dbg) gl.uniform1f(P.u.dbg, plan.dbg || 0);
   }
 
@@ -673,31 +679,38 @@
     })();
   }
 
-  var press = null, restAmp = plan.amp;
+  // Ectodeck: a key press pokes the body. The point of the skin facing the
+  // key dents in a little and springs back with a damped wobble. The dent is
+  // fixed to the body, in object space, so it turns with it.
+  var pokeList = [], pokeData = new Float32Array(16);
   window.addEventListener('ectodeck:press', function (e) {
     if (!ECTODECK.react || !e.detail.down) return;
-    var at = skinAt(e.detail.x * 2 - 1, 1 - e.detail.y * 2);
-    if (at) press = { at: at, t: performance.now() / 1000 };
+    var v = skinAt(e.detail.x * 2 - 1, 1 - e.detail.y * 2);
+    if (!v) return;
+    // view space to object space: rot is orthonormal, so its transpose
+    var o = [rot[0] * v[0] + rot[3] * v[1] + rot[6] * v[2],
+             rot[1] * v[0] + rot[4] * v[1] + rot[7] * v[2],
+             rot[2] * v[0] + rot[5] * v[1] + rot[8] * v[2]];
+    var len = Math.hypot(o[0], o[1], o[2]) || 1;
+    pokeList.unshift({ dir: [o[0] / len, o[1] / len, o[2] / len], t: performance.now() / 1000 });
+    pokeList.length = Math.min(pokeList.length, 4);
   });
-  function pressFrame(real) {
-    if (!press) return;
-    var age = real - press.t;
-    if (age > 3) {
-      press = null; plan.glowAt = plan.home; plan.glowAmp = null; plan.wander = null; plan.amp = restAmp;
-      return;
-    }
-    var w = Math.exp(-age * 1.1), h = plan.home, a = press.at;
-    plan.glowAt = [h[0] + (a[0] - h[0]) * w, h[1] + (a[1] - h[1]) * w, h[2] + (a[2] - h[2]) * w];
-    plan.wander = 1 - w;
-    plan.glowAmp = 0.5 + 0.9 * Math.exp(-age * 2.4);
-    plan.amp = restAmp * (1 + 0.45 * Math.exp(-age * 3.0));
+  function pokeFrame(real) {
+    pokeData.fill(0);
+    pokeList = pokeList.filter(function (k) { return real - k.t < 3; });
+    pokeList.forEach(function (k, i) {
+      var age = real - k.t;
+      // in, then a few shrinking wobbles back out
+      var depth = 0.075 * Math.exp(-age * 2.2) * Math.cos(age * 9.0) * Math.min(1, age * 12);
+      pokeData.set([k.dir[0], k.dir[1], k.dir[2], depth], i * 4);
+    });
   }
 
   function frame(ms) {
     var real = ms / 1000;
     var t = real * plan.speed;
     presenceFrame(real);
-    pressFrame(real);
+    pokeFrame(real);
     // autonomous: a slow yaw and a lazy nod, nothing from the pointer
     var yaw = real * 0.07;
     var pitch = 0.22 + Math.sin(real * 0.19) * 0.10;

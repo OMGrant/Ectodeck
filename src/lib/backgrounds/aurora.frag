@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky.",
+  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press sends a surge along the curtain.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -73,34 +73,35 @@ float fbm(vec2 p) {
     return v;
 }
 
-// Light where keys are pressed: a soft bloom and a ring spreading out from
-// the key, fading over a second or so. iKeyPresses is filled by Ectodeck.
-float pressLight(vec2 fragCoord) {
-    float light = 0.0;
+// A press sends a surge along the curtain: the aurora brightens at the key
+// and the brightening rolls away sideways in both directions, fading as it
+// goes, the way real auroras pulse.
+float surge(vec2 uv) {
+    float s = 0.0;
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
-        if (p.w < 0.0) continue;
-        float age = p.z;
-        float r = length(fragCoord - p.xy);
-        float ring = exp(-pow((r - age * 380.0) / 26.0, 2.0)) * exp(-age * 2.0);
-        float bloom = exp(-r * r / 7000.0) * exp(-age * 2.8);
-        light += ring * 0.55 + bloom * 0.9;
+        if (p.w < 0.0 || p.z > 3.0) continue;
+        float x = p.x / iResolution.x, age = p.z;
+        float spread = age * 0.32;
+        float fade = exp(-age * 1.3) * smoothstep(0.0, 0.25, age);
+        s += (exp(-pow((uv.x - x - spread) / 0.09, 2.0)) + exp(-pow((uv.x - x + spread) / 0.09, 2.0))) * fade;
     }
-    return light;
+    return s;
 }
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
     float t = iTime * 0.05 * speed;
     vec3 col = mix(vec3(0.01, 0.015, 0.035), vec3(0.02, 0.04, 0.07), uv.y);
+    float lift = react ? surge(uv) : 0.0;
     for (int i = 0; i < 3; i++) {
         float fi = float(i);
         float wave = height + 0.13 * fi + 0.18 * (fbm(vec2(uv.x * 2.0 + t * (1.0 + fi * 0.4), fi * 3.1 + t)) - 0.5);
         float band = exp(-pow((uv.y - wave) * (9.0 - fi * 2.0), 2.0));
         float curtain = fbm(vec2(uv.x * 12.0 + fi * 5.0, uv.y * 2.0 - t * 4.0));
         vec3 hue = mix(colour1.rgb, colour2.rgb, fi / 2.0);
-        col += hue * band * (0.35 + 0.65 * curtain) * 0.55 * brightness;
+        col += hue * band * (0.35 + 0.65 * curtain) * 0.55 * brightness * (1.0 + lift * 0.6);
     }
     if (stars) col += pow(hash(floor(fragCoord)), 900.0) * 0.6 * uv.y;
-    if (react) col += mix(colour1.rgb, colour2.rgb, 0.5) * pressLight(fragCoord) * 0.6;
     fragColor = vec4(col, 1.0);
 }

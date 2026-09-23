@@ -3,6 +3,7 @@
 		"windows": [
 			{
 				"title": "Ectodeck",
+				"decorations": false,
 				"fullscreen": false,
 				"resizable": true,
 				"width": 800,

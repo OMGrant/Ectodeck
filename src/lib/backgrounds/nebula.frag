@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other.",
+  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other. A key press stirs them into an eddy.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -79,24 +79,26 @@ float fbm(vec2 p) {
     return v;
 }
 
-// Light where keys are pressed: a soft bloom and a ring spreading out from
-// the key, fading over a second or so. iKeyPresses is filled by Ectodeck.
-float pressLight(vec2 fragCoord) {
-    float light = 0.0;
+// A press stirs the gas: the clouds near the key turn in a slow eddy that
+// winds up, then unwinds as the disturbance dies away.
+vec2 stir(vec2 uv) {
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
-        if (p.w < 0.0) continue;
+        if (p.w < 0.0 || p.z > 4.0) continue;
+        vec2 c = (p.xy - 0.5 * iResolution.xy) / iResolution.y;
+        vec2 d = uv - c;
         float age = p.z;
-        float r = length(fragCoord - p.xy);
-        float ring = exp(-pow((r - age * 380.0) / 26.0, 2.0)) * exp(-age * 2.0);
-        float bloom = exp(-r * r / 7000.0) * exp(-age * 2.8);
-        light += ring * 0.55 + bloom * 0.9;
+        float turn = 1.1 * exp(-dot(d, d) / 0.035) * (1.0 - exp(-age * 2.5)) * exp(-age * 0.7);
+        float cs = cos(turn), sn = sin(turn);
+        uv = c + mat2(cs, sn, -sn, cs) * d;
     }
-    return light;
+    return uv;
 }
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     float t = iTime * 0.03 * speed;
+    if (react) uv = stir(uv);
     vec2 q = vec2(fbm(uv * zoom + t), fbm(uv * zoom - t + 4.7));
     vec2 r = vec2(fbm(uv * zoom + 3.0 * q + vec2(1.7, 9.2) + t * 1.5), fbm(uv * zoom + 3.0 * q + vec2(8.3, 2.8) - t));
     float f = fbm(uv * zoom + 3.5 * r);
@@ -104,6 +106,5 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     col = mix(col, colour2.rgb, 0.75 * smoothstep(0.45, 0.85, length(q) * f * 1.6));
     col = mix(col, colour3.rgb, smoothstep(0.55, 0.9, r.x * f * 1.5) * 0.6);
     col *= (0.25 + 0.65 * smoothstep(0.25, 0.8, f)) * brightness;
-    if (react) col += colour2.rgb * pressLight(fragCoord) * 0.7;
     fragColor = vec4(pow(col, vec3(1.1)), 1.0);
 }

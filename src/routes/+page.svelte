@@ -15,6 +15,7 @@
 	import ProfileManager from "../components/ProfileManager.svelte";
 	import PropertyInspectorView from "../components/PropertyInspectorView.svelte";
 	import SettingsView from "../components/SettingsView.svelte";
+	import TitleBar from "../components/TitleBar.svelte";
 
 	let devices: { [id: string]: DeviceInfo } = {};
 	let selectedDevice: string;
@@ -25,7 +26,9 @@
 
 <svelte:window on:dragover={(event) => event.preventDefault()} on:drop={(event) => event.preventDefault()} />
 
-<div class="flex flex-row h-screen">
+<div class="flex flex-col h-screen">
+<TitleBar />
+<div class="flex flex-row flex-1 min-h-0">
 	<div class="flex flex-col grow min-w-0">
 		<nav class="flex flex-row justify-between items-center p-3" class:hidden={$inspectedParentAction}>
 			<div class="flex flex-col items-start space-y-1">
@@ -63,4 +66,5 @@
 	</div>
 
 	<ActionList bind:this={$actionList} />
+</div>
 </div>
