@@ -2,12 +2,15 @@
 	import type { DeviceInfo } from "$lib/DeviceInfo";
 	import type { Profile } from "$lib/Profile";
 
-	import Browsers from "phosphor-svelte/lib/Browsers";
 	import Copy from "phosphor-svelte/lib/Copy";
-	import FloppyDisk from "phosphor-svelte/lib/FloppyDisk";
-	import Pencil from "phosphor-svelte/lib/Pencil";
+	import FolderSimple from "phosphor-svelte/lib/FolderSimple";
+	import Gear from "phosphor-svelte/lib/Gear";
+	import PencilSimple from "phosphor-svelte/lib/PencilSimple";
+	import Plus from "phosphor-svelte/lib/Plus";
 	import Trash from "phosphor-svelte/lib/Trash";
-	import Popup from "./Popup.svelte";
+	import X from "phosphor-svelte/lib/X";
+	import ChoiceMenu, { type ChoiceSection } from "./ChoiceMenu.svelte";
+	import Dialog from "./Dialog.svelte";
 
 	import { t } from "$lib/i18n";
 	import { inspectedInstance } from "$lib/propertyInspector";
@@ -154,7 +157,6 @@
 	let showPopup: boolean = false;
 	let nameInput: HTMLInputElement;
 
-	let showApplicationManager: boolean = false;
 	let applications: string[];
 	let applicationProfiles: { [appName: string]: { [device: string]: string } };
 	(async () => {
@@ -162,16 +164,6 @@
 		applicationProfiles = await invoke("get_application_profiles");
 	})();
 	listen("applications", ({ payload }: { payload: string[] }) => (applications = payload));
-	let applicationsAddAppName: string = "opendeck_select_application";
-	let applicationsAddProfile: string = "opendeck_select_profile";
-	$: {
-		if (applicationsAddAppName != "opendeck_select_application" && applicationsAddProfile != "opendeck_select_profile") {
-			applicationProfiles[applicationsAddAppName] ||= {};
-			applicationProfiles[applicationsAddAppName][device.id] = applicationsAddProfile;
-			applicationsAddAppName = "opendeck_select_application";
-			applicationsAddProfile = "opendeck_select_profile";
-		}
-	}
 	$: {
 		if (applicationProfiles) {
 			applicationProfiles = Object.fromEntries(
@@ -181,205 +173,204 @@
 		}
 	}
 
-	let measure: HTMLSpanElement;
-	let selectWidth = 0;
-	$: if (value && measure) {
-		measure.textContent = value.includes("/") ? value.split("/")[1] : value;
-		selectWidth = measure.offsetWidth + 18;
+	// Names are kept to letters, numbers, spaces and underscores; a slash puts
+	// a profile in a folder.
+	const NAME = /^[a-zA-Z0-9_ ]+(\/[a-zA-Z0-9_ ]+)?$/;
+	const FOLDER = /^[a-zA-Z0-9_ ]+$/;
+	const leaf = (id: string) => (id.includes("/") ? id.split("/")[1] : id);
+
+	$: menuSections = [
+		{ heading: $t("profile_manager.menu_heading"), items: (folders[""] ?? []).slice().sort().map((id) => ({ id, label: id, selected: id == value })) },
+		...Object.entries(folders)
+			.filter(([folder, ids]) => folder && ids.length)
+			.sort()
+			.map(([folder, ids]) => ({
+				heading: folder,
+				headingIcon: FolderSimple,
+				items: ids.slice().sort().map((id) => ({ id, label: leaf(id), selected: id == value, indent: true })),
+			})),
+		{
+			items: [
+				{ id: "opendeck_new_profile", label: $t("profile_manager.new"), command: true, icon: Plus },
+				{ id: "opendeck_edit_profiles", label: $t("profile_manager.manage"), command: true, icon: Gear },
+			],
+		},
+	] as ChoiceSection[];
+
+	function chooseFromMenu(id: string) {
+		if (id == "opendeck_edit_profiles") showPopup = true;
+		else if (id == "opendeck_new_profile") startCreating("profile");
+		else value = id;
 	}
+
+	// Creating a profile or a folder happens in a field at the top of the list.
+	let creating: "profile" | "folder" | null = null;
+	let createName = "";
+	let createInput: HTMLInputElement;
+	function startCreating(kind: "profile" | "folder") {
+		showPopup = true;
+		creating = kind;
+		createName = "";
+	}
+	$: if (createInput) createInput.focus();
+	$: createValid = creating == "folder" ? FOLDER.test(createName.trim()) : NAME.test(createName.trim());
+	async function create() {
+		const name = createName.trim();
+		if (!createValid) return;
+		// a folder needs a profile to exist; it starts with one you can rename
+		const id = creating == "folder" ? `${name}/${$t("profile_manager.first_in_folder")}` : name;
+		await setProfile(id);
+		value = id;
+		creating = null;
+	}
+	$: renameValid = NAME.test(newId.trim());
+
+	// The profiles an application can switch to, for the menus in "Switch automatically".
+	function profileChoices(selected: string | undefined, allowNone: boolean) {
+		return [
+			...(allowNone ? [{ items: [{ id: "", label: $t("profile_manager.no_switch"), selected: !selected }] }] : []),
+			{ items: (folders[""] ?? []).slice().sort().map((id) => ({ id, label: id, selected: id == selected })) },
+			...Object.entries(folders)
+				.filter(([folder, ids]) => folder && ids.length)
+				.sort()
+				.map(([folder, ids]) => ({ heading: folder, headingIcon: FolderSimple, items: ids.slice().sort().map((id) => ({ id, label: leaf(id), selected: id == selected, indent: true })) })),
+		] as ChoiceSection[];
+	}
+	function setAppProfile(appName: string, id: string) {
+		applicationProfiles[appName] ||= {};
+		if (id) applicationProfiles[appName][device.id] = id;
+		else delete applicationProfiles[appName][device.id];
+		applicationProfiles = applicationProfiles;
+	}
+	$: appRules = applicationProfiles
+		? Object.entries(applicationProfiles)
+				.filter(([appName, devices]) => appName != "opendeck_default" && devices[device.id])
+				.sort((a, b) => a[0].localeCompare(b[0]))
+		: [];
+	$: addAppSections = [
+		{
+			heading: $t("profile_manager.running_apps"),
+			items: (applications ?? []).filter((appName) => !applicationProfiles?.[appName]?.[device.id]).map((appName) => ({ id: appName, label: appName, command: true })),
+		},
+	] as ChoiceSection[];
 </script>
 
-<div class="select-profile-wrapper">
-	<span bind:this={measure} class="invisible fixed whitespace-pre pointer-events-none" aria-hidden="true"></span>
-	<select bind:value style:width="{selectWidth}px" aria-label={$t("profile_manager.label")}>
-		{#each Object.entries(folders).sort() as [id, profiles]}
-			{#if id && profiles.length}
-				<optgroup label={id}>
-					{#each profiles.sort() as profile}
-						<option value={profile}>{profile.split("/")[1]}</option>
-					{/each}
-				</optgroup>
-			{:else}
-				{#each profiles.sort() as profile}
-					<option value={profile}>{profile}</option>
-				{/each}
-			{/if}
-		{/each}
-		<option value="opendeck_edit_profiles">{$t("profile_manager.edit")}</option>
-	</select>
+<div class="flex flex-row items-center">
+<span class="text-neutral-600 text-[15px] px-[3px]" aria-hidden="true">/</span>
+<ChoiceMenu variant="crumb" label={$t("profile_manager.label")} current={value ? leaf(value) : ""} sections={menuSections} on:choose={(e) => chooseFromMenu(e.detail)} />
 </div>
 
-<svelte:window
-	on:keydown={(event) => {
-		if (event.key == "Escape") {
-			if (showApplicationManager) showApplicationManager = false;
-			else if (renamingProfile) renamingProfile = null;
-			else showPopup = false;
-		}
-	}}
-/>
-
-<Popup show={showPopup} label="{device.name} {$t('profile_manager.profiles')}">
-	<button class="mr-1 float-right text-xl text-neutral-300" on:click={() => (showPopup = false)} aria-label={$t("settings.close")}>✕</button>
-	<h2 class="text-xl font-semibold text-neutral-300">{device.name}</h2>
-
-	<div class="flex flex-row mt-2 mb-1">
-		<input
-			bind:this={nameInput}
-			pattern="[a-zA-Z0-9_ ]+(\/[a-zA-Z0-9_ ]+)?"
-			class="grow p-2 text-neutral-300 invalid:text-red-400 bg-neutral-700 border-l border-y border-neutral-600 rounded-l-lg"
-			placeholder={$t("profile_manager.create.placeholder")}
-			aria-label={$t("profile_manager.create.label")}
-		/>
-
-		<button
-			on:click={async () => {
-				if (!nameInput.checkValidity() || !nameInput.value) return;
-				await setProfile(nameInput.value);
-				value = nameInput.value;
-				nameInput.value = "";
-				showPopup = false;
-			}}
-			class="px-4 text-neutral-300 bg-neutral-900 hover:bg-neutral-800 transition-colors border-r border-y border-neutral-600 rounded-r-lg"
-		>
-			{$t("profile_manager.create")}
-		</button>
-
-		<button
-			class="ml-2 px-4 flex items-center text-neutral-300 bg-neutral-900 hover:bg-neutral-800 transition-colors border border-neutral-600 rounded-lg"
-			on:click={() => (showApplicationManager = true)}
-			aria-label={$t("profile_manager.application_profiles")}
-		>
-			<Browsers size={24} />
-		</button>
+<Dialog bind:show={showPopup} title={$t("profile_manager.profiles")} subtitle={$t("profile_manager.on_device", { name: device.name })}>
+	<div class="flex flex-row gap-1.5 mb-1.5">
+		<button class="btn" on:click={() => startCreating("profile")}><Plus size="14" />{$t("profile_manager.new")}</button>
+		<button class="btn" on:click={() => startCreating("folder")}><FolderSimple size="14" />{$t("profile_manager.new_folder")}</button>
 	</div>
 
-	<div class="divide-y divide-neutral-500!">
-		{#each Object.entries(folders).sort() as [id, profiles]}
-			{#if id && profiles.length}
-				<h4 class="py-2 font-bold text-lg text-neutral-300">{id}</h4>
-			{/if}
-			{#each profiles.sort() as profile}
-				<div class="flex flex-row items-center py-2 space-x-2" class:ml-6={id} class:pl-2={id}>
-					<input
-						type="radio"
-						bind:group={value}
-						value={profile}
-						disabled={renamingProfile == profile}
-						id={`profile-${encodeURIComponent(profile)}`}
-						aria-label={id ? profile.split("/")[1] : profile}
-					/>
-					{#if profile == renamingProfile}
-						<!-- prettier-ignore -->
-						<input
-							bind:this={renameInput}
-							bind:value={newId}
-							pattern="[a-zA-Z0-9_ ]+(\/[a-zA-Z0-9_ ]+)?"
-							class="grow px-2 py-1 text-neutral-300 invalid:text-red-400 bg-neutral-700 rounded"
-							placeholder='Profile name or "folder/name"'
-							on:keydown={(e) => {
-								if (e.key === "Enter") saveRenamedProfile(profile);
-							}}
-						/>
-						<button on:click={() => saveRenamedProfile(profile)} title={$t("profile_manager.save")} aria-label={$t("profile_manager.save")}>
-							<FloppyDisk size="20" class="text-green-500" />
-						</button>
-					{:else}
-						<label class="grow text-neutral-400" for={`profile-${encodeURIComponent(profile)}`}>{id ? profile.split("/")[1] : profile}</label>
-						<button on:click={() => duplicateProfile(profile)} title={$t("profile_manager.duplicate")} aria-label={$t("profile_manager.duplicate")}>
-							<Copy size="20" class="text-neutral-400" />
-						</button>
-						{#if profile != value}
-							<button on:click={() => (renamingProfile = newId = profile)} title={$t("profile_manager.rename")} aria-label={$t("profile_manager.rename")}>
-								<Pencil size="20" class="text-neutral-400" />
-							</button>
-							<button on:click={() => deleteProfile(profile)} title={$t("profile_manager.delete")} aria-label={$t("profile_manager.delete")}>
-								<Trash size="20" class="text-neutral-400" />
-							</button>
-						{/if}
-					{/if}
+	{#if creating}
+		<form class="px-2.5 pt-1 pb-2" on:submit|preventDefault={create}>
+			<div class="flex flex-row gap-1.5">
+				<input
+					bind:this={createInput}
+					bind:value={createName}
+					class="field flex-1"
+					class:invalid={createName && !createValid}
+					placeholder={creating == "folder" ? $t("profile_manager.folder_placeholder") : $t("profile_manager.create.placeholder")}
+					aria-label={creating == "folder" ? $t("profile_manager.new_folder") : $t("profile_manager.create.label")}
+					on:keydown={(e) => {
+						if (e.key == "Escape") {
+							e.stopPropagation();
+							creating = null;
+						}
+					}}
+				/>
+				<button type="submit" class="btn primary" disabled={!createValid}>{$t("profile_manager.create")}</button>
+				<button type="button" class="btn quiet" on:click={() => (creating = null)}>{$t("device_view.animation.cancel")}</button>
+			</div>
+			<p class="mt-1.5 text-xs" class:text-red-400={createName && !createValid} class:text-neutral-500={!createName || createValid}>
+				{creating == "folder" ? $t("profile_manager.folder_rule") : $t("profile_manager.name_rule")}
+			</p>
+		</form>
+	{/if}
+
+	<div role="list">
+		{#each Object.entries(folders).sort() as [folder, profiles]}
+			{#if folder && profiles.length}
+				<div class="flex flex-row items-center gap-2.5 h-[38px] px-2.5 text-neutral-200 font-medium">
+					<FolderSimple size="15" class="text-neutral-400" />{folder}
 				</div>
+			{/if}
+			{#each profiles.slice().sort() as id}
+				{#if id == renamingProfile}
+					<div class="py-1 pr-2.5" class:pl-[34px]={folder} class:pl-2.5={!folder}>
+						<div class="flex flex-row gap-1.5">
+							<input
+								bind:this={renameInput}
+								bind:value={newId}
+								class="field flex-1"
+								class:invalid={!renameValid}
+								aria-label={$t("profile_manager.rename")}
+								on:keydown={(e) => {
+									if (e.key == "Enter") saveRenamedProfile(id);
+									else if (e.key == "Escape") {
+										e.stopPropagation();
+										renamingProfile = null;
+									}
+								}}
+							/>
+							<button class="btn primary" disabled={!renameValid} on:click={() => saveRenamedProfile(id)}>{$t("profile_manager.save")}</button>
+						</div>
+						<p class="mt-1.5 text-xs" class:text-red-400={!renameValid} class:text-neutral-500={renameValid}>{$t("profile_manager.name_rule")}</p>
+					</div>
+				{:else}
+					<div class="group flex flex-row items-center gap-2.5 h-[38px] pr-2.5 rounded-[7px] hover:bg-neutral-750" class:pl-[34px]={folder} class:pl-2.5={!folder} role="listitem">
+						<button class="flex-1 min-w-0 flex flex-row items-center gap-2.5 h-full text-left" on:click={() => (value = id)}>
+							<span class="truncate font-medium text-neutral-200">{leaf(id)}</span>
+							{#if id == value}<span class="text-[11px] text-neutral-400 border border-neutral-600 rounded-full px-[7px] py-px">{$t("profile_manager.in_use")}</span>{/if}
+						</button>
+						<div class="flex flex-row gap-0.5 text-xs text-neutral-400 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+							{#if id != value}
+								<button class="row-act" on:click={() => (renamingProfile = newId = id)}><PencilSimple size="13" />{$t("profile_manager.rename")}</button>
+							{/if}
+							<button class="row-act" on:click={() => duplicateProfile(id)}><Copy size="13" />{$t("profile_manager.duplicate")}</button>
+							{#if id != value}
+								<button class="row-act text-red-400!" on:click={() => deleteProfile(id)}><Trash size="13" />{$t("profile_manager.delete")}</button>
+							{/if}
+						</div>
+					</div>
+				{/if}
 			{/each}
 		{/each}
 	</div>
-</Popup>
 
-<Popup show={showApplicationManager} label={$t("profile_manager.application_profiles")}>
-	<svelte:fragment slot="header">
-		<button class="mr-1 float-right text-xl text-neutral-300" on:click={() => (showApplicationManager = false)} aria-label={$t("settings.close")}>✕</button>
-		<h2 class="text-xl font-semibold text-neutral-300">{device.name}</h2>
-		<span class="text-sm text-neutral-400">{$t("profile_manager.application_profiles.hint.1")}</span>
-		<span class="text-sm text-neutral-400">{$t("profile_manager.application_profiles.hint.2")}</span>
-	</svelte:fragment>
-
-	<table class="w-full text-neutral-300 divide-y divide-neutral-500!">
-		{#each Object.entries(applicationProfiles).sort( (a, b) => (a[0] == "opendeck_default" ? -1 : b[0] == "opendeck_default" ? 1 : a[0].localeCompare(b[0])), ) as [appName, devices]}
-			{#if devices[device.id]}
-				<tr class="h-12">
-					<td>{appName == "opendeck_default" ? $t("profile_manager.default_profile") : appName}:</td>
-					<td class="select-wrapper">
-						<select
-							bind:value={applicationProfiles[appName][device.id]}
-							class="w-full"
-							aria-label={$t("profile_manager.application_profiles.aria", {
-								name: appName == "opendeck_default" ? $t("profile_manager.default_profile") : appName,
-							})}
-						>
-							{#each Object.entries(folders) as [id, profiles]}
-								{#if id && profiles.length}
-									<optgroup label={id}>
-										{#each profiles as profile}
-											<option value={profile}>{profile.split("/")[1]}</option>
-										{/each}
-									</optgroup>
-								{:else}
-									{#each profiles as profile}
-										<option value={profile}>{profile}</option>
-									{/each}
-								{/if}
-							{/each}
-							<option disabled>──────────</option>
-							<option value={undefined}>{$t("profile_manager.remove_application")}</option>
-						</select>
-					</td>
-				</tr>
-			{/if}
-		{/each}
-		<tr class="h-12">
-			<td class="w-48 select-wrapper">
-				<select bind:value={applicationsAddAppName} class="w-full" aria-label={$t("profile_manager.select_application")}>
-					<option selected disabled value="opendeck_select_application">{$t("profile_manager.select_application.placeholder")}</option>
-					{#if !applicationProfiles["opendeck_default"] || !applicationProfiles["opendeck_default"][device.id]}
-						<option value="opendeck_default">{$t("profile_manager.default_profile")}</option>
-						{#if applications.filter((appName) => !applicationProfiles[appName] || !applicationProfiles[appName][device.id]).length > 0}
-							<option disabled>──────────</option>
-						{/if}
-					{/if}
-					{#each applications as appName}
-						{#if !applicationProfiles[appName] || !applicationProfiles[appName][device.id]}
-							<option value={appName}>{appName}</option>
-						{/if}
-					{/each}
-				</select>
-			</td>
-			<td class="w-96 select-wrapper">
-				<select bind:value={applicationsAddProfile} class="w-full" aria-label={$t("profile_manager.select_profile")}>
-					<option selected disabled value="opendeck_select_profile">{$t("profile_manager.select_profile.placeholder")}</option>
-					{#each Object.entries(folders) as [id, profiles]}
-						{#if id && profiles.length}
-							<optgroup label={id}>
-								{#each profiles as profile}
-									<option value={profile}>{profile.split("/")[1]}</option>
-								{/each}
-							</optgroup>
-						{:else}
-							{#each profiles as profile}
-								<option value={profile}>{profile}</option>
-							{/each}
-						{/if}
-					{/each}
-				</select>
-			</td>
-		</tr>
-	</table>
-</Popup>
+	{#if applicationProfiles}
+		<div class="mt-2 pt-3 border-t border-neutral-750">
+			<h4 class="mb-1 text-xs font-semibold text-neutral-400">{$t("profile_manager.application_profiles")}</h4>
+			<p class="mb-2 text-xs text-neutral-500">{$t("profile_manager.application_profiles.hint.3")}</p>
+			{#each appRules as [appName, devices]}
+				<div class="flex flex-row items-center gap-2.5 min-h-8">
+					<span class="w-40 truncate text-neutral-300">{appName}</span>
+					<span class="text-neutral-500">{$t("profile_manager.uses")}</span>
+					<div class="w-44"><ChoiceMenu variant="field" label={appName} current={leaf(devices[device.id])} sections={profileChoices(devices[device.id], false)} on:choose={(e) => setAppProfile(appName, e.detail)} /></div>
+					<button class="row-act ml-auto" on:click={() => setAppProfile(appName, "")} aria-label={$t("profile_manager.remove_application")}><X size="13" /></button>
+				</div>
+			{/each}
+			<div class="flex flex-row items-center gap-2.5 min-h-8">
+				<span class="w-40 truncate text-neutral-300">{$t("profile_manager.everything_else")}</span>
+				<span class="text-neutral-500">{$t("profile_manager.uses")}</span>
+				<div class="w-44">
+					<ChoiceMenu
+						variant="field"
+						label={$t("profile_manager.default_profile")}
+						current={applicationProfiles["opendeck_default"]?.[device.id] ? leaf(applicationProfiles["opendeck_default"][device.id]) : $t("profile_manager.no_switch")}
+						sections={profileChoices(applicationProfiles["opendeck_default"]?.[device.id], true)}
+						on:choose={(e) => setAppProfile("opendeck_default", e.detail)}
+					/>
+				</div>
+				<div class="ml-auto">
+					<ChoiceMenu label={$t("profile_manager.add_app")} current={$t("profile_manager.add_app")} sections={addAppSections} on:choose={(e) => setAppProfile(e.detail, value)} />
+				</div>
+			</div>
+			<p class="mt-1.5 text-xs text-neutral-500">{$t("profile_manager.application_profiles.hint.1")}</p>
+		</div>
+	{/if}
+</Dialog>

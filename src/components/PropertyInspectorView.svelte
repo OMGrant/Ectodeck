@@ -17,6 +17,9 @@
 
 	export let device: DeviceInfo;
 	export let profile: Profile;
+	// Whether the inspector is showing a plugin panel right now; the panels stay
+	// loaded while hidden so their connections survive switching tabs.
+	export let visible = true;
 
 	async function iframeOnLoad(event: Event, instance: ActionInstance) {
 		const iframe = iframes[instance.context] ?? event.target;
@@ -96,6 +99,7 @@
 			iframe.style.display = "block";
 
 			iframePopupsOpen.push(data.payload);
+			iframePopupsOpen = iframePopupsOpen;
 
 			iframeContainer.style.position = "absolute";
 			iframeContainer.style.width = "100%";
@@ -188,7 +192,7 @@
 	}}
 />
 
-<div class="grow min-h-64 max-h-96 overflow-auto bg-neutral-800 border-t border-neutral-700" bind:this={iframeContainer}>
+<div class="flex-1 min-h-60 -mx-4 overflow-auto bg-neutral-800" class:hidden={!visible && iframePopupsOpen.length == 0} bind:this={iframeContainer}>
 	<button
 		bind:this={iframeClosePopup}
 		on:click={() => closePopup(iframePopupsOpen[iframePopupsOpen.length - 1])}

@@ -196,7 +196,8 @@ impl Default for ActionState {
 			show: true,
 			colour: "#FFFFFF".to_owned(),
 			stroke_colour: "#000000".to_owned(),
-			alignment: "middle".to_owned(),
+			// under the icon, where it can be read, rather than across it
+			alignment: "bottom".to_owned(),
 			family: "Liberation Sans".to_owned(),
 			style: "Regular".to_owned(),
 			size: FontSize(16),

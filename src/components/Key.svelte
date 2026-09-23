@@ -7,12 +7,12 @@
 
 	import Clipboard from "phosphor-svelte/lib/Clipboard";
 	import Copy from "phosphor-svelte/lib/Copy";
-	import Pencil from "phosphor-svelte/lib/Pencil";
+	import PencilSimple from "phosphor-svelte/lib/PencilSimple";
 	import Trash from "phosphor-svelte/lib/Trash";
-	import InstanceEditor from "./InstanceEditor.svelte";
 
 	import { t } from "$lib/i18n";
-	import { copiedItem, inspectedInstance, inspectedParentAction, openContextMenu } from "$lib/propertyInspector";
+	import { contextKey, copiedItem, inspectedInstance, inspectedParentAction, inspectorTab, keyCommand, openContextMenu } from "$lib/propertyInspector";
+	import { portal } from "$lib/portal";
 	import { CanvasLock, KEY_CORNER, renderImage } from "$lib/rendererHelper";
 	import { settings } from "$lib/settings";
 
@@ -63,31 +63,30 @@
 		if (JSON.stringify(context) == JSON.stringify(payload.context)) pressed = payload.pressed;
 	});
 
-	function select(event: MouseEvent | KeyboardEvent) {
-		if (event instanceof MouseEvent && event.ctrlKey) return;
+	const isParent = (s: ActionInstance | null) => !!s && (s.action.uuid == "opendeck.multiaction" || s.action.uuid == "opendeck.toggleaction");
+
+	// Selecting a key shows it in the inspector; a multi or toggle action shows its steps.
+	function inspect() {
+		if (!active || !context) return;
 		$openContextMenu = null;
-		if (!slot) {
-			$inspectedInstance = context;
+		if (isParent(slot)) {
+			if (JSON.stringify($inspectedParentAction) != JSON.stringify(context)) {
+				$inspectedParentAction = context;
+				$inspectedInstance = null;
+			}
 			return;
 		}
-		if (slot.action.uuid == "opendeck.multiaction" || slot.action.uuid == "opendeck.toggleaction") {
-			$inspectedParentAction = context;
-		} else {
-			$inspectedInstance = slot.context;
-		}
+		$inspectedParentAction = null;
+		$inspectedInstance = slot ? slot.context : context;
+	}
+
+	function select(event: MouseEvent | KeyboardEvent) {
+		if (event instanceof MouseEvent && event.ctrlKey) return;
+		inspect();
 	}
 
 	function onfocus() {
-		$openContextMenu = null;
-		if (!slot) {
-			$inspectedInstance = context;
-			return;
-		}
-		if (slot.action.uuid != "opendeck.multiaction" && slot.action.uuid != "opendeck.toggleaction") {
-			$inspectedInstance = slot.context;
-		} else {
-			$inspectedInstance = context;
-		}
+		inspect();
 	}
 
 	let contextMenuEl: HTMLDivElement;
@@ -109,10 +108,13 @@
 		contextMenuEl?.querySelector("button")?.focus();
 	}
 
-	let showEditor = false;
-	function edit() {
+	async function edit() {
 		$openContextMenu = null;
-		showEditor = true;
+		if (!slot) return;
+		inspect();
+		// after the inspector has taken the new selection, which opens on Action
+		await tick();
+		$inspectorTab = "appearance";
 	}
 
 	function copy() {
@@ -134,11 +136,18 @@
 		$openContextMenu = null;
 		if (!slot) return;
 		await invoke("remove_instance", { context: slot.context });
-		showEditor = false;
 		slot = null;
 		inslot = slot;
 		await tick();
 		$inspectedInstance = context;
+	}
+
+	$: if ($keyCommand && context && $keyCommand.context == contextKey(context)) {
+		const { command } = $keyCommand;
+		$keyCommand = null;
+		if (command == "copy") copy();
+		else if (command == "paste") paste();
+		else if (command == "delete") clear();
 	}
 
 	let showAlert: boolean = false;
@@ -213,8 +222,10 @@
 			(keyStyle ? ` border-radius: ${width * KEY_CORNER + 3}px;` : "")}
 		class:outline-solid={active && ((slot && $inspectedInstance == slot.context) || (context && $inspectedInstance == context))}
 		class:rounded-full!={context?.controller == "Encoder"}
+		class:bg-neutral-900={context?.controller == "Encoder"}
+		class:border-neutral-600!={context?.controller == "Encoder"}
 		class:rounded-lg!={context?.controller == "Infobar"}
-		class:bg-black={slot != null && (keyStyle?.backdrop ?? true)}
+		class:bg-black={context?.controller != "Encoder" && slot != null && (keyStyle?.backdrop ?? true)}
 		{width}
 		{height}
 		draggable={slot != null}
@@ -249,32 +260,27 @@
 
 {#if $openContextMenu && $openContextMenu?.context == context}
 	<div
+		use:portal={"body"}
 		bind:this={contextMenuEl}
-		class="fixed w-32 font-semibold text-sm text-neutral-300 bg-neutral-700 border border-neutral-600 rounded-lg divide-y divide-neutral-600! z-10"
+		class="fixed w-52 p-[5px] text-[13px] text-neutral-200 bg-neutral-800 border border-neutral-600 rounded-[10px] shadow-xl shadow-black/50 z-50"
 		style={`left: ${$openContextMenu.x}px; top: ${$openContextMenu.y}px;`}
+		role="menu"
 	>
 		{#if !slot}
-			<button class="flex flex-row items-center w-full p-2 hover:bg-neutral-600 transition-colors rounded-lg cursor-pointer" on:click|stopPropagation={paste}>
-				<Clipboard size="18" class="text-neutral-300" />
-				<span class="ml-2">{$t("key.paste")}</span>
+			<button class="menu-item" role="menuitem" disabled={!$copiedItem} on:click|stopPropagation={paste}>
+				<Clipboard size="15" class="text-neutral-400" /><span>{$t("key.paste")}</span><span class="kbd">Ctrl V</span>
 			</button>
 		{:else}
-			<button class="flex flex-row items-center w-full p-2 hover:bg-neutral-600 transition-colors rounded-t-lg cursor-pointer" on:click|stopPropagation={edit}>
-				<Pencil size="18" class="text-neutral-300" />
-				<span class="ml-2">{$t("key.edit")}</span>
+			<button class="menu-item" role="menuitem" on:click|stopPropagation={edit}>
+				<PencilSimple size="15" class="text-neutral-400" /><span>{$t("key.edit")}</span><span class="kbd">F2</span>
 			</button>
-			<button class="flex flex-row items-center w-full p-2 hover:bg-neutral-600 transition-colors cursor-pointer" on:click|stopPropagation={copy}>
-				<Copy size="18" class="text-neutral-300" />
-				<span class="ml-2">{$t("key.copy")}</span>
+			<button class="menu-item" role="menuitem" on:click|stopPropagation={copy}>
+				<Copy size="15" class="text-neutral-400" /><span>{$t("key.copy")}</span><span class="kbd">Ctrl C</span>
 			</button>
-			<button class="flex flex-row items-center w-full p-2 hover:bg-neutral-600 transition-colors rounded-b-lg cursor-pointer" on:click|stopPropagation={clear}>
-				<Trash size="18" class="text-red-400" />
-				<span class="ml-2">{$t("key.delete")}</span>
+			<div class="my-[5px] mx-1 border-t border-neutral-700"></div>
+			<button class="menu-item text-red-400!" role="menuitem" on:click|stopPropagation={clear}>
+				<Trash size="15" /><span>{$t("key.delete")}</span><span class="kbd">Del</span>
 			</button>
 		{/if}
 	</div>
-{/if}
-
-{#if slot && showEditor}
-	<InstanceEditor bind:instance={slot} bind:showEditor />
 {/if}

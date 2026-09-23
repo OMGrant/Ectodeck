@@ -9,6 +9,8 @@
 	import { invoke } from "@tauri-apps/api/core";
 	import { listen } from "@tauri-apps/api/event";
 	import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+	import SquaresFour from "phosphor-svelte/lib/SquaresFour";
+	import ChoiceMenu, { type ChoiceSection } from "./ChoiceMenu.svelte";
 
 	export let devices: { [id: string]: DeviceInfo } = {};
 	export let value: string;
@@ -47,42 +49,27 @@
 	(async () => (devices = await invoke("get_devices")))();
 	listen("devices", ({ payload }: { payload: { [id: string]: DeviceInfo } }) => (devices = payload));
 
-	let buildInfo: string;
-	(async () => (buildInfo = await invoke("get_build_info")))();
-	const window = getCurrentWindow();
+	// The stage draws any deck to fit, so the window keeps whatever size the
+	// person gives it; it only needs a floor below which the layout would crush.
+	const appWindow = getCurrentWindow();
+	appWindow.setMinSize(new LogicalSize(900, 560));
 
-	$: {
-		if (devices[value]) {
-			const effectiveCols = Math.min(Math.max(devices[value].columns, devices[value].encoders, devices[value].touchpoints), 8);
-			const effectiveRows = Math.min(devices[value].rows + Math.min(devices[value].encoders, 1) + Math.min(devices[value].touchpoints, 1), 4);
-			const idealWidth = effectiveCols * 132 + 416;
-			const idealHeight = effectiveRows * 132 + 384 + (buildInfo?.split("</summary>")[0]?.includes("darwin") ? 28 : 0);
-			(async () => {
-				const width = Math.min(idealWidth, screen.availWidth);
-				const height = Math.min(idealHeight, screen.availHeight);
-				await window.setMinSize(new LogicalSize(width, height));
-				await window.setSize(new LogicalSize(width, height));
-			})();
-		}
-	}
-
-	let measure: HTMLSpanElement;
-	let selectWidth = 0;
-	$: if (value && measure && devices[value]) {
-		measure.textContent = devices[value].name;
-		selectWidth = measure.offsetWidth + 20;
-	}
+	$: deviceSections = [
+		{ heading: $t("device_selector.devices"), items: Object.entries(devices).sort().map(([id, device]) => ({ id, label: device.name, selected: id == value })) },
+	] as ChoiceSection[];
 </script>
 
+<div class="flex flex-row items-center">
 {#if Object.keys(devices).length > 0}
-	<div class="select-device-wrapper">
-		<span bind:this={measure} class="invisible fixed whitespace-pre pointer-events-none text-xl font-semibold" aria-hidden="true"></span>
-		<select bind:value style:width="{selectWidth}px" aria-label={$t("device_selector.device")}>
-			<option value="" disabled selected>{$t("device_selector.choose_device")}</option>
-
-			{#each Object.entries(devices).sort() as [id, device]}
-				<option value={id}>{device.name}</option>
-			{/each}
-		</select>
-	</div>
+	<span class="text-neutral-600 text-[15px] px-[3px]" aria-hidden="true">/</span>
+	<ChoiceMenu variant="crumb" label={$t("device_selector.device")} current={devices[value]?.name ?? ""} sections={deviceSections} on:choose={(e) => (value = e.detail)}>
+		<SquaresFour slot="icon" size="14" class="shrink-0 text-neutral-500" />
+	</ChoiceMenu>
 {/if}
+{#if Object.keys(devices).length == 0}
+	<span class="text-neutral-600 text-[15px] px-[3px]" aria-hidden="true">/</span>
+	<span class="flex flex-row items-center gap-1.5 h-[26px] px-[7px] font-medium text-neutral-400">
+		<SquaresFour size="14" class="shrink-0 text-neutral-500" />{$t("device_selector.none")}
+	</span>
+{/if}
+</div>

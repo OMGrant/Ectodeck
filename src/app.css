@@ -4,6 +4,14 @@
 @import "tailwindcss/preflight.css";
 @import "tailwindcss/utilities.css";
 
+/* The redesign's two extra greys, and Geist, the Ectonomic family's face,
+   for the whole interface. */
+@theme {
+	--color-neutral-750: #2e2e2e;
+	--color-stage: #1c1c1c;
+	--font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+}
+
 /* The app is dark. Saying so lets the web engine draw its own controls
    (dropdown lists, scrollbars, date pickers) dark as well, instead of in
    the system's light theme with the app's pale text on top. */
@@ -20,6 +28,8 @@ body {
 }
 
 .app-window {
+	font-size: 13px;
+	line-height: 1.45;
 	position: relative;
 	border-radius: 10px;
 	overflow: hidden;
@@ -76,60 +86,6 @@ input[type="checkbox"],
 input[type="range"],
 input[type="color"] {
 	@apply cursor-pointer;
-}
-
-.select-wrapper {
-	@apply relative;
-}
-
-.select-wrapper select {
-	@apply appearance-none;
-	@apply px-2 py-1;
-	@apply text-sm text-neutral-300;
-	@apply bg-neutral-700;
-	@apply border border-neutral-600 rounded-lg;
-	@apply cursor-pointer;
-}
-
-.select-wrapper::after {
-	@apply absolute right-4 top-[47.5%] -translate-y-1/2;
-	@apply w-2 h-2 rotate-45;
-	@apply border-r-2 border-b-2;
-	@apply pointer-events-none content-["_"];
-}
-
-.select-device-wrapper {
-	@apply relative;
-}
-
-.select-device-wrapper select {
-	@apply appearance-none;
-	@apply font-semibold text-xl text-neutral-200;
-	@apply cursor-pointer;
-}
-
-.select-device-wrapper::after {
-	@apply absolute right-0.5 top-[47.5%] -translate-y-1/2;
-	@apply w-2 h-2 rotate-45;
-	@apply border-r-2 border-b-2 border-neutral-100;
-	@apply pointer-events-none content-["_"];
-}
-
-.select-profile-wrapper {
-	@apply relative;
-}
-
-.select-profile-wrapper select {
-	@apply appearance-none;
-	@apply text-neutral-400;
-	@apply cursor-pointer;
-}
-
-.select-profile-wrapper::after {
-	@apply absolute right-0.5 top-[47.5%] -translate-y-1/2;
-	@apply w-1.5 h-1.5 rotate-45;
-	@apply border-r-2 border-b-2 border-neutral-400;
-	@apply pointer-events-none content-["_"];
 }
 
 .plugin-readme h1,
@@ -215,4 +171,129 @@ input[type="color"] {
 }
 .plugin-readme .markdown-alert-caution > .markdown-alert-title {
 	color: #e5534b;
+}
+
+/* The redesign's controls, shared by the inspector, the tray and the windows. */
+.btn {
+	@apply inline-flex flex-row items-center gap-1.5 h-[30px] px-[11px] font-medium whitespace-nowrap text-neutral-200 bg-neutral-750 border border-neutral-600 rounded-[7px] transition-colors hover:bg-neutral-700 disabled:opacity-50 disabled:pointer-events-none;
+}
+.btn.primary {
+	@apply text-neutral-900 bg-neutral-100 border-neutral-100 hover:bg-white;
+}
+.btn.quiet {
+	@apply text-neutral-300 bg-transparent border-transparent hover:bg-neutral-750;
+}
+.field {
+	@apply h-[30px] min-w-0 px-[9px] text-neutral-200 bg-neutral-900 border border-neutral-700 rounded-[7px] outline-none focus:border-blue-500 placeholder:text-neutral-500;
+}
+.field.invalid {
+	@apply border-red-400;
+}
+.row-act {
+	@apply inline-flex flex-row items-center gap-[5px] h-[26px] px-2 rounded-md transition-colors hover:bg-neutral-700 hover:text-neutral-100;
+}
+.menu-item {
+	@apply flex flex-row items-center gap-[9px] w-full h-[30px] px-[9px] text-left rounded-md outline-none transition-colors hover:bg-neutral-700 focus:bg-neutral-700 disabled:opacity-40 disabled:pointer-events-none;
+}
+.menu-item .kbd {
+	@apply ml-auto text-[11.5px] text-neutral-500 font-mono;
+}
+
+/* The inspector's form parts: sections, label-and-control rows, segmented
+   choices, switches, colour swatches and sliders. */
+.insp-sect {
+	@apply pt-3 pb-1 border-t border-neutral-750;
+}
+.insp-sect:first-child {
+	@apply border-t-0;
+}
+.insp-sect h4 {
+	@apply mb-2 text-xs font-semibold text-neutral-400;
+}
+.insp-row {
+	@apply flex flex-row items-center gap-2 min-h-8 py-px;
+}
+.insp-row .lb {
+	@apply w-[92px] shrink-0 text-neutral-300;
+}
+.seg {
+	@apply flex flex-row p-[3px] bg-neutral-900 border border-neutral-700 rounded-lg;
+}
+.seg button {
+	@apply flex-1 h-[26px] rounded-md font-medium text-neutral-400 transition-colors hover:text-neutral-200;
+}
+.seg button.on {
+	@apply bg-neutral-700 text-neutral-100;
+}
+.mini {
+	@apply flex flex-row p-0.5 bg-neutral-900 border border-neutral-700 rounded-[7px];
+}
+.mini button {
+	@apply flex flex-row items-center h-6 px-[9px] rounded-[5px] font-medium text-neutral-400 transition-colors hover:text-neutral-200;
+}
+.mini button.on {
+	@apply bg-neutral-700 text-neutral-100;
+}
+.switch {
+	@apply relative shrink-0 w-8 h-[18px] rounded-full bg-neutral-600 appearance-none cursor-pointer transition-colors;
+}
+.switch::after {
+	content: "";
+	@apply absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-neutral-200 transition-all;
+}
+.switch:checked {
+	@apply bg-blue-500;
+}
+.switch:checked::after {
+	@apply left-4 bg-white;
+}
+.swatch {
+	@apply relative shrink-0 w-[30px] h-[30px] rounded-[7px] border border-neutral-600 cursor-pointer overflow-hidden;
+}
+.swatch input {
+	@apply absolute inset-0 opacity-0 cursor-pointer;
+}
+.range {
+	@apply h-1 appearance-none rounded bg-neutral-600 cursor-pointer;
+}
+.range::-webkit-slider-thumb {
+	@apply appearance-none w-3.5 h-3.5 rounded-full bg-white shadow;
+}
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
+.chip {
+	@apply flex items-center h-[26px] px-2.5 rounded-full whitespace-nowrap text-neutral-400 transition-colors hover:text-neutral-200;
+}
+.chip.on {
+	@apply bg-neutral-700 text-neutral-100;
+}
+.tab {
+	@apply px-2.5 pt-2 pb-[9px] -mb-px font-medium text-neutral-400 border-b-2 border-transparent transition-colors hover:text-neutral-200;
+}
+.tab.on {
+	@apply text-neutral-100 border-neutral-100;
+}
+.plugin-card {
+	@apply flex flex-row items-start gap-[11px] p-2.5 rounded-[9px] text-left bg-neutral-750 border border-neutral-700 transition-colors hover:bg-neutral-700;
+}
+.plugin-card img {
+	@apply w-11 h-11 shrink-0 rounded-[9px] bg-neutral-900;
+}
+.plugin-card .nm {
+	@apply font-semibold leading-tight text-neutral-100;
+}
+.plugin-card .by {
+	@apply text-xs text-neutral-400;
+}
+.plugin-card .ds {
+	@apply mt-[3px] text-xs leading-snug text-neutral-400 line-clamp-2;
+}
+.setting-row {
+	@apply flex flex-row items-center justify-between gap-4 min-h-8 pt-1 text-neutral-200 cursor-pointer;
+}
+.setting-desc {
+	@apply mb-2 max-w-[56ch] text-xs leading-normal text-neutral-500;
 }

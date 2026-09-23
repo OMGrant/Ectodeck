@@ -71,49 +71,29 @@
 	});
 </script>
 
-<Popup show label={$t("plugin_details.title", { name: details.name })}>
-	<button class="mr-2 my-1 float-right text-xl text-neutral-300" on:click={close} aria-label={$t("settings.close")}>✕</button>
-	<div class="flex flex-row items-start">
-		<img src={"https://openactionapi.github.io/plugins/icons/" + id + ".png"} alt={details.name} class="size-48 rounded-2xl" />
-		<div class="flex flex-col justify-center h-48 ml-8">
-			<div class="text-3xl text-neutral-200">{details.name}</div>
-			<div class="flex items-center mt-2 text-lg text-neutral-400">
+<Popup show label={$t("plugin_details.title", { name: details.name })} onClose={close}>
+	<div class="px-[18px] pb-6">
+	<div class="flex flex-row items-start gap-6">
+		<img src={"https://openactionapi.github.io/plugins/icons/" + id + ".png"} alt={details.name} class="size-28 rounded-2xl bg-neutral-900" />
+		<div class="flex flex-col justify-center min-h-28">
+			<div class="text-2xl font-semibold tracking-[-0.02em] text-neutral-100">{details.name}</div>
+			<div class="flex items-center mt-1.5 text-neutral-400">
 				<span class="mr-2">{$t("plugin_details.by")}</span>
-				<img src={"https://avatars.githubusercontent.com/" + details.repository.split("/")[3]} alt="Author avatar" class="size-7 mr-1.5 rounded-full" />
-				<a
-					target="_blank"
-					href={"https://github.com/" + details.repository.split("/")[3]}
-					on:click={() => window.open("https://github.com/" + details.repository.split("/")[3])}
-					class="underline"
-				>
+				<img src={"https://avatars.githubusercontent.com/" + details.repository.split("/")[3]} alt="" class="size-5 mr-1.5 rounded-full" />
+				<button on:click={() => invoke("open_url", { url: "https://github.com/" + details.repository.split("/")[3] })} class="underline">
 					{details.author}
 					{#if details.repository.split("/")[3] != details.author}
 						({details.repository.split("/")[3]})
 					{/if}
-				</a>
+				</button>
 			</div>
-
-			<div class="flex flex-row items-center mt-6">
-				<button
-					on:click={install}
-					class="px-8 py-3 active:translate-y-0.5 text-lg text-neutral-100 bg-indigo-600 hover:bg-indigo-500 transition-colors border border-indigo-500 rounded-l-lg"
-				>
-					{$t("plugin_details.install")}
+			<div class="flex flex-row items-center gap-2 mt-4">
+				<button on:click={install} class="btn primary">{$t("plugin_details.install")}</button>
+				<button on:click={() => invoke("open_url", { url: details.download_url ?? details.repository + "/releases/latest" })} class="btn quiet">
+					<ArrowSquareOut size={14} />{$t("plugin_details.download_latest")}
 				</button>
-
-				<button
-					on:click={() => invoke("open_url", { url: details.download_url ?? details.repository + "/releases/latest" })}
-					class="ml-1 p-3.5 active:translate-y-0.5 text-lg text-neutral-100 bg-indigo-600 hover:bg-indigo-500 transition-colors border border-indigo-500 rounded-r-lg"
-					aria-label={$t("plugin_details.download_latest")}
-				>
-					<ArrowSquareOut size={24} />
-				</button>
-
 				{#if downloadCount}
-					<div class="flex flex-row ml-6 text-neutral-300">
-						<span class="mr-1 text-lg">{downloadCount}</span>
-						<DownloadSimple size={28} />
-					</div>
+					<span class="flex flex-row items-center gap-1 ml-2 text-xs text-neutral-400"><DownloadSimple size={14} />{downloadCount}</span>
 				{/if}
 			</div>
 		</div>
@@ -121,11 +101,12 @@
 
 	<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
 	<div
-		class="mt-4 p-6 plugin-readme text-neutral-300 border-4 border-neutral-600 rounded-xl"
+		class="mt-5 p-6 plugin-readme text-neutral-300 bg-neutral-900 border border-neutral-700 rounded-xl"
 		on:click={handleReadmeClick}
 		on:keyup={handleReadmeClick}
 		role="region"
 	>
 		{@html readme}
+	</div>
 	</div>
 </Popup>

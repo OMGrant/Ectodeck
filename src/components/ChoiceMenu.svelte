@@ -1,6 +1,15 @@
 <script lang="ts" context="module">
-	export type ChoiceItem = { id: string; label: string; selected?: boolean };
-	export type ChoiceSection = { heading?: string; items: ChoiceItem[] };
+	import type { ComponentType } from "svelte";
+	export type ChoiceItem = {
+		id: string;
+		label: string;
+		selected?: boolean;
+		// a command ("New profile") rather than a choice: no check column, its own icon
+		command?: boolean;
+		icon?: ComponentType;
+		indent?: boolean;
+	};
+	export type ChoiceSection = { heading?: string; headingIcon?: ComponentType; items: ChoiceItem[] };
 </script>
 
 <script lang="ts">
@@ -8,6 +17,9 @@
 	// are drawn by the system toolkit and ignore the app's theme, and a menu
 	// can hold commands ("HTML file…") beside choices without the select
 	// value tricks that some web engines do not honour.
+	//
+	// It comes in three looks: a small button, a full-width field for forms,
+	// and a crumb for the title bar's path.
 	import CaretDown from "phosphor-svelte/lib/CaretDown";
 	import Check from "phosphor-svelte/lib/Check";
 	import { createEventDispatcher, tick } from "svelte";
@@ -15,13 +27,12 @@
 	export let label: string;
 	export let current: string;
 	export let sections: ChoiceSection[];
+	export let variant: "button" | "field" | "crumb" | "icon" = "button";
 
 	const dispatch = createEventDispatcher<{ choose: string }>();
 	let open = false;
 	let root: HTMLDivElement;
 	let menu: HTMLDivElement;
-
-	$: items = sections.flatMap((s) => s.items);
 
 	async function toggle() {
 		open = !open;
@@ -55,20 +66,31 @@
 	function onWindowClick(event: MouseEvent) {
 		if (open && !root.contains(event.target as Node)) open = false;
 	}
+
+	const triggers = {
+		button: "gap-2 px-2 py-0.5 text-neutral-300 bg-neutral-700 hover:bg-neutral-600 border border-neutral-600 rounded-lg max-w-56",
+		field: "w-full gap-1.5 h-[30px] pl-2.5 pr-2 text-neutral-200 bg-neutral-750 hover:bg-neutral-700 border border-neutral-700 rounded-[7px]",
+		crumb: "gap-1.5 h-[26px] px-[7px] font-medium text-neutral-200 hover:bg-neutral-700 rounded-md max-w-72",
+		icon: "justify-center w-7 h-7 text-neutral-400 hover:text-neutral-100 hover:bg-neutral-700 rounded-md",
+	};
 </script>
 
 <svelte:window on:click={onWindowClick} on:keydown={onKeydown} />
 
-<div class="relative" bind:this={root}>
+<div class="relative" class:w-full={variant == "field"} bind:this={root}>
 	<button
-		class="flex flex-row items-center gap-2 px-2 py-0.5 text-neutral-300 bg-neutral-700 hover:bg-neutral-600 transition-colors border border-neutral-600 rounded-lg max-w-56"
+		class="flex flex-row items-center transition-colors {triggers[variant]}"
+		class:bg-neutral-700={open && variant == "crumb"}
 		aria-haspopup="menu"
 		aria-expanded={open}
 		aria-label={label}
 		on:click|stopPropagation={toggle}
 	>
-		<span class="truncate">{current}</span>
-		<CaretDown size="12" class="shrink-0 text-neutral-400" />
+		<slot name="icon" />
+		{#if variant != "icon"}
+			<span class="truncate">{current}</span>
+			<CaretDown size={variant == "crumb" ? 11 : 12} class="shrink-0 text-neutral-400 {variant == 'field' ? 'ml-auto' : ''}" />
+		{/if}
 	</button>
 
 	{#if open}
@@ -76,22 +98,35 @@
 			bind:this={menu}
 			role="menu"
 			aria-label={label}
-			class="absolute left-0 top-full mt-1 min-w-full w-max max-w-72 py-1 text-sm text-neutral-300 bg-neutral-700 border border-neutral-600 rounded-lg shadow-lg shadow-black/40 z-30"
+			class="absolute top-full mt-1 min-w-full w-max max-w-80 max-h-80 overflow-y-auto p-[5px] text-[13px] text-neutral-200 bg-neutral-800 border border-neutral-600 rounded-[10px] shadow-xl shadow-black/50 z-40"
+			class:min-w-60={variant == "crumb"}
+			class:left-0={variant != "icon"}
+			class:right-0={variant == "icon"}
+			class:min-w-44={variant == "icon"}
 		>
 			{#each sections as section, i}
-				{#if i > 0}<div class="my-1 border-t border-neutral-600"></div>{/if}
+				{#if i > 0 && !section.heading}<div class="my-[5px] mx-1 border-t border-neutral-700"></div>{/if}
 				{#if section.heading}
-					<div class="px-3 pt-1 pb-0.5 text-xs text-neutral-400">{section.heading}</div>
+					<div class="flex flex-row items-center gap-1.5 px-[9px] pt-2 pb-1 text-[11.5px] font-medium text-neutral-500">
+						{#if section.headingIcon}<svelte:component this={section.headingIcon} size="13" />{/if}
+						{section.heading}
+					</div>
 				{/if}
 				{#each section.items as item}
 					<button
-						role="menuitemradio"
-						aria-checked={!!item.selected}
-						class="flex flex-row items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-neutral-600 focus:bg-neutral-600 outline-none transition-colors"
+						role={item.command ? "menuitem" : "menuitemradio"}
+						aria-checked={item.command ? undefined : !!item.selected}
+						class="flex flex-row items-center gap-[9px] w-full h-[30px] px-[9px] text-left rounded-md hover:bg-neutral-700 focus:bg-neutral-700 outline-none transition-colors"
+						class:pl-8={item.indent}
 						on:click|stopPropagation={() => choose(item.id)}
 					>
-						<span class="w-4 shrink-0">{#if item.selected}<Check size="14" class="text-neutral-200" />{/if}</span>
+						{#if item.command}
+							{#if item.icon}<svelte:component this={item.icon} size="14" class="shrink-0 text-neutral-400" />{/if}
+						{:else if !item.indent}
+							<span class="w-3.5 shrink-0">{#if item.selected}<Check size="14" class="text-neutral-100" />{/if}</span>
+						{/if}
 						<span class="truncate" class:text-neutral-100={item.selected}>{item.label}</span>
+						{#if item.indent && item.selected}<Check size="14" class="ml-auto text-neutral-100" />{/if}
 					</button>
 				{/each}
 			{/each}

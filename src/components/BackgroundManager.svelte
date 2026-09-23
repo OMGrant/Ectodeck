@@ -6,6 +6,9 @@
 	import ParameterControls from "./ParameterControls.svelte";
 	import { type IsfInput, pageInputs, shaderInputs } from "$lib/isf";
 	import { getWebserverUrl } from "$lib/ports";
+	import { devicePreviews } from "$lib/deviceLook";
+	import Sparkle from "phosphor-svelte/lib/Sparkle";
+	import ImageIcon from "phosphor-svelte/lib/Image";
 
 	export let device: DeviceInfo;
 	export let background: string | null = null;
@@ -82,7 +85,14 @@
 
 	// The animation menu: nothing, a built-in shader, or one of your own.
 	$: animationSections = [
-		{ items: [{ id: "none", label: $t("device_view.animation.none"), selected: !animated }] },
+		{ items: [{ id: "none", label: $t("device_view.animation.none"), selected: !animated && !background }] },
+		{
+			heading: $t("device_view.picture"),
+			items: [
+				...(background ? [{ id: "picture:current", label: $t("device_view.picture.current"), selected: !animated }] : []),
+				{ id: "picture:choose", label: $t("device_view.picture.choose") },
+			],
+		},
 		{
 			heading: $t("device_view.animation.builtin"),
 			items: [
@@ -106,6 +116,9 @@
 	] as ChoiceSection[];
 	$: animationLabel = animated ? animated.name : $t("device_view.animation.none");
 
+	let adjusting = false;
+	$: if (!inputs.length) adjusting = false;
+	$: builtin = isBuiltin(animated);
 	let enteringUrl = false;
 	let url = "";
 
@@ -124,6 +137,13 @@
 	}
 
 	async function chooseAnimation(id: string) {
+		if (id == "picture:choose") return fileInput.click();
+		if (id == "picture:current") return setAnimated(null);
+		if (id == "none") {
+			await setAnimated(null);
+			if (background) await apply(null);
+			return;
+		}
 		if (id == "none") await setAnimated(null);
 		else if (id.startsWith("builtin:")) {
 			const shader = builtinShaders.find((s) => "builtin:" + s.id == id);
@@ -201,6 +221,8 @@
 	$: load(device);
 
 	async function apply(image: string | null) {
+		// choosing a picture means showing it, so it replaces an animation
+		if (image && animated) await setAnimated(null);
 		background = image;
 		await invoke("set_device_background", { device: device.id, image });
 	}
@@ -251,76 +273,59 @@
 </script>
 
 {#if device.has_background}
-	<div class="flex flex-row items-center gap-2 text-sm">
-		<span class="text-neutral-400">{$t("device_view.background")}</span>
-
-		<button
-			class="px-2 py-0.5 text-neutral-300 bg-neutral-700 hover:bg-neutral-600 transition-colors border border-neutral-600 rounded-lg"
-			title={$t("device_view.background.hint")}
-			on:click={() => fileInput.click()}
-		>
-			{background ? $t("device_view.background.change") : $t("device_view.background.choose")}
-		</button>
-
-		{#if background}
-			<button
-				class="px-2 py-0.5 text-neutral-400 hover:text-neutral-200 transition-colors"
-				on:click={() => apply(null)}
-			>
-				{$t("device_view.background.clear")}
-			</button>
-		{/if}
-
-		<input type="file" accept="image/*" class="hidden" bind:this={fileInput} on:change={choose} />
-
-		<span class="ml-4 text-neutral-400">{$t("device_view.animation")}</span>
-		<ChoiceMenu label={$t("device_view.animation")} current={animationLabel} sections={animationSections} on:choose={(e) => chooseAnimation(e.detail)} />
+	<section class="insp-sect">
+		<h4>{$t("device_view.background")}</h4>
+		<div class="flex flex-row items-center gap-3">
+			<div class="relative shrink-0 w-32 aspect-[854/480] rounded-lg overflow-hidden bg-neutral-950 ring-1 ring-neutral-700">
+				{#if animated && $devicePreviews[device.id]}
+					<img src={$devicePreviews[device.id]} alt="" class="absolute inset-0 w-full h-full object-cover" />
+				{:else if !animated && background}
+					<img src={background} alt="" class="absolute inset-0 w-full h-full object-cover" />
+				{/if}
+			</div>
+			<div class="min-w-0">
+				<div class="truncate font-semibold text-neutral-100">{animated ? animated.name : background ? $t("device_view.picture") : $t("device_view.animation.none")}</div>
+				<div class="flex flex-row items-center gap-[5px] mb-2 text-xs text-neutral-400">
+					{#if animated}<Sparkle size="12" />{animated.kind == "shader" || builtin ? $t("device_view.animated.reacts") : $t("device_view.animated")}
+					{:else if background}<ImageIcon size="12" />{$t("device_view.picture.still")}
+					{:else}{$t("device_view.background.empty")}{/if}
+				</div>
+				<div class="flex flex-row gap-1.5">
+					<ChoiceMenu label={$t("device_view.background.change")} current={$t("device_view.background.change")} sections={animationSections} on:choose={(e) => chooseAnimation(e.detail)} />
+					{#if animated && inputs.length}
+						<button class="btn quiet h-[26px]! px-2!" class:bg-neutral-750={adjusting} aria-pressed={adjusting} on:click={() => (adjusting = !adjusting)}>{$t("parameters.adjust_short")}</button>
+					{/if}
+				</div>
+			</div>
+		</div>
 		{#if animationError}
-			<span class="text-red-400" role="alert">{$t("device_view.animation.failed", { error: animationError })}</span>
+			<p class="mt-2 text-xs text-red-400" role="alert">{$t("device_view.animation.failed", { error: animationError })}</p>
 		{/if}
 		{#if enteringUrl}
-			<form class="flex flex-row items-center gap-1" on:submit|preventDefault={applyUrl}>
+			<form class="flex flex-row items-center gap-1.5 mt-2" on:submit|preventDefault={applyUrl}>
 				<!-- svelte-ignore a11y-autofocus -->
-				<input
-					bind:value={url}
-					autofocus
-					placeholder="https://example.com"
-					class="w-56 px-2 py-0.5 text-neutral-200 bg-neutral-800 border border-neutral-600 rounded-lg outline-none focus:border-blue-500"
-				/>
-				<button type="submit" class="px-2 py-0.5 text-neutral-300 bg-neutral-700 hover:bg-neutral-600 transition-colors border border-neutral-600 rounded-lg">
-					{$t("device_view.animation.apply")}
-				</button>
-				<button type="button" class="px-2 py-0.5 text-neutral-400 hover:text-neutral-200 transition-colors" on:click={() => (enteringUrl = false)}>
-					{$t("device_view.animation.cancel")}
-				</button>
+				<input bind:value={url} autofocus placeholder="https://example.com" class="field flex-1" />
+				<button type="submit" class="btn">{$t("device_view.animation.apply")}</button>
+				<button type="button" class="btn quiet" on:click={() => (enteringUrl = false)}>{$t("device_view.animation.cancel")}</button>
 			</form>
 		{/if}
+		{#if adjusting && animated}
+			<div class="mt-2.5">
+				<ParameterControls {inputs} values={animated.params ?? {}} on:change={(e) => changeParams(e.detail)} />
+			</div>
+		{/if}
+		<input type="file" accept="image/*" class="hidden" bind:this={fileInput} on:change={choose} />
 		<input type="file" accept=".html,.htm,text/html" class="hidden" bind:this={pageInput} on:change={choosePage} />
 		<input type="file" accept=".frag,.glsl,.fs,.txt" class="hidden" bind:this={shaderInput} on:change={chooseShader} />
+	</section>
 
-		<span class="ml-4 text-neutral-400">{$t("device_view.key_background")}</span>
-		<div class="flex flex-row border border-neutral-600 rounded-lg overflow-hidden" role="radiogroup" aria-label={$t("device_view.key_background")}>
+	<section class="insp-sect">
+		<h4>{$t("device_view.key_background")}</h4>
+		<div class="mini w-fit" role="radiogroup" aria-label={$t("device_view.key_background")}>
 			{#each backdropOptions as { value, label }}
-				<button
-					class="px-2 py-0.5 transition-colors"
-					class:bg-neutral-600={keyStyle.backdrop === value}
-					class:text-neutral-100={keyStyle.backdrop === value}
-					class:bg-neutral-800={keyStyle.backdrop !== value}
-					class:text-neutral-400={keyStyle.backdrop !== value}
-					class:hover:bg-neutral-700={keyStyle.backdrop !== value}
-					role="radio"
-					aria-checked={keyStyle.backdrop === value}
-					on:click={() => setStyle({ backdrop: value })}
-				>
-					{$t(label)}
-				</button>
+				<button role="radio" aria-checked={keyStyle.backdrop === value} class:on={keyStyle.backdrop === value} on:click={() => setStyle({ backdrop: value })}>{$t(label)}</button>
 			{/each}
 		</div>
-	</div>
-	{#if animated && inputs.length}
-		<div class="mt-2 flex flex-row items-start gap-3 text-sm">
-			<span class="text-neutral-400 whitespace-nowrap">{$t("parameters.adjust", { name: animated.name })}</span>
-			<ParameterControls {inputs} values={animated.params ?? {}} on:change={(e) => changeParams(e.detail)} />
-		</div>
-	{/if}
+		<p class="mt-1.5 text-xs text-neutral-500">{$t("device_view.key_background.hint")}</p>
+	</section>
 {/if}

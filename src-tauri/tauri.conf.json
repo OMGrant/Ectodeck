@@ -56,10 +56,10 @@
 				"transparent": true,
 				"fullscreen": false,
 				"resizable": true,
-				"width": 800,
-				"height": 600,
-				"minWidth": 800,
-				"minHeight": 600,
+				"width": 1180,
+				"height": 680,
+				"minWidth": 900,
+				"minHeight": 560,
 				"center": true,
 				"dragDropEnabled": false
 			}

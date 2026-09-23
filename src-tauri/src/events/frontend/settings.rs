@@ -53,6 +53,48 @@ pub fn open_log_directory() -> Result<(), Error> {
 	Ok(())
 }
 
+/// Installs the device rules that let the signed-in user reach the decks
+/// Ectodeck drives, through the system's password prompt, then reloads them.
+/// The .deb and .rpm packages install these themselves; this is for builds
+/// that did not come from a package.
+#[command]
+pub async fn install_device_rules() -> Result<(), Error> {
+	#[cfg(target_os = "linux")]
+	{
+		const RULES: [(&str, &str); 2] = [
+			("40-streamdeck.rules", include_str!("../../../bundle/40-streamdeck.rules")),
+			("40-magtran-m3.rules", include_str!("../../../../plugins/com.grantgarrison.opendeck-magtran-m3.sdPlugin/40-opendeck-magtran-m3.rules")),
+		];
+		let staging = std::env::temp_dir().join("ectodeck-rules");
+		std::fs::create_dir_all(&staging).map_err(anyhow::Error::from)?;
+		let mut script = String::new();
+		for (name, contents) in RULES {
+			let path = staging.join(name);
+			std::fs::write(&path, contents).map_err(anyhow::Error::from)?;
+			script += &format!("install -m 644 '{}' /etc/udev/rules.d/{} && ", path.display(), name);
+		}
+		script += "udevadm control --reload-rules && udevadm trigger";
+
+		let mut command = if crate::shared::is_flatpak() {
+			let mut c = tokio::process::Command::new("flatpak-spawn");
+			c.args(["--host", "pkexec", "sh", "-c", &script]);
+			c
+		} else {
+			let mut c = tokio::process::Command::new("pkexec");
+			c.args(["sh", "-c", &script]);
+			c
+		};
+		let output = command.output().await.map_err(anyhow::Error::from)?;
+		let _ = std::fs::remove_dir_all(&staging);
+		if !output.status.success() {
+			return Err(anyhow::anyhow!("{}", String::from_utf8_lossy(&output.stderr).trim().to_owned()).into());
+		}
+		Ok(())
+	}
+	#[cfg(not(target_os = "linux"))]
+	Err(anyhow::anyhow!("device rules are only needed on Linux").into())
+}
+
 #[command]
 pub fn get_build_info() -> String {
 	format!(

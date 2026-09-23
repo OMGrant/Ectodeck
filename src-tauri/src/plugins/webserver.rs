@@ -72,6 +72,7 @@ pub async fn init_webserver(prefix: PathBuf) {
 
 			let mut content = tokio::fs::read_to_string(path).await.unwrap_or_default();
 			content += r#"
+				<style>html { --sdpi-bgcolor: #262626 !important; }</style>
 				<div id="opendeck_iframe_container" style="position: absolute; z-index: 100; top: 0; left: 0; width: 100%; height: 100%; display: none;"></div>
 				<script>
 					const opendeck_window_open = window.open;

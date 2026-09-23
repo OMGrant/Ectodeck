@@ -112,6 +112,7 @@ async fn main() {
 			frontend::settings::open_config_directory,
 			frontend::settings::open_log_directory,
 			frontend::settings::get_build_info,
+			frontend::settings::install_device_rules,
 			frontend::settings::backup_config_directory,
 			frontend::settings::restore_config_directory,
 		])

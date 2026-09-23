@@ -8,10 +8,10 @@
 	import type { CopiedItem } from "$lib/propertyInspector";
 
 	import Key from "./Key.svelte";
-	import BackgroundManager from "./BackgroundManager.svelte";
 
 	import { t } from "$lib/i18n";
-	import { inspectedInstance, inspectedParentAction } from "$lib/propertyInspector";
+	import { deviceLooks, devicePreviews } from "$lib/deviceLook";
+	import { inspectedInstance, inspectedParentAction, placeAction } from "$lib/propertyInspector";
 
 	import { invoke } from "@tauri-apps/api/core";
 
@@ -19,6 +19,23 @@
 	export let profile: Profile;
 
 	export let selectedDevice: string;
+	// The room the stage gives the deck; it is drawn at whatever scale fits.
+	export let availWidth = 0;
+	export let availHeight = 0;
+	let naturalWidth = 0;
+	let naturalHeight = 0;
+	// the deck's size before scaling; a transform leaves the layout box alone
+	function measure(node: HTMLElement) {
+		const update = () => {
+			naturalWidth = node.offsetWidth;
+			naturalHeight = node.offsetHeight;
+		};
+		update();
+		const observer = new ResizeObserver(update);
+		observer.observe(node);
+		return { destroy: () => observer.disconnect() };
+	}
+	$: fit = naturalWidth && naturalHeight && availWidth > 0 && availHeight > 0 ? Math.min(1.25, availWidth / naturalWidth, availHeight / naturalHeight) : 1;
 
 	function handleDragStart({ dataTransfer }: DragEvent, controller: string, position: number) {
 		if (!dataTransfer) return;
@@ -78,8 +95,17 @@
 		}
 	}
 
-	$: overflowsX = Math.max(device.columns + (sideEncoders ? 1 : 0), sideEncoders ? 0 : device.encoders, device.touchpoints) > 8;
-	$: overflowsY = device.rows + (sideEncoders ? 0 : Math.min(device.encoders, 1)) + Math.min(device.touchpoints, 1) > 4;
+
+	$: if ($placeAction && selectedDevice == device.id && !$inspectedParentAction) {
+		const target = $inspectedInstance;
+		if (target && typeof target == "object" && target.device == device.id) {
+			const action = $placeAction;
+			$placeAction = null;
+			handlePaste({ type: "action", action }, target).then(() => {
+				$inspectedInstance = `${target.device}.${target.profile}.${target.controller}.${target.position}.0`;
+			});
+		}
+	}
 
 	// Grid navigation: track focused cell and compute row lengths for arrow key movement.
 	let focusedRow = 0;
@@ -96,9 +122,10 @@
 	$: keypadColHeight = device.rows * 132;
 	// Devices whose dials run down the side, rather than along the lower edge as
 	// on a Stream Deck Plus. Drawing them underneath misrepresents the hardware.
-	let background: string | null = null;
-	let keyStyle: KeyStyle = { backdrop: true };
-	let animated: AnimatedBackground | null = null;
+	$: look = $deviceLooks[device.id];
+	$: background = look?.background ?? null;
+	$: keyStyle = look?.keyStyle ?? ({ backdrop: true } as KeyStyle);
+	$: animated = (look?.animated ?? null) as AnimatedBackground | null;
 
 	// The live background is previewed from frames the plugin sends, a few a
 	// second, while this view is visible. The window cannot run the animation
@@ -115,7 +142,10 @@
 	}
 	$: setPreview(device.has_background && animated && visible ? device.id : null);
 	const unlisten = listen<{ device: string; image: string }>("background_preview", ({ payload }) => {
-		if (payload.device == previewOn) preview = payload.image;
+		if (payload.device == previewOn) {
+			preview = payload.image;
+			devicePreviews.update((p) => ({ ...p, [payload.device]: payload.image }));
+		}
 	});
 	onDestroy(() => {
 		setPreview(null);
@@ -235,28 +265,18 @@
 
 {#key device}
 	<span id="grid-description" class="sr-only">{$t("device_view.grid_description")}</span>
+	<div class="relative shrink-0" class:hidden={selectedDevice != device.id} style="width: {naturalWidth * fit}px; height: {naturalHeight * fit}px;">
 	<div
-		class="flex flex-col grow px-16 py-6 overflow-auto before:mt-auto before:content-[''] after:mb-auto after:content-['']"
-		class:items-center={device.columns <= 9}
-		class:hidden={$inspectedParentAction || selectedDevice != device.id}
-		class:device-fade-x={overflowsX && !overflowsY}
-		class:device-fade-y={overflowsY && !overflowsX}
-		class:device-fade-xy={overflowsX && overflowsY}
+		class="absolute left-0 top-0 flex flex-col w-max origin-top-left"
+		style="transform: scale({fit});"
+		use:measure
 		role="grid"
 		aria-label={device.name}
 		aria-describedby="grid-description"
 		tabindex="-1"
-		on:click={() => inspectedInstance.set(null)}
-		on:keyup={() => inspectedInstance.set(null)}
 		on:keydown|capture={handleGridKeydown}
 		on:focusin={handleGridFocusin}
 	>
-		{#if device.has_background}
-			<div class="mb-3 self-center">
-				<BackgroundManager {device} bind:background bind:keyStyle bind:animated />
-			</div>
-		{/if}
-
 		<div class="flex" class:flex-row={sideEncoders} class:items-center={sideEncoders} class:flex-col={!sideEncoders}>
 		{#if panelLayout}
 			<!-- The panel, at fixed scale, with the keys placed on it by geometry. -->
@@ -417,19 +437,5 @@
 			{/each}
 		</div>
 	</div>
+	</div>
 {/key}
-
-<style>
-	.device-fade-x {
-		mask-image: linear-gradient(to right, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent);
-	}
-	.device-fade-y {
-		mask-image: linear-gradient(to bottom, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent);
-	}
-	.device-fade-xy {
-		mask-image:
-			linear-gradient(to right, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent),
-			linear-gradient(to bottom, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent);
-		mask-composite: intersect;
-	}
-</style>

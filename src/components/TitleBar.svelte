@@ -33,21 +33,26 @@
 	const button = "flex items-center justify-center w-10 h-full text-neutral-400 hover:text-neutral-100 transition-colors";
 </script>
 
-<header class="relative flex flex-row items-center h-9 shrink-0 bg-neutral-800 border-b border-neutral-700 select-none" data-tauri-drag-region>
-	<div class="absolute inset-0 flex flex-row items-center justify-center gap-2 pointer-events-none">
+<header class="relative flex flex-row items-center h-9 shrink-0 pl-3 gap-0.5 bg-neutral-800 border-b border-neutral-700 select-none" data-tauri-drag-region>
+	<!-- The title bar reads as a path: Ectodeck, then the device, then the profile. -->
+	<div class="flex flex-row items-center gap-[7px] pr-1.5 pointer-events-none">
 		<img src={mark} alt="" class="w-4 h-4" draggable="false" />
-		<span class="wordmark text-sm text-neutral-100">Ectodeck</span>
+		<span class="wordmark text-[13.5px] text-neutral-100">Ectodeck</span>
 	</div>
-	<div class="ml-auto flex flex-row h-full relative">
-		<button class="{button} hover:bg-neutral-700" aria-label="Minimise" on:click={() => appWindow.minimize()}>
-			<Minus size="14" />
-		</button>
-		<button class="{button} hover:bg-neutral-700" aria-label={maximized ? "Restore" : "Maximise"} on:click={() => appWindow.toggleMaximize()}>
-			{#if maximized}<CopySimple size="13" />{:else}<Square size="12" />{/if}
-		</button>
-		<button class="{button} hover:bg-red-600" aria-label="Close" on:click={() => appWindow.close()}>
-			<X size="14" />
-		</button>
+	<slot name="path" />
+	<div class="ml-auto flex flex-row items-center h-full gap-1">
+		<slot name="actions" />
+		<div class="flex flex-row h-full ml-1.5">
+			<button class="{button} hover:bg-neutral-700" aria-label="Minimise" on:click={() => appWindow.minimize()}>
+				<Minus size="14" />
+			</button>
+			<button class="{button} hover:bg-neutral-700" aria-label={maximized ? "Restore" : "Maximise"} on:click={() => appWindow.toggleMaximize()}>
+				{#if maximized}<CopySimple size="13" />{:else}<Square size="12" />{/if}
+			</button>
+			<button class="{button} hover:bg-red-600" aria-label="Close" on:click={() => appWindow.close()}>
+				<X size="14" />
+			</button>
+		</div>
 	</div>
 </header>
 

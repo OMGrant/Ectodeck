@@ -14,7 +14,7 @@ export default defineConfig({
 			ignored: ["**/src-tauri/**", "**/target/**"],
 		},
 		fs: {
-			allow: ["./translations"],
+			allow: ["./translations", "./src-tauri/icons"],
 		},
 	},
 });
