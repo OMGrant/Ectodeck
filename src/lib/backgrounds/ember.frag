@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Ember: a warm glow flowing slowly between three colours. A key press lifts a few sparks off the key. Switch presets in Adjust, or with the Background preset action.",
+  "DESCRIPTION": "Ember: a warm glow flowing slowly between three colours. A key press lifts a few sparks off the key. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "colour1",

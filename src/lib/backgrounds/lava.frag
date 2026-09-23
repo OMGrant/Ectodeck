@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Lava Lamp: warm wax rising, merging and splitting in a glowing glass. A key press releases a hot blob that climbs from the key. Switch presets in Adjust, or with the Background preset action.",
+  "DESCRIPTION": "Lava Lamp: warm wax rising, merging and splitting in a glowing glass. A key press releases a hot blob that climbs from the key. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "wax",

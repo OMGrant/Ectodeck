@@ -4,7 +4,7 @@ use super::Error;
 use crate::shared::DEVICES;
 use crate::store::profiles::{AnimatedBackground, KeyStyle, acquire_locks_mut};
 
-/// The Background preset action: tell the interface, which knows each
+/// The Background Preset action: tell the interface, which knows each
 /// background's presets, to switch the device's background by some steps.
 /// The switch is an ordinary settings change, so it is saved and shown.
 pub fn step_background_preset(device: &str, steps: i16) {

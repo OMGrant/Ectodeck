@@ -21,7 +21,7 @@
 //!   key's centre, z seconds since the press, w the key's index; unused slots
 //!   have w = -1.
 //! - `iDials`: kept for older shaders, always zero. The deck's dials never
-//!   drive a background directly; the app's Background preset action switches
+//!   drive a background directly; the app's Background Preset action switches
 //!   a background's saved settings instead.
 //!
 //! Multi-pass shaders follow ISF's PASSES: the header lists passes, each

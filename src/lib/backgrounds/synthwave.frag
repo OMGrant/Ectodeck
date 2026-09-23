@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down onto the key; where it hits, a flash and a ring of neon light spread out from it, rippling across the grid. Switch presets in Adjust, or with the Background preset action.",
+  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down onto the key; where it hits, the key lights up and shines down onto the grid beneath it. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "sky",
@@ -150,6 +150,8 @@ float noise(float x) { float i = floor(x), f = fract(x); return mix(hash(vec2(i,
 
 const float HORIZON = 0.42; // as a fraction of the height, from the bottom
 const float FLIGHT = 0.55; // seconds from a press to the star landing
+const float KEY_HALF = 52.0; // half a key's width on the panel, in pixels
+const float GLOW = 1.4;     // seconds the light takes to fade
 
 // the ridge line of the mountains, in picture heights above the horizon
 float ridge(float x) {
@@ -208,22 +210,24 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // the sunC's reflection on the floor
         col += sunC * vec3(1.0, 0.4, 0.6) * 0.25 * exp(-abs(uv.x - 0.5) * 9.0) * (1.0 - depth);
 
-        // where a star has hit, its ring of light lights up the grid lines it crosses
+        // where a star has hit, the key shines down onto the grid beneath it: the
+        // lines in a lane as wide as the key light up, brightest just below it
         for (int i = 0; i < 8; i++) {
             vec4 p = iKeyPresses[i];
             float since = p.z - FLIGHT;
-            if (p.w < 0.0 || since < 0.0 || since > 1.2) continue;
-            vec2 d = vec2((uv.x - p.x / iResolution.x) * aspect, uv.y - p.y / iResolution.y);
-            float ring = exp(-pow((length(d) - since * 0.45) * 16.0, 2.0)) * (1.0 - since / 1.2);
-            col += gridC * ring * line * fog * 3.0;   // faded like the lines toward the horizon
+            if (p.w < 0.0 || since < 0.0 || since > GLOW) continue;
+            float lane = 1.0 - smoothstep(KEY_HALF - 12.0, KEY_HALF + 10.0, abs(fragCoord.x - p.x));
+            float below = fragCoord.y < p.y ? exp(-(p.y - fragCoord.y) / (iResolution.y * 0.55)) : 0.0;
+            float fade = exp(-since * 2.4) * (1.0 - since / GLOW);
+            col += mix(gridC, vec3(1.0), 0.35) * lane * below * fade * (line * fog * 5.0 + 0.4);
         }
     }
 
     // shooting stars: each falls from high up onto its key; where it hits, a
-    // flash, and a ring of light spreading out from the key
+    // flash, and the key lights up
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
-        if (p.w < 0.0 || p.z > FLIGHT + 1.2) continue;
+        if (p.w < 0.0 || p.z > FLIGHT + GLOW) continue;
         vec2 land = vec2(p.x / iResolution.x * aspect, p.y / iResolution.y);
         vec2 start = land + vec2(0.35 + hash(vec2(p.w, 3.0)) * 0.15, 0.62);
         vec2 dir = normalize(land - start);
@@ -240,9 +244,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             vec2 d = vec2(uv.x * aspect, uv.y) - land;
             // the hit: a white-hot flash at the key, fading fast
             col += mix(sunC, vec3(1.0), 0.6) * exp(-since * 5.0) * exp(-length(d) * 20.0) * 2.2;
-            // the ring, in the grid's colour
-            float ring = exp(-pow((length(d) - since * 0.45) * 16.0, 2.0)) * (1.0 - since / 1.2);
-            col += mix(gridC, vec3(1.0), 0.35) * ring * 0.7;
+            // the key itself lights up: a soft square the size of the key
+            vec2 k2 = abs(fragCoord - p.xy) - vec2(KEY_HALF - 14.0);
+            float box = length(max(k2, 0.0)) + min(max(k2.x, k2.y), 0.0) - 14.0;   // a rounded square
+            float fade = exp(-since * 2.4) * (1.0 - since / GLOW);
+            col += mix(gridC, vec3(1.0), 0.3) * fade * (0.45 * (1.0 - smoothstep(-6.0, 10.0, box)) + 0.9 * exp(-abs(box) * 0.18));
         }
     }
 

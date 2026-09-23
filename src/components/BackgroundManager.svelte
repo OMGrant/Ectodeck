@@ -111,7 +111,7 @@
 		}
 	}
 
-	// Presets: the menu, and the Background preset action from a key or dial.
+	// Presets: the menu, and the Background Preset action from a key or dial.
 	$: presetIndex = animated && presets.length ? currentPreset(presets, animated.params ?? {}, inputs) : -1;
 	$: presetSections = [{ items: presets.map((p, i) => ({ id: String(i), label: p.name, selected: i == presetIndex })) }] as ChoiceSection[];
 	// the preset last in effect, which Adjust's reset goes back to

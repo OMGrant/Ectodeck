@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Spectrum: glowing bars that dance to whatever your computer is playing, bass on the left and treble on the right, with the beat pulsing through the background. A key press flashes the bars under it. Switch presets in Adjust, or with the Background preset action.",
+  "DESCRIPTION": "Spectrum: glowing bars that dance to whatever your computer is playing, bass on the left and treble on the right, with the beat pulsing through the background. A key press flashes the bars under it. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "low",

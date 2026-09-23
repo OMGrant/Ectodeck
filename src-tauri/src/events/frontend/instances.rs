@@ -11,7 +11,7 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 	if !action.controllers.contains(&context.controller) {
 		return Ok(None);
 	}
-	// Background preset belongs to decks with a display behind their keys
+	// Background Preset belongs to decks with a display behind their keys
 	if action.uuid == crate::shared::BACKGROUND_PRESET && !crate::shared::DEVICES.get(&context.device).map(|d| d.has_background).unwrap_or(false) {
 		return Ok(None);
 	}

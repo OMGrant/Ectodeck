@@ -518,7 +518,7 @@ pub static CATEGORIES: LazyLock<RwLock<HashMap<String, Category>>> = LazyLock::n
 				.unwrap(),
 				serde_json::from_value(serde_json::json!(
 					{
-						"name": "Background preset",
+						"name": "Background Preset",
 						"icon": "opendeck/background-preset.svg",
 						"plugin": "opendeck",
 						"uuid": BACKGROUND_PRESET,

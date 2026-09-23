@@ -72,7 +72,7 @@ export function fromHex(hex: string, alpha = 1): number[] {
 }
 
 // Presets: named sets of settings a background offers, switched from the
-// Preset menu or the Background preset action. A header lists them as
+// Preset menu or the Background Preset action. A header lists them as
 // PRESETS: [{ NAME, VALUES: { input: value } }], or marks one "long" input
 // with PRESET: true, whose choices then are the presets.
 export type Preset = { name: string; values: Record<string, unknown> };

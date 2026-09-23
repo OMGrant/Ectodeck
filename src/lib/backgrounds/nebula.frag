@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other, as a fluid. A key press stirs a broad puff of turbulence into the smoke around the key. Switch presets in Adjust, or with the Background preset action.",
+  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other, as a fluid. A key press stirs a broad puff of turbulence into the smoke around the key. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "colour1",

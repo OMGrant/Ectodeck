@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace from it: the stars stretch into streaks racing out from the key, you ride the blue tunnel for a moment, then drop back out among the stars. Switch presets in Adjust, or with the Background preset action.",
+  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace from it: the stars stretch into streaks racing out from the key, you ride the blue tunnel for a moment, then drop back out among the stars. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "speed",

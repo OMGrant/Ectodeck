@@ -18,7 +18,7 @@
 	let plugins: any[] = [];
 	// the selected deck: a deck driver's own actions show only for its decks
 	export let deviceId: string | undefined = undefined;
-	// Background preset belongs to decks with a display behind their keys
+	// Background Preset belongs to decks with a display behind their keys
 	export let hasBackground = false;
 	$: foreign = new Set(plugins.filter((p) => p.device_namespace && !(deviceId ?? "").startsWith(p.device_namespace)).map((p) => p.id));
 	export async function reload() {

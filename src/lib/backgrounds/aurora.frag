@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press sends a surge along the curtain and a ray up to the key. Switch presets in Adjust, or with the Background preset action.",
+  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press sends a surge along the curtain and a ray up to the key. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "colour1",
