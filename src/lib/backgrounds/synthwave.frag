@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down onto the key; where it hits, the key lights up and shines down onto the grid beneath it, and a wave of light runs down the grid. Switch presets in Adjust, or with the Background Preset action.",
+  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down onto the key; where it hits, the key lights up and shines down onto the grid beneath it, and the grid lights up outward from where it hit. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "sky",
@@ -220,11 +220,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             float below = fragCoord.y < p.y ? exp(-(p.y - fragCoord.y) / (iResolution.y * 0.55)) : 0.0;
             float fade = exp(-since * 2.4) * (1.0 - since / GLOW);
             col += mix(gridC, vec3(1.0), 0.35) * lane * below * fade * (line * fog * 5.0 + 0.4);
-            // and the whole grid answers: a flash, then a band of light racing
-            // down it from the horizon, brightest in the key's lane
-            float front = exp(-pow((depth - since / 0.9) * 9.0, 2.0)) * (1.0 - since / GLOW);
+            // and the grid lights up from where the star hit: a soft pool of light
+            // growing out from the impact, lighting the lines as it reaches them
+            float dist = length(fragCoord - p.xy) / iResolution.y;
+            float reach = 0.08 + since * 0.85;
+            float pool = exp(-2.0 * (dist * dist) / (reach * reach)) * (1.0 - since / GLOW);
             vec3 hot = mix(gridC, vec3(1.0), 0.45);
-            col += hot * line * fog * (front * (1.0 + 2.0 * lane) * 2.4 + exp(-since * 3.5) * 1.1) + gridC * fog * front * (0.22 + 0.3 * lane);
+            col += hot * line * fog * pool * (2.6 + 1.6 * lane) + gridC * fog * pool * 0.22;
         }
     }
 
