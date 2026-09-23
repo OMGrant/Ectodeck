@@ -23,12 +23,10 @@
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #6a9ad6; }
   #sky { position: fixed; inset: 0; }
-  #light { position: fixed; inset: 0; mix-blend-mode: screen; pointer-events: none; }
 </style>
 </head>
 <body>
 <div id="sky" aria-hidden="true"></div>
-<canvas id="light" aria-hidden="true"></canvas>
 <script>/*THREE*/</script>
 <script>/*VANTA_CLOUDS*/</script>
 <script>
@@ -70,13 +68,12 @@
   // the chosen time of day, or -1 to follow the clock
   var timeSetting = Math.round(num('time'));
   var time = timeSetting < 0 ? clockTime() : timeSetting % 4, base = num('speed');
+  // the renderer's clear colour follows the sky: Vanta's default is white
+  TIMES.forEach(function (t) { t.backgroundColor = t.skyColor; });
   var effect = VANTA.CLOUDS(Object.assign({ el: '#sky', THREE: THREE, mouseControls: false, touchControls: false, gyroControls: false, speed: base }, TIMES[time]));
 
   // a press breaks the clouds at the key: a soft bright opening that swells
   // quickly, shafts of sunlight falling from it, then the cloud closes again
-  var canvas = document.getElementById('light'), c = canvas.getContext('2d');
-  function size() { canvas.width = innerWidth; canvas.height = innerHeight; }
-  size(); addEventListener('resize', size);
   var breaks = [];
   window.addEventListener('ectodeck:press', function (e) {
     if (e.detail.down) breaks.push({ x: e.detail.x * innerWidth, y: e.detail.y * innerHeight, born: performance.now(), seed: Math.random() * 10 });
@@ -94,38 +91,67 @@
   setInterval(function () {
     if (timeSetting < 0 && clockTime() !== time) { time = clockTime(); effect.setOptions(TIMES[time]); }
   }, 60000);
-  var hexRgb = function (h) { return [(h >> 16) & 255, (h >> 8) & 255, h & 255]; };
-  (function draw(now) {
-    c.clearRect(0, 0, canvas.width, canvas.height);
-    var sun = hexRgb(TIMES[time].sunColor);
-    breaks = breaks.filter(function (b) { return now - b.born < 6000; });
-    breaks.forEach(function (b) {
-      var age = (now - b.born) / 1000;
-      var open = Math.min(1, age / 0.35) * (1 - Math.max(0, (age - 2.5) / 3.5));
-      var r = 30 + 60 * Math.min(1, age / 0.6);
-      // the opening
-      var g = c.createRadialGradient(b.x, b.y, 0, b.x, b.y, r * 1.6);
-      g.addColorStop(0, 'rgba(255,252,240,' + 0.95 * open + ')');
-      g.addColorStop(0.2, 'rgba(' + sun + ',' + 0.7 * open + ')');
-      g.addColorStop(0.45, 'rgba(' + sun + ',' + 0.35 * open + ')');
-      g.addColorStop(1, 'rgba(' + sun + ',0)');
-      c.fillStyle = g; c.beginPath(); c.arc(b.x, b.y, r * 1.6, 0, 6.283); c.fill();
+  // The light is drawn by the clouds' own WebGL renderer, straight after the
+  // clouds, screened over them. A second canvas stacked over the clouds made
+  // headless Chrome send whole frames of white now and then: the flicker.
+  var renderer = effect.renderer;
+  var slots = []; for (var i = 0; i < 8; i++) slots.push(new THREE.Vector4(0, 0, -1, 0));
+  var light = new THREE.ShaderMaterial({
+    uniforms: { u_breaks: { value: slots }, u_sun: { value: new THREE.Color() }, u_size: { value: new THREE.Vector2() }, u_ratio: { value: 1 }, u_time: { value: 0 } },
+    vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: [
+      'uniform vec4 u_breaks[8];  // x and y in page pixels from the top left, age in seconds (below 0: none), seed',
+      'uniform vec3 u_sun; uniform vec2 u_size; uniform float u_ratio; uniform float u_time;',
+      'vec3 screen(vec3 a, vec3 b) { return 1.0 - (1.0 - a) * (1.0 - b); }',
+      'void main() {',
+      '  vec2 p = gl_FragCoord.xy / u_ratio; p.y = u_size.y - p.y;',
+      '  vec3 col = vec3(0.0);',
+      '  for (int k = 0; k < 8; k++) {',
+      '    vec4 b = u_breaks[k]; float age = b.z; if (age < 0.0) continue;',
+      '    float open = min(1.0, age / 0.35) * (1.0 - max(0.0, (age - 2.5) / 3.5));',
+      '    float r = 30.0 + 60.0 * min(1.0, age / 0.6);',
+      // the opening: warm white at the centre, through the sun's colour, to nothing
+      '    float t = length(p - b.xy) / (r * 1.6);',
+      '    float a = t < 0.2 ? mix(0.95, 0.7, t / 0.2) : t < 0.45 ? mix(0.7, 0.35, (t - 0.2) / 0.25) : mix(0.35, 0.0, clamp((t - 0.45) / 0.55, 0.0, 1.0));',
+      '    col = screen(col, mix(vec3(1.0, 0.988, 0.941), u_sun, smoothstep(0.0, 0.2, t)) * a * open);',
       // shafts of light falling from it, slightly fanned, shimmering
-      for (var i = 0; i < 5; i++) {
-        var off = (i - 2) * r * 0.32, spread = (i - 2) * 0.12;
-        var len = canvas.height - b.y + 40, w = r * (0.18 + 0.1 * Math.sin(b.seed + i * 2.1));
-        var a = open * (0.22 + 0.12 * Math.sin(now / 400 + b.seed + i));
-        var sg = c.createLinearGradient(0, b.y, 0, b.y + len);
-        sg.addColorStop(0, 'rgba(' + sun + ',' + a + ')'); sg.addColorStop(1, 'rgba(' + sun + ',0)');
-        c.fillStyle = sg;
-        c.beginPath();
-        c.moveTo(b.x + off - w * 0.5, b.y); c.lineTo(b.x + off + w * 0.5, b.y);
-        c.lineTo(b.x + off + spread * len + w * 1.6, b.y + len); c.lineTo(b.x + off + spread * len - w * 1.6, b.y + len);
-        c.fill();
-      }
+      '    for (int i = 0; i < 5; i++) {',
+      '      float fi = float(i), off = (fi - 2.0) * r * 0.32, spread = (fi - 2.0) * 0.12;',
+      '      float len = u_size.y - b.y + 40.0, w = r * (0.18 + 0.1 * sin(b.w + fi * 2.1));',
+      '      float v = (p.y - b.y) / len; if (v < 0.0 || v > 1.0) continue;',
+      '      float spreadHalf = mix(w * 0.5, w * 1.6, v), dx = abs(p.x - (b.x + off + spread * len * v));',
+      '      float sa = open * (0.22 + 0.12 * sin(u_time * 2.5 + b.w + fi));',
+      '      col = screen(col, u_sun * sa * (1.0 - v) * (1.0 - smoothstep(spreadHalf - 1.0, spreadHalf + 1.0, dx)));',
+      '    }',
+      '  }',
+      '  gl_FragColor = vec4(col, 1.0);',
+      '}'
+    ].join('\n'),
+    // screen blending onto the clouds: src * (1 - dst) + dst
+    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneMinusDstColorFactor, blendDst: THREE.OneFactor,
+    depthTest: false, depthWrite: false, transparent: true
+  });
+  var lightScene = new THREE.Scene(), lightCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  lightScene.add(new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), light));
+  var drawScene = renderer.render.bind(renderer);
+  renderer.render = function (scene, camera) {
+    drawScene(scene, camera);
+    var now = performance.now();
+    breaks = breaks.filter(function (b) { return now - b.born < 6000; }).slice(-8);
+    if (!breaks.length) return;
+    slots.forEach(function (slot, i) {
+      var b = breaks[i];
+      if (b) slot.set(b.x, b.y, (now - b.born) / 1000, b.seed); else slot.z = -1;
     });
-    requestAnimationFrame(draw);
-  })(performance.now());
+    light.uniforms.u_sun.value.setHex(TIMES[time].sunColor);
+    light.uniforms.u_size.value.set(innerWidth, innerHeight);
+    light.uniforms.u_ratio.value = renderer.getPixelRatio();
+    light.uniforms.u_time.value = now / 1000;
+    var keep = renderer.autoClear;
+    renderer.autoClear = false;
+    drawScene(lightScene, lightCamera);
+    renderer.autoClear = keep;
+  };
 })();
 </script>
 </body>

@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down to the horizon above the key; where it lands, the horizon flashes and a pulse of light races down the grid. Switch presets in Adjust, or with the Background preset action.",
+  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down onto the key; where it hits, a flash and a ring of neon light spread out from it, rippling across the grid. Switch presets in Adjust, or with the Background preset action.",
   "INPUTS": [
     {
       "NAME": "sky",
@@ -208,25 +208,23 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // the sunC's reflection on the floor
         col += sunC * vec3(1.0, 0.4, 0.6) * 0.25 * exp(-abs(uv.x - 0.5) * 9.0) * (1.0 - depth);
 
-        // press pulses: a band of light racing down the gridC, from the moment the star lands
+        // where a star has hit, its ring of light lights up the grid lines it crosses
         for (int i = 0; i < 8; i++) {
             vec4 p = iKeyPresses[i];
             float since = p.z - FLIGHT;
-            if (p.w < 0.0 || since < 0.0 || since > 2.0) continue;
-            float front = since / 1.3;                        // depth reached so far
-            float band = exp(-pow((depth - front) * 14.0, 2.0));
-            float lane = exp(-pow((uv.x - p.x / iResolution.x) * aspect * 4.0 / max(depth, 0.15), 2.0));
-            col += gridC * band * (0.35 + 0.8 * lane) * line * 2.5 * (1.0 - since / 2.0);
+            if (p.w < 0.0 || since < 0.0 || since > 1.2) continue;
+            vec2 d = vec2((uv.x - p.x / iResolution.x) * aspect, uv.y - p.y / iResolution.y);
+            float ring = exp(-pow((length(d) - since * 0.45) * 16.0, 2.0)) * (1.0 - since / 1.2);
+            col += gridC * ring * line * fog * 3.0;   // faded like the lines toward the horizon
         }
     }
 
-    // shooting stars: each falls from high up to the horizon above its key,
-    // and where it lands the horizon flashes
+    // shooting stars: each falls from high up onto its key; where it hits, a
+    // flash, and a ring of light spreading out from the key
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
         if (p.w < 0.0 || p.z > FLIGHT + 1.2) continue;
-        float kx = p.x / iResolution.x * aspect;
-        vec2 land = vec2(kx, HORIZON);
+        vec2 land = vec2(p.x / iResolution.x * aspect, p.y / iResolution.y);
         vec2 start = land + vec2(0.35 + hash(vec2(p.w, 3.0)) * 0.15, 0.62);
         vec2 dir = normalize(land - start);
         float k = clamp(p.z / FLIGHT, 0.0, 1.0);
@@ -235,14 +233,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         if (p.z < FLIGHT) {
             float along = dot(q, -dir), across = abs(dot(q, vec2(-dir.y, dir.x)));
             float trail = step(0.0, along) * exp(-along * 6.0) * exp(-across * 450.0);
-            col += vec3(1.0, 0.9, 1.0) * (trail + exp(-length(q) * 90.0)) * step(HORIZON, uv.y);
+            col += vec3(1.0, 0.9, 1.0) * (trail + exp(-length(q) * 90.0));
         }
-        // the impact: a flash on the horizon, spreading along it
         float since = p.z - FLIGHT;
         if (since > 0.0) {
             vec2 d = vec2(uv.x * aspect, uv.y) - land;
-            float fade = exp(-since * 3.0);
-            col += mix(sunC, vec3(1.0), 0.5) * fade * (exp(-length(d * vec2(1.0, 4.0)) * 14.0) * 1.6 + exp(-abs(d.y) * 160.0) * exp(-abs(d.x) * (3.0 / (since + 0.1))) * 0.9);
+            // the hit: a white-hot flash at the key, fading fast
+            col += mix(sunC, vec3(1.0), 0.6) * exp(-since * 5.0) * exp(-length(d) * 20.0) * 2.2;
+            // the ring, in the grid's colour
+            float ring = exp(-pow((length(d) - since * 0.45) * 16.0, 2.0)) * (1.0 - since / 1.2);
+            col += mix(gridC, vec3(1.0), 0.35) * ring * 0.7;
         }
     }
 

@@ -568,6 +568,7 @@ fn run_web(
     *slot.lock().map_err(|_| "lock poisoned")? = Some(handle);
     let mut ack_writer = ack_writer;
     let mut ack_id = 1_000_000u64;
+    let mut flat_run = 0u32;
 
     while !stop.load(Ordering::SeqCst) {
         let m = read()?;
@@ -601,6 +602,19 @@ fn run_web(
         if frame.dimensions() != (PANEL_WIDTH, PANEL_HEIGHT) {
             frame = image::imageops::resize(&frame, PANEL_WIDTH, PANEL_HEIGHT, image::imageops::FilterType::Triangle);
         }
+        // Headless Chrome now and then hands over a frame holding nothing but
+        // a canvas's clear colour between two drawn ones (seen with Vanta's
+        // clouds on Sky), which flashes on the deck. Keep the last picture
+        // over up to two such frames; a page that really turns one colour
+        // shows it from the third.
+        if is_flat(&frame) {
+            flat_run += 1;
+            if flat_run <= 2 {
+                continue;
+            }
+        } else {
+            flat_run = 0;
+        }
         if let Ok(mut l) = latest.lock() {
             *l = Some(frame);
         }
@@ -608,9 +622,32 @@ fn run_web(
     Ok(())
 }
 
+/// Whether a frame is a single colour all over, judged on a grid of samples.
+fn is_flat(frame: &image::RgbImage) -> bool {
+    let (w, h) = frame.dimensions();
+    let first = frame.get_pixel(0, 0).0;
+    (0..9u32).all(|j| {
+        (0..16u32).all(|i| {
+            let p = frame.get_pixel(i * (w - 1) / 15, j * (h - 1) / 8).0;
+            p.iter().zip(first.iter()).all(|(a, b)| a.abs_diff(*b) <= 2)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_flat_frame_is_told_from_a_picture() {
+        let flat = image::RgbImage::from_pixel(PANEL_WIDTH, PANEL_HEIGHT, image::Rgb([255, 255, 255]));
+        assert!(is_flat(&flat));
+        let mut sky = flat.clone();
+        for (x, _, p) in sky.enumerate_pixels_mut() {
+            *p = image::Rgb([100, 150, (x % 256) as u8]);
+        }
+        assert!(!is_flat(&sky));
+    }
 
     #[test]
     fn web_address_puts_parameters_before_the_fragment() {
