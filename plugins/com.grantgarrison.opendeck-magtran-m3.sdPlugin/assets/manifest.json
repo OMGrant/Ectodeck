@@ -2,7 +2,7 @@
   "Name": "VSDinside MagTran M3",
   "Description": "Device support for the VSDinside MagTran M3 (5548:1020): keys, dials, and the display behind the keys",
   "Author": "Grant Garrison",
-  "Version": "0.4.2",
+  "Version": "0.5.0",
   "PluginUUID": "com.grantgarrison.opendeck-magtran-m3",
   "CodePaths": {
     "x86_64-unknown-linux-gnu": "x86_64-unknown-linux-gnu/bin/opendeck-magtran-m3",

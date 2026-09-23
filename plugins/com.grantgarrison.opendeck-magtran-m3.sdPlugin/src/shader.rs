@@ -7,6 +7,21 @@
 //! `iMouse`). Channels (`iChannel0`..) are not provided. Each frame is drawn
 //! into an offscreen framebuffer at the panel's size and read back.
 //!
+//! Adjustable parameters follow ISF, the Interactive Shader Format: a JSON
+//! comment at the top of the source, `/*{ "INPUTS": [ ... ] }*/`, lists them
+//! with NAME, TYPE (float, color, bool, long, point2D), DEFAULT, MIN and MAX.
+//! Each becomes a uniform of that name; the host sends values to set.
+//!
+//! The deck's keys and dials drive the shader as well:
+//!
+//! - `iMouse`: Shadertoy's pointer, at the centre of the last key pressed.
+//!   xy is where it was pressed, zw the same while it is held and negated
+//!   after release, as on Shadertoy.
+//! - `iKeyPresses[8]`: the eight most recent presses, newest first: xy the
+//!   key's centre, z seconds since the press, w the key's index; unused slots
+//!   have w = -1.
+//! - `iDials`: each dial's accumulated turns, in detents.
+//!
 //! An OpenGL context belongs to the thread that made it current, so a
 //! renderer is created and used on one thread.
 
@@ -30,8 +45,79 @@ uniform float iTimeDelta;
 uniform int iFrame;
 uniform vec4 iMouse;
 uniform vec4 iDate;
+uniform vec4 iKeyPresses[8];
+uniform vec3 iDials;
 out vec4 ectodeckFragColor;
 ";
+
+/// One adjustable parameter from a shader's ISF header.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Input {
+    pub name: String,
+    pub kind: InputKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum InputKind {
+    Float,
+    Color,
+    Bool,
+    Long,
+    Point2D,
+}
+
+impl InputKind {
+    fn glsl(self) -> &'static str {
+        match self {
+            InputKind::Float => "float",
+            InputKind::Color => "vec4",
+            InputKind::Bool => "bool",
+            InputKind::Long => "int",
+            InputKind::Point2D => "vec2",
+        }
+    }
+}
+
+/// The ISF header's INPUTS, with their defaults, or nothing when the source
+/// has no header.
+pub fn parse_inputs(source: &str) -> (Vec<Input>, serde_json::Map<String, serde_json::Value>) {
+    let mut inputs = vec![];
+    let mut defaults = serde_json::Map::new();
+    let trimmed = source.trim_start();
+    let Some(body) = trimmed.strip_prefix("/*") else { return (inputs, defaults) };
+    let Some(end) = body.find("*/") else { return (inputs, defaults) };
+    let Ok(header) = serde_json::from_str::<serde_json::Value>(body[..end].trim()) else { return (inputs, defaults) };
+    for input in header["INPUTS"].as_array().into_iter().flatten() {
+        let Some(name) = input["NAME"].as_str() else { continue };
+        // a uniform name must be a plain identifier
+        if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || name.starts_with(|c: char| c.is_ascii_digit()) {
+            continue;
+        }
+        let kind = match input["TYPE"].as_str() {
+            Some("float") => InputKind::Float,
+            Some("color") => InputKind::Color,
+            Some("bool") => InputKind::Bool,
+            Some("long") => InputKind::Long,
+            Some("point2D") => InputKind::Point2D,
+            _ => continue,
+        };
+        if !input["DEFAULT"].is_null() {
+            defaults.insert(name.to_string(), input["DEFAULT"].clone());
+        }
+        inputs.push(Input { name: name.to_string(), kind });
+    }
+    (inputs, defaults)
+}
+
+/// What the deck's controls are doing, for the interaction uniforms.
+#[derive(Clone, Debug, Default)]
+pub struct Interaction {
+    /// Shadertoy's iMouse, in panel pixels with the origin at the bottom left.
+    pub mouse: [f32; 4],
+    /// Newest first: key centre (bottom-left origin), seconds since, index.
+    pub presses: Vec<(f32, f32, f32, f32)>,
+    pub dials: [f32; 3],
+}
 
 const EPILOGUE: &str = "
 void main() {
@@ -56,6 +142,8 @@ pub struct ShaderRenderer {
     height: u32,
     frame: i32,
     last_time: f32,
+    inputs: Vec<Input>,
+    defaults: serde_json::Map<String, serde_json::Value>,
 }
 
 impl ShaderRenderer {
@@ -91,8 +179,9 @@ impl ShaderRenderer {
             })
         };
 
+        let (inputs, defaults) = parse_inputs(source);
         unsafe {
-            let program = compile(&gl, source)?;
+            let program = compile(&gl, source, &inputs)?;
             let framebuffer = gl.create_framebuffer()?;
             let renderbuffer = gl.create_renderbuffer()?;
             gl.bind_renderbuffer(glow::RENDERBUFFER, Some(renderbuffer));
@@ -105,13 +194,15 @@ impl ShaderRenderer {
             let vao = gl.create_vertex_array()?;
             Ok(ShaderRenderer {
                 egl, display, context, surface: Some(surface), gl, program, framebuffer, renderbuffer, vao,
-                width, height, frame: 0, last_time: 0.0,
+                width, height, frame: 0, last_time: 0.0, inputs, defaults,
             })
         }
     }
 
-    /// Draw the frame for `time` seconds since the animation started.
-    pub fn render(&mut self, time: f32) -> RgbImage {
+    /// Draw the frame for `time` seconds since the animation started, with
+    /// the given parameter values (missing ones take their ISF default) and
+    /// the state of the deck's controls.
+    pub fn render(&mut self, time: f32, params: &serde_json::Map<String, serde_json::Value>, interaction: &Interaction) -> RgbImage {
         let (w, h) = (self.width, self.height);
         let mut rgba = vec![0u8; (w * h * 4) as usize];
         unsafe {
@@ -124,8 +215,32 @@ impl ShaderRenderer {
             gl.uniform_1_f32(u("iTime").as_ref(), time);
             gl.uniform_1_f32(u("iTimeDelta").as_ref(), (time - self.last_time).max(0.0));
             gl.uniform_1_i32(u("iFrame").as_ref(), self.frame);
-            gl.uniform_4_f32(u("iMouse").as_ref(), 0.0, 0.0, 0.0, 0.0);
+            let m = interaction.mouse;
+            gl.uniform_4_f32(u("iMouse").as_ref(), m[0], m[1], m[2], m[3]);
             gl.uniform_4_f32(u("iDate").as_ref(), 0.0, 0.0, 0.0, seconds_today());
+            let mut presses = [0.0f32; 32];
+            for i in 0..8 {
+                let (x, y, age, key) = interaction.presses.get(i).copied().unwrap_or((0.0, 0.0, 1e6, -1.0));
+                presses[i * 4..i * 4 + 4].copy_from_slice(&[x, y, age, key]);
+            }
+            gl.uniform_4_f32_slice(u("iKeyPresses").as_ref(), &presses);
+            let d = interaction.dials;
+            gl.uniform_3_f32(u("iDials").as_ref(), d[0], d[1], d[2]);
+            for input in &self.inputs {
+                let value = params.get(&input.name).or_else(|| self.defaults.get(&input.name));
+                let n = |i: usize| value.and_then(|v| v.get(i)).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
+                let loc = u(&input.name);
+                match input.kind {
+                    InputKind::Float => gl.uniform_1_f32(loc.as_ref(), value.and_then(|v| v.as_f64()).unwrap_or(0.0) as f32),
+                    InputKind::Long => gl.uniform_1_i32(loc.as_ref(), value.and_then(|v| v.as_i64()).unwrap_or(0) as i32),
+                    InputKind::Bool => gl.uniform_1_i32(loc.as_ref(), value.and_then(|v| v.as_bool()).unwrap_or(false) as i32),
+                    InputKind::Color => {
+                        let a = value.and_then(|v| v.get(3)).and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
+                        gl.uniform_4_f32(loc.as_ref(), n(0), n(1), n(2), a)
+                    }
+                    InputKind::Point2D => gl.uniform_2_f32(loc.as_ref(), n(0), n(1)),
+                }
+            }
             gl.bind_vertex_array(Some(self.vao));
             gl.draw_arrays(glow::TRIANGLES, 0, 3);
             gl.read_pixels(0, 0, w as i32, h as i32, glow::RGBA, glow::UNSIGNED_BYTE, glow::PixelPackData::Slice(Some(&mut rgba)));
@@ -192,11 +307,12 @@ fn open_display(egl: &Egl) -> Result<egl::Display, String> {
     }
 }
 
-unsafe fn compile(gl: &glow::Context, body: &str) -> Result<glow::Program, String> {
+unsafe fn compile(gl: &glow::Context, body: &str, inputs: &[Input]) -> Result<glow::Program, String> {
     unsafe {
         let program = gl.create_program()?;
         let mut shaders = vec![];
-        for (kind, src) in [(glow::VERTEX_SHADER, VERTEX.to_string()), (glow::FRAGMENT_SHADER, format!("{PRELUDE}{body}{EPILOGUE}"))] {
+        let declarations: String = inputs.iter().map(|i| format!("uniform {} {};\n", i.kind.glsl(), i.name)).collect();
+        for (kind, src) in [(glow::VERTEX_SHADER, VERTEX.to_string()), (glow::FRAGMENT_SHADER, format!("{PRELUDE}{declarations}{body}{EPILOGUE}"))] {
             let s = gl.create_shader(kind)?;
             gl.shader_source(s, &src);
             gl.compile_shader(s);
@@ -221,4 +337,27 @@ unsafe fn compile(gl: &glow::Context, body: &str) -> Result<glow::Program, Strin
 fn seconds_today() -> f32 {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
     (now % 86_400) as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_isf_inputs_and_defaults() {
+        let src = r#"/*{ "DESCRIPTION": "x", "INPUTS": [
+            { "NAME": "speed", "TYPE": "float", "DEFAULT": 1.5, "MIN": 0, "MAX": 3 },
+            { "NAME": "tint", "TYPE": "color", "DEFAULT": [1, 0.5, 0, 1] },
+            { "NAME": "bad name", "TYPE": "float" },
+            { "NAME": "img", "TYPE": "image" }
+        ] }*/
+        void mainImage(out vec4 c, in vec2 p) { c = vec4(0); }"#;
+        let (inputs, defaults) = parse_inputs(src);
+        assert_eq!(inputs, vec![
+            Input { name: "speed".into(), kind: InputKind::Float },
+            Input { name: "tint".into(), kind: InputKind::Color },
+        ]);
+        assert_eq!(defaults["speed"], serde_json::json!(1.5));
+        assert!(parse_inputs("void mainImage(out vec4 c, in vec2 p) {}").0.is_empty());
+    }
 }

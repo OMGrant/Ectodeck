@@ -207,12 +207,23 @@ pub struct DeviceConfig {
 }
 
 /// A background rendered live: a web page (a URL, or the path of an HTML file
-/// kept in the configuration directory) or a Shadertoy-format shader.
+/// kept in the configuration directory) or a Shadertoy-format shader, with
+/// the values chosen for the parameters its ISF header declares.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum AnimatedBackground {
-	Web { name: String, url: String },
-	Shader { name: String, source: String },
+	Web {
+		name: String,
+		url: String,
+		#[serde(default)]
+		params: serde_json::Map<String, serde_json::Value>,
+	},
+	Shader {
+		name: String,
+		source: String,
+		#[serde(default)]
+		params: serde_json::Map<String, serde_json::Value>,
+	},
 }
 
 /// Whether a key's image sits on its own black square or straight on the

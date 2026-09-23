@@ -136,7 +136,6 @@ pub struct Settings {
 	pub background: bool,
 	pub autolaunch: bool,
 	pub updatecheck: bool,
-	pub statistics: bool,
 	pub separatewine: bool,
 	pub developer: bool,
 	pub disableelgato: bool,
@@ -155,7 +154,6 @@ impl Default for Settings {
 			autolaunch: false,
 			updatecheck: option_env!("OPENDECK_DISABLE_UPDATE_CHECK").is_none() && !is_flatpak(),
 			// Consent is given by the user on install so it is OK to have the default be `true`
-			statistics: true,
 			separatewine: false,
 			developer: false,
 			disableelgato: false,

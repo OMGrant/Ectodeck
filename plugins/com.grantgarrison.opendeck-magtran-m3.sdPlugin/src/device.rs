@@ -203,6 +203,14 @@ async fn device_events_task(candidate: &CandidateDevice) -> Result<(), MirajazzE
 
             let id = candidate.id.clone();
 
+            // let the animated background react before OpenDeck acts
+            match update {
+                DeviceStateUpdate::ButtonDown(key) => crate::frame::input(&id, crate::animation::Input::Key { index: key, down: true, x: 0.0, y: 0.0 }).await,
+                DeviceStateUpdate::ButtonUp(key) => crate::frame::input(&id, crate::animation::Input::Key { index: key, down: false, x: 0.0, y: 0.0 }).await,
+                DeviceStateUpdate::EncoderTwist(dial, ticks) => crate::frame::input(&id, crate::animation::Input::Dial { index: dial, ticks: ticks as i16 }).await,
+                _ => {}
+            }
+
             if let Some(outbound) = OUTBOUND_EVENT_MANAGER.lock().await.as_mut() {
                 match update {
                     DeviceStateUpdate::ButtonDown(key) => outbound.key_down(id, key).await.unwrap(),
@@ -270,14 +278,16 @@ pub async fn handle_set_background(device_id: &str, evt: SetImageEvent) -> Resul
 
 /// An animated background, sent as a `setImage` with an "AnimatedBackground"
 /// controller whose image field carries JSON: `{"kind":"web","url":...}` or
-/// `{"kind":"shader","source":...}`. No image stops it.
+/// `{"kind":"shader","source":...}`, either with a `params` object of
+/// parameter values. No image stops it.
 pub async fn handle_animated_background(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {
     let v: Option<serde_json::Value> = evt.image.as_deref().and_then(|s| serde_json::from_str(s).ok());
     let source = v.and_then(|v| {
         let text = |k: &str| v.get(k).and_then(|s| s.as_str()).map(str::to_owned);
+        let params = v.get("params").and_then(|p| p.as_object()).cloned().unwrap_or_default();
         match v.get("kind").and_then(|k| k.as_str()) {
-            Some("web") => text("url").map(crate::animation::Source::Web),
-            Some("shader") => text("source").map(crate::animation::Source::Shader),
+            Some("web") => text("url").map(|url| crate::animation::Source::Web { url, params }),
+            Some("shader") => text("source").map(|code| crate::animation::Source::Shader { code, params }),
             _ => None,
         }
     });

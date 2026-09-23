@@ -121,9 +121,6 @@ pub async fn install_plugin(app: AppHandle, url: Option<String>, file: Option<St
 	}
 	let _ = fs::remove_dir_all(config_dir.join("temp")).await;
 
-	use tauri_plugin_aptabase::EventTracker;
-	let _ = app.track_event("plugin_installed", Some(serde_json::json!({ "id": id.strip_suffix(".sdPlugin").unwrap_or(&id) })));
-
 	Ok(())
 }
 

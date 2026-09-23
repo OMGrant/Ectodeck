@@ -3,6 +3,9 @@
 	import { t } from "$lib/i18n";
 	import type { AnimatedBackground, DeviceInfo, KeyStyle } from "$lib/DeviceInfo";
 	import ChoiceMenu, { type ChoiceSection } from "./ChoiceMenu.svelte";
+	import ParameterControls from "./ParameterControls.svelte";
+	import { type IsfInput, pageInputs, shaderInputs } from "$lib/isf";
+	import { getWebserverUrl } from "$lib/ports";
 
 	export let device: DeviceInfo;
 	export let background: string | null = null;
@@ -13,30 +16,75 @@
 	let pageInput: HTMLInputElement;
 	let shaderInput: HTMLInputElement;
 
-	// Shaders that ship with Ectodeck, in static/backgrounds.
+	// Shaders that ship with Ectodeck, built into the interface so choosing one
+	// needs nothing loaded at the time.
+	import aurora from "$lib/backgrounds/aurora.frag?raw";
+	import nebula from "$lib/backgrounds/nebula.frag?raw";
+	import ember from "$lib/backgrounds/ember.frag?raw";
+	import blob from "$lib/backgrounds/blob.html?raw";
 	const builtinShaders = [
-		{ id: "aurora", name: "Aurora" },
-		{ id: "nebula", name: "Nebula" },
-		{ id: "ember", name: "Ember" },
+		{ id: "aurora", name: "Aurora", source: aurora },
+		{ id: "nebula", name: "Nebula", source: nebula },
+		{ id: "ember", name: "Ember", source: ember },
 	];
+	// Built-in web pages, written to the configuration directory when chosen,
+	// since the page renderer opens files rather than the app's own assets.
+	const builtinPages = [{ id: "blob", name: "Blob", file: "blob.html", html: blob }];
+	const isBuiltin = (a: AnimatedBackground | null) =>
+		!!a &&
+		((a.kind == "shader" && builtinShaders.some((s) => s.name == a.name)) || (a.kind == "web" && builtinPages.some((p) => p.name == a.name)));
+
+	// The current animation's adjustable parameters, from its ISF inputs.
+	let inputs: IsfInput[] = [];
+	async function readInputs(a: AnimatedBackground | null) {
+		if (!a) return [];
+		if (a.kind == "shader") return shaderInputs(a.source);
+		const page = builtinPages.find((p) => p.name == a.name);
+		if (page) return pageInputs(page.html);
+		// a page kept on disk can be read back through the local file server
+		if (a.url.startsWith("/")) {
+			try {
+				return pageInputs(await (await fetch(getWebserverUrl(a.url.slice(1)))).text());
+			} catch {
+				return [];
+			}
+		}
+		return [];
+	}
+	$: readInputs(animated).then((i) => (inputs = i));
+
+	// Parameter changes go out after a short pause: at once for a shader, which
+	// updates live, and after a longer one for a page, which reloads.
+	let paramTimer: ReturnType<typeof setTimeout> | undefined;
+	function changeParams(values: Record<string, unknown>) {
+		if (!animated) return;
+		const next = { ...animated, params: values } as AnimatedBackground;
+		animated = next;
+		clearTimeout(paramTimer);
+		paramTimer = setTimeout(() => setAnimated(next), next.kind == "shader" ? 40 : 450);
+	}
+
+	// A choice that failed, shown beside the menu rather than lost.
+	let animationError = "";
 
 	// The animation menu: nothing, a built-in shader, or one of your own.
 	$: animationSections = [
 		{ items: [{ id: "none", label: $t("device_view.animation.none"), selected: !animated }] },
 		{
 			heading: $t("device_view.animation.builtin"),
-			items: builtinShaders.map((s) => ({
-				id: "builtin:" + s.id,
-				label: s.name,
-				selected: animated?.kind == "shader" && animated.name == s.name,
-			})),
+			items: [
+				...builtinPages.map((p) => ({ id: "page:" + p.id, label: p.name, selected: animated?.kind == "web" && animated.name == p.name })),
+				...builtinShaders.map((s) => ({
+					id: "builtin:" + s.id,
+					label: s.name,
+					selected: animated?.kind == "shader" && animated.name == s.name,
+				})),
+			],
 		},
 		{
 			heading: $t("device_view.animation.custom"),
 			items: [
-				...(animated && !builtinShaders.some((s) => animated?.kind == "shader" && animated.name == s.name)
-					? [{ id: "current", label: animated.name, selected: true }]
-					: []),
+				...(animated && !isBuiltin(animated) ? [{ id: "current", label: animated.name, selected: true }] : []),
 				{ id: "url", label: $t("device_view.animation.url") },
 				{ id: "page", label: $t("device_view.animation.page") },
 				{ id: "shader", label: $t("device_view.animation.shader") },
@@ -49,19 +97,33 @@
 	let url = "";
 
 	async function setAnimated(value: AnimatedBackground | null) {
+		const previous = animated;
 		animated = value;
 		enteringUrl = false;
-		await invoke("set_device_animated_background", { device: device.id, background: value });
+		animationError = "";
+		try {
+			await invoke("set_device_animated_background", { device: device.id, background: value });
+		} catch (error) {
+			animated = previous;
+			animationError = String(error);
+			console.error(error);
+		}
 	}
 
 	async function chooseAnimation(id: string) {
 		if (id == "none") await setAnimated(null);
 		else if (id.startsWith("builtin:")) {
 			const shader = builtinShaders.find((s) => "builtin:" + s.id == id);
-			if (!shader) return;
-			const response = await fetch(`/backgrounds/${shader.id}.frag`);
-			if (!response.ok) return console.error(`Built-in shader ${shader.id} is missing`);
-			await setAnimated({ kind: "shader", name: shader.name, source: await response.text() });
+			if (shader) await setAnimated({ kind: "shader", name: shader.name, source: shader.source, params: {} });
+		} else if (id.startsWith("page:")) {
+			const page = builtinPages.find((p) => "page:" + p.id == id);
+			if (!page) return;
+			try {
+				const path = await invoke<string>("save_background_page", { name: page.file, contents: page.html });
+				await setAnimated({ kind: "web", name: page.name, url: path, params: {} });
+			} catch (error) {
+				animationError = String(error);
+			}
 		} else if (id == "url") {
 			url = animated?.kind == "web" && !animated.url.startsWith("/") ? animated.url : "";
 			enteringUrl = true;
@@ -190,6 +252,9 @@
 
 		<span class="ml-4 text-neutral-400">{$t("device_view.animation")}</span>
 		<ChoiceMenu label={$t("device_view.animation")} current={animationLabel} sections={animationSections} on:choose={(e) => chooseAnimation(e.detail)} />
+		{#if animationError}
+			<span class="text-red-400" role="alert">{$t("device_view.animation.failed", { error: animationError })}</span>
+		{/if}
 		{#if enteringUrl}
 			<form class="flex flex-row items-center gap-1" on:submit|preventDefault={applyUrl}>
 				<!-- svelte-ignore a11y-autofocus -->
@@ -229,4 +294,10 @@
 			{/each}
 		</div>
 	</div>
+	{#if animated && inputs.length}
+		<div class="mt-2 flex flex-row items-start gap-3 text-sm">
+			<span class="text-neutral-400 whitespace-nowrap">{$t("parameters.adjust", { name: animated.name })}</span>
+			<ParameterControls {inputs} values={animated.params ?? {}} on:change={(e) => changeParams(e.detail)} />
+		</div>
+	{/if}
 {/if}

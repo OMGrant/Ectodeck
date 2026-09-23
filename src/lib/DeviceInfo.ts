@@ -29,5 +29,5 @@ export type KeyStyle = {
 // A background rendered live: a web page (a URL, or the path of an HTML file
 // kept in the configuration directory) or a Shadertoy-format shader.
 export type AnimatedBackground =
-	| { kind: "web"; name: string; url: string }
-	| { kind: "shader"; name: string; source: string };
+	| { kind: "web"; name: string; url: string; params?: Record<string, unknown> }
+	| { kind: "shader"; name: string; source: string; params?: Record<string, unknown> };

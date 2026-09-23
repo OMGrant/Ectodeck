@@ -141,11 +141,11 @@ pub async fn update_animated_background(device: String, background: Option<crate
 	use crate::store::profiles::AnimatedBackground;
 	let image = match background {
 		None => None,
-		Some(AnimatedBackground::Web { url, .. }) => {
+		Some(AnimatedBackground::Web { url, params, .. }) => {
 			let url = if url.starts_with('/') { format!("file://{url}") } else { url };
-			Some(serde_json::json!({ "kind": "web", "url": url }).to_string())
+			Some(serde_json::json!({ "kind": "web", "url": url, "params": params }).to_string())
 		}
-		Some(AnimatedBackground::Shader { source, .. }) => Some(serde_json::json!({ "kind": "shader", "source": source }).to_string()),
+		Some(AnimatedBackground::Shader { source, params, .. }) => Some(serde_json::json!({ "kind": "shader", "source": source, "params": params }).to_string()),
 	};
 	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
 		send_to_plugin(

@@ -8,7 +8,6 @@ export type Settings = {
 	background: boolean;
 	autolaunch: boolean;
 	updatecheck: boolean;
-	statistics: boolean;
 	separatewine: boolean;
 	developer: boolean;
 	disableelgato: boolean;

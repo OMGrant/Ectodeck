@@ -1,0 +1,745 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Blob</title>
+<!--
+  Ectodeck's built-in Blob: the orb from ectonomic.com. orb.js is included
+  with small changes, each marked below: its colours, speed and the other
+  settings come from the page address, and a key press on the deck flares
+  its inner light toward that key.
+-->
+<script type="application/json" id="ectodeck-inputs">
+{
+  "DESCRIPTION": "The Ectonomic blob, a living body lit from inside. A key press flares its light toward that key.",
+  "INPUTS": [
+    {
+      "NAME": "mode",
+      "TYPE": "long",
+      "LABEL": "Look",
+      "DEFAULT": 0,
+      "VALUES": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "LABELS": [
+        "Deep",
+        "Slime",
+        "Horizon",
+        "Points",
+        "Glass",
+        "Hologram",
+        "Energy"
+      ]
+    },
+    {
+      "NAME": "glow",
+      "TYPE": "color",
+      "LABEL": "Glow colour",
+      "DEFAULT": [
+        0.784,
+        0.949,
+        0.18,
+        1
+      ]
+    },
+    {
+      "NAME": "body",
+      "TYPE": "color",
+      "LABEL": "Body colour",
+      "DEFAULT": [
+        0.608,
+        0.878,
+        0.071,
+        1
+      ]
+    },
+    {
+      "NAME": "scale",
+      "TYPE": "float",
+      "LABEL": "Size",
+      "DEFAULT": 2.3,
+      "MIN": 1,
+      "MAX": 4
+    },
+    {
+      "NAME": "amp",
+      "TYPE": "float",
+      "LABEL": "Wobble",
+      "DEFAULT": 2.2,
+      "MIN": 0,
+      "MAX": 4
+    },
+    {
+      "NAME": "speed",
+      "TYPE": "float",
+      "LABEL": "Speed",
+      "DEFAULT": 0.45,
+      "MIN": 0.05,
+      "MAX": 2
+    },
+    {
+      "NAME": "react",
+      "TYPE": "bool",
+      "LABEL": "React to presses",
+      "DEFAULT": true
+    }
+  ]
+}
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0a0a; overflow: hidden; }
+  #orb { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<canvas id="orb" aria-hidden="true"></canvas>
+<script>
+  // Settings from the address, falling back to the declared defaults.
+  var ECTODECK = (function () {
+    var q = new URLSearchParams(location.search);
+    var inputs = JSON.parse(document.getElementById('ectodeck-inputs').textContent).INPUTS;
+    var d = {};
+    inputs.forEach(function (i) { d[i.NAME] = i.DEFAULT; });
+    var num = function (k) { return q.has(k) ? parseFloat(q.get(k)) : d[k]; };
+    var rgb = function (k) {
+      var v = q.has(k) ? q.get(k).split(',').map(parseFloat) : d[k];
+      return v.slice(0, 3).map(function (x) { return x.toFixed(4); }).join(', ');
+    };
+    var modes = ['deep', 'slime', 'horizon', 'points', 'glass', 'holo', 'energy'];
+    var canvas = document.getElementById('orb');
+    canvas.setAttribute('data-mode', modes[Math.round(num('mode'))] || 'deep');
+    canvas.setAttribute('data-scale', num('scale'));
+    canvas.setAttribute('data-amp', num('amp'));
+    canvas.setAttribute('data-speed', num('speed'));
+    return { glow: rgb('glow'), body: rgb('body'), react: q.has('react') ? q.get('react') === '1' : d.react };
+  })();
+</script>
+<script>
+/*
+ * One sphere, several ways of drawing it. Raw WebGL, no engine.
+ *
+ * The canvas's data-mode picks the treatment:
+ *   slime   a lit, filled body with a lime rim (the first cut, kept for reference)
+ *   deep    the slime pushed back: near-black wet body, lime only where light
+ *           catches it, a glow drifting under the surface, larger than the frame
+ *   horizon the same body offset low-right so its rim arcs across the page
+ *   points  the vertices alone, as soft glowing dots
+ *   glass   a dark translucent core with the wire over it
+ *   holo    the wire with a scanning band sweeping through it
+ *   energy  the wire with pulses of light travelling across the vertices
+ *
+ * Motion is autonomous. Nothing here follows the pointer.
+ *
+ * Geometry is built and uploaded once; all deformation is in the vertex shader.
+ * A failure returns early and leaves an empty, transparent canvas, but it says
+ * why in the console first.
+ */
+(function () {
+  var canvas = document.getElementById('orb');
+  if (!canvas) return;
+  var mode = canvas.getAttribute('data-mode') || 'deep';
+
+  var gl = canvas.getContext('webgl', { alpha: true, antialias: true, depth: true });
+  if (!gl) return;
+
+  var reduced =
+    window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------------- geometry ---------------- */
+
+  function icosphere(subdivisions) {
+    var t = (1 + Math.sqrt(5)) / 2;
+    var verts = [
+      [-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0],
+      [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t],
+      [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1],
+    ];
+    var faces = [
+      [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+      [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+      [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+      [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+    ];
+    var cache = {};
+    function mid(a, b) {
+      var k = a < b ? a + '_' + b : b + '_' + a;
+      if (cache[k] !== undefined) return cache[k];
+      var va = verts[a], vb = verts[b];
+      verts.push([(va[0] + vb[0]) / 2, (va[1] + vb[1]) / 2, (va[2] + vb[2]) / 2]);
+      cache[k] = verts.length - 1;
+      return cache[k];
+    }
+    for (var s = 0; s < subdivisions; s++) {
+      var next = [];
+      for (var f = 0; f < faces.length; f++) {
+        var tr = faces[f];
+        var a = mid(tr[0], tr[1]), b = mid(tr[1], tr[2]), c = mid(tr[2], tr[0]);
+        next.push([tr[0], a, c], [tr[1], b, a], [tr[2], c, b], [a, b, c]);
+      }
+      faces = next;
+    }
+    var positions = new Float32Array(verts.length * 3);
+    for (var i = 0; i < verts.length; i++) {
+      var v = verts[i];
+      var len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+      positions[i * 3] = v[0] / len;
+      positions[i * 3 + 1] = v[1] / len;
+      positions[i * 3 + 2] = v[2] / len;
+    }
+    var seen = {}, lines = [], tris = [];
+    for (var g = 0; g < faces.length; g++) {
+      var tr2 = faces[g];
+      tris.push(tr2[0], tr2[1], tr2[2]);
+      for (var e = 0; e < 3; e++) {
+        var p = tr2[e], q = tr2[(e + 1) % 3];
+        var k2 = p < q ? p + '_' + q : q + '_' + p;
+        if (seen[k2]) continue;
+        seen[k2] = 1;
+        lines.push(p, q);
+      }
+    }
+    return {
+      positions: positions,
+      count: verts.length,
+      lines: new Uint16Array(lines),
+      tris: new Uint16Array(tris),
+    };
+  }
+
+  // the filled bodies want a smooth silhouette, so they get one more subdivision
+  var filled = mode === 'deep' || mode === 'horizon' || mode === 'slime';
+  var mesh = icosphere(mode === 'deep' || mode === 'horizon' ? 6 : mode === 'points' || filled ? 4 : 3);
+
+  /* ---------------- shaders ---------------- */
+
+  // Shared vertex body: displace along the radius by a sum of sines, rotate,
+  // scale, offset, push back from the camera. Every program starts from this.
+  var VS_HEAD =
+    'attribute vec3 p;' +
+    'uniform mat4 proj;' +
+    'uniform mat3 rot;' +
+    'uniform float t;' +
+    'uniform float amp;' +
+    'uniform float scale;' +
+    'uniform vec2 offset;' +
+    'varying vec3 vN;' +
+    'varying vec3 vV;' +
+    'varying vec3 vP;' +
+    'varying vec3 vO;' +
+    'varying float vD;' +
+    'float bump(vec3 o){' +
+    '  return (sin(o.x*2.1+t*0.6)*cos(o.y*1.8+t*0.5)*sin(o.z*2.4+t*0.7)*0.09' +
+    '        + sin(o.x*4.3+o.y*3.7+t*0.4)*0.035) * amp;' +
+    '}' +
+    'vec3 surf(vec3 o){ return o * (1.0 + bump(o)); }' +
+    'void main(){' +
+    '  float d = bump(p);' +
+    '  vec3 s = p * (1.0 + d);' +
+    // The normal comes from the deformed surface, not the sphere underneath
+    // it, so the wet highlight rolls with the swell instead of ignoring it.
+    // Two neighbours along the tangent plane, then the cross product.
+    '  vec3 ta = normalize(cross(p, abs(p.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));' +
+    '  vec3 tb = cross(p, ta);' +
+    '  vec3 sa = surf(normalize(p + ta * 0.02));' +
+    '  vec3 sb = surf(normalize(p + tb * 0.02));' +
+    '  vec3 n = normalize(cross(sa - s, sb - s));' +
+    '  vO = p;' +
+    '  vec3 q = rot * s * scale;' +
+    '  q.xy += offset;' +
+    '  vP = q;' +
+    '  q.z -= 4.2;' +
+    '  vN = rot * n;' +
+    '  vV = normalize(-q);' +
+    '  vD = q.z;';
+
+  var VS_LINE = VS_HEAD + '  gl_Position = proj * vec4(q, 1.0);' + '}';
+
+  var VS_POINT =
+    VS_HEAD +
+    '  gl_Position = proj * vec4(q, 1.0);' +
+    '  float pulse = 0.65 + 0.35 * sin(t*1.4 + p.y*5.0 + p.x*3.0);' +
+    '  gl_PointSize = (6.0 + 5.0 * clamp((q.z + 6.0) / 3.2, 0.0, 1.0)) * pulse * dpr;' +
+    '}';
+
+  // `t` is declared in both stages, and a uniform shared across stages must
+  // agree on precision. The vertex side is highp by default, so say so here.
+  var FS_HEAD_BODY =
+    'varying vec3 vN; varying vec3 vV; varying vec3 vP; varying vec3 vO; varying float vD;' +
+    'uniform highp float t; uniform float alpha;' +
+    'const vec3 LIME = vec3(' + ECTODECK.glow + ');' +
+    'const vec3 DEEP = vec3(' + ECTODECK.body + ');';
+  var FS_HEAD = 'precision mediump float;' + FS_HEAD_BODY;
+  // The lit body wants 32-bit fragments. mediump is honoured as 16-bit by a
+  // lot of hardware (and by Chromium's software path), and at 16 bits a
+  // normal only has ~0.001 of resolution: a tight specular steps instead
+  // of grading, and a per-pixel finite difference is pure noise. Every GPU
+  // of the last decade has highp in the fragment stage; the fallback is
+  // just so the shader still compiles somewhere that does not.
+  var FS_HEAD_HI =
+    '#ifdef GL_FRAGMENT_PRECISION_HIGH\n' +
+    'precision highp float;\n' +
+    '#else\n' +
+    'precision mediump float;\n' +
+    '#endif\n' + FS_HEAD_BODY;
+
+  var FS_LINE =
+    FS_HEAD +
+    'uniform float scan; uniform float pulse;' +
+    'void main(){' +
+    '  float f = clamp((vD + 6.0) / 3.2, 0.0, 1.0);' +
+    '  float a = alpha * (0.2 + f * 0.8);' +
+    '  vec3 c = DEEP;' +
+    '  if (scan > 0.5) {' +
+    '    float band = fract(t * 0.12);' +
+    '    float y = (vP.y / 1.7) * 0.5 + 0.5;' +
+    '    float s = 1.0 - smoothstep(0.0, 0.06, abs(y - band));' +
+    '    a += s * 0.6; c = mix(c, LIME, s);' +
+    '  }' +
+    '  if (pulse > 0.5) {' +
+    '    float w = 0.5 + 0.5 * sin(vP.y * 4.0 - t * 2.2) * sin(vP.x * 3.0 + t * 1.1);' +
+    '    a *= 0.6 + w * 1.4; c = mix(c, LIME, w * 0.7);' +
+    '  }' +
+    '  gl_FragColor = vec4(c, a);' +
+    '}';
+
+  var FS_POINT =
+    FS_HEAD +
+    'void main(){' +
+    '  vec2 uv = gl_PointCoord - 0.5;' +
+    '  float r = length(uv) * 2.0;' +
+    '  float disc = smoothstep(1.0, 0.15, r);' +
+    '  float f = clamp((vD + 6.0) / 3.2, 0.0, 1.0);' +
+    '  float glow = 0.5 + 0.5 * sin(t*1.4 + vP.y*5.0 + vP.x*3.0);' +
+    '  gl_FragColor = vec4(mix(DEEP, LIME, glow), disc * alpha * (0.35 + f * 0.65) * (0.6 + glow * 0.6));' +
+    '}';
+
+  // The first-cut fill: a dark body lit at the rim, optional wet specular.
+  var FS_FILL =
+    FS_HEAD +
+    'uniform float wet;' +
+    'void main(){' +
+    '  vec3 n = normalize(vN);' +
+    '  vec3 v = normalize(vV);' +
+    '  float fres = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 2.4);' +
+    '  vec3 L = normalize(vec3(0.6, 0.9, 0.8));' +
+    '  float diff = max(dot(n, L), 0.0);' +
+    '  vec3 base = DEEP * 0.055;' +
+    '  vec3 c = base + DEEP * diff * 0.22 + LIME * fres * 0.9;' +
+    '  if (wet > 0.5) {' +
+    '    vec3 h = normalize(L + v);' +
+    '    float spec = pow(max(dot(n, h), 0.0), 60.0);' +
+    '    c += mix(vec3(1.0), LIME, 0.37) * spec * 0.9;' +
+    '    c += DEEP * diff * 0.5;' +
+    '  }' +
+    '  gl_FragColor = vec4(c, alpha);' +
+    '}';
+
+  // The deep slime. Near-black wet body; lime only as rim, highlight and an
+  // internal glow that drifts. The far side fogs to black so there is no
+  // silhouette, and grain keeps the dark gradients from banding.
+  var FS_DEEP =
+    FS_HEAD_HI +
+    'uniform vec3 lightDir; uniform vec3 glowPos; uniform float grainT; uniform float dbg;' +
+    // scale is shared with the vertex stage, so the precision has to match
+    'uniform highp float scale; uniform highp vec2 res; uniform float heart;' +
+    'uniform float glowAmp; uniform float glowSize;' +
+    // shared with the vertex stage, so highp to match
+    'uniform highp float amp; uniform highp mat3 rot;' +
+    // The same displacement the vertex shader applies, evaluated per pixel
+    // from the interpolated body direction, so the shading normal is exact
+    // everywhere instead of being the vertex normal smeared across a
+    // triangle. With a tight specular that smear was a visible mesh.
+    'highp float bumpF(highp vec3 o){' +
+    '  return (sin(o.x*2.1+t*0.6)*cos(o.y*1.8+t*0.5)*sin(o.z*2.4+t*0.7)*0.09' +
+    '        + sin(o.x*4.3+o.y*3.7+t*0.4)*0.035) * amp;' +
+    '}' +
+    'highp vec3 surfF(highp vec3 o){ return o * (1.0 + bumpF(o)); }' +
+    'highp vec3 skinNormal(highp vec3 o){' +
+    '  highp vec3 s = surfF(o);' +
+    '  highp vec3 ta = normalize(cross(o, abs(o.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));' +
+    '  highp vec3 tb = cross(o, ta);' +
+    '  highp vec3 sa = surfF(normalize(o + ta * 0.01));' +
+    '  highp vec3 sb = surfF(normalize(o + tb * 0.01));' +
+    '  return normalize(cross(sa - s, sb - s));' +
+    '}' +
+    // Per-pixel noise with no sin and no wrap. The classic sin hash overflows
+    // mediump once the pixel coordinate gets large (the overflow edge of a dot
+    // product is a straight line across the screen), and wrapping the input
+    // with mod() to dodge that makes the noise tile, which the eye finds at
+    // once on a big display. This one (Hoskins' hash12) is stable in fp32 at
+    // any screen size, so it just needs highp.
+    'float hash(highp vec2 p){' +
+    '  highp vec3 p3 = fract(vec3(p.xyx) * 0.1031);' +
+    '  p3 += dot(p3, p3.yzx + 33.33);' +
+    '  return fract((p3.x + p3.y) * p3.z);' +
+    '}' +
+    'void main(){' +
+    '  vec3 n = normalize(rot * skinNormal(normalize(vO)));' +
+    '  vec3 v = normalize(vV);' +
+    '  vec3 L = normalize(lightDir);' +
+    '  float fres = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 3.2);' +
+    '  float diff = max(dot(n, L), 0.0);' +
+    '  vec3 h = normalize(L + v);' +
+    '  float spec = pow(max(dot(n, h), 0.0), 110.0);' +
+    // a soft light living under the surface, moving slowly
+    // sized against the body, so it reads as a patch of the frame however
+    // large the body is, not as a whole-screen brightness wobble
+    '  vec3 dg = vO - glowPos;' +
+    '  float glow = exp(-dot(dg, dg) * scale * scale * 1.4 * glowSize);' +
+    '  vec3 base = DEEP * 0.026;' +
+    '  vec3 c = base' +
+    '         + DEEP * diff * 0.09' +
+    '         + LIME * fres * 0.62' +
+    '         + LIME * glow * glowAmp' +
+    '         + mix(vec3(1.0), LIME, 0.45) * spec * 0.55;' +
+    // dissolve the far side into the black behind it
+    '  float fog = clamp((vD + 7.6) / 4.2, 0.0, 1.0);' +
+    '  c *= fog * fog;' +
+    // vignette here rather than a gradient div on top: the grain below
+    // dithers it, so the dark corners do not band
+    '  vec2 uv = gl_FragCoord.xy / res - 0.5;' +
+    '  c *= max(1.0 - dot(uv, uv) * 1.15, 0.0);' +
+    // a soft shadow where the copy sits, so the page reads as resting in
+    // the dark of the body rather than printed over it
+    '  vec2 hu = uv * vec2(1.0, 0.75);' +
+    '  c *= 1.0 - heart * exp(-dot(hu, hu) * 12.0);' +
+    // Not film grain: a one-step dither so the near-black gradients cannot
+    // contour on a good panel. Static, and below what the eye reads as texture.
+    // Grain as a visible effect was tried and fought the wet highlight.
+    '  float g = hash(gl_FragCoord.xy + vec2(grainT));' +
+    '  c += (g - 0.5) * (2.0 / 255.0);' +
+    // debug: show one term on its own, as a neutral grey
+    '  if (dbg > 0.5) {' +
+    '    float k = dbg < 1.5 ? fres : dbg < 2.5 ? diff : dbg < 3.5 ? glow : dbg < 4.5 ? spec : fog;' +
+    '    c = vec3(k);' +
+    '  }' +
+    '  gl_FragColor = vec4(c, alpha);' +
+    '}';
+
+  function build(vsSrc, fsSrc) {
+    // A failure here is invisible to the visitor by design, but it must not be
+    // invisible to whoever is debugging it. The console is the right place.
+    function compile(type, src) {
+      var sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (gl.getShaderParameter(sh, gl.COMPILE_STATUS)) return sh;
+      if (window.console) console.warn('orb: shader failed\n' + gl.getShaderInfoLog(sh));
+      return null;
+    }
+    var v = compile(gl.VERTEX_SHADER, vsSrc);
+    var f = compile(gl.FRAGMENT_SHADER, fsSrc);
+    if (!v || !f) return null;
+    var prog = gl.createProgram();
+    gl.attachShader(prog, v);
+    gl.attachShader(prog, f);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      if (window.console) console.warn('orb: link failed\n' + gl.getProgramInfoLog(prog));
+      return null;
+    }
+    var u = {};
+    ['proj', 'rot', 't', 'amp', 'scale', 'offset', 'alpha', 'scan', 'pulse', 'wet',
+     'dpr', 'res', 'heart', 'glowAmp', 'glowSize', 'lightDir', 'glowPos', 'grainT', 'dbg'].forEach(function (n) {
+      u[n] = gl.getUniformLocation(prog, n);
+    });
+    return { prog: prog, u: u, aP: gl.getAttribLocation(prog, 'p') };
+  }
+
+  var lineP = build(VS_LINE, FS_LINE);
+  var pointP = build(VS_POINT.replace('uniform float amp;', 'uniform float amp; uniform float dpr;'), FS_POINT);
+  var fillP = build(VS_LINE, FS_FILL);
+  var deepP = build(VS_LINE, FS_DEEP);
+  if (!lineP || !pointP || !fillP || !deepP) return;
+
+  /* ---------------- buffers ---------------- */
+
+  var posBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.STATIC_DRAW);
+
+  var lineIdx = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIdx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.lines, gl.STATIC_DRAW);
+
+  var triIdx = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, triIdx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.tris, gl.STATIC_DRAW);
+
+  /* ---------------- per-mode plan ---------------- */
+
+  // amp: how hard the surface deforms.  speed: how fast the deformation runs.
+  // scale: radius in scene units.  offset: where the centre sits.
+  var plan = {
+    slime:   { fill: { alpha: 0.95, wet: 1 }, amp: 1.6, speed: 1.0, scale: 1.55, offset: [0, 0] },
+    deep:    { deep: { alpha: 1.0 },  amp: 2.2, speed: 0.45, scale: 2.3,  offset: [0, 0.15], heart: 0.4,
+               portrait: { scale: 2.3, offset: [1.25, 0.25] } },
+    horizon: { deep: { alpha: 1.0 },  amp: 2.0, speed: 0.4,  scale: 3.6,  offset: [1.6, -1.9], heart: 0.35 },
+    points:  { points: { alpha: 0.9 }, amp: 1.0, speed: 1.0, scale: 1.55, offset: [0, 0] },
+    glass:   { fill: { alpha: 0.55, wet: 0 }, lines: { alpha: 0.12 }, amp: 1.0, speed: 1.0, scale: 1.55, offset: [0, 0] },
+    holo:    { lines: { alpha: 0.14, scan: 1 }, amp: 0.9, speed: 1.0, scale: 1.55, offset: [0, 0] },
+    energy:  { lines: { alpha: 0.10, pulse: 1 }, points: { alpha: 0.6 }, amp: 1.1, speed: 1.0, scale: 1.55, offset: [0, 0] },
+  }[mode] || { lines: { alpha: 0.14 }, amp: 1.0, speed: 1.0, scale: 1.55, offset: [0, 0] };
+
+  // Tuning knobs on the canvas element, so a variant is an attribute rather
+  // than a rebuild: data-scale, data-amp, data-offset="x,y", data-cull="0".
+  // The plan's scale and offset frame the body for landscape. A portrait
+  // frame is narrower than the body, so its rim would never show; a mode can
+  // give a second framing that moves the body aside so the rim runs down one
+  // side of the page. Chosen in resize(), because orientation can change.
+  var framing = { landscape: { scale: plan.scale, offset: plan.offset }, portrait: plan.portrait };
+  var tuned = {};
+  (function overrides() {
+    var v;
+    if ((v = canvas.getAttribute('data-scale'))) tuned.scale = parseFloat(v);
+    if ((v = canvas.getAttribute('data-amp'))) plan.amp = parseFloat(v);
+    if ((v = canvas.getAttribute('data-heart'))) plan.heart = parseFloat(v);
+    if ((v = canvas.getAttribute('data-speed'))) plan.speed = parseFloat(v);
+    if ((v = canvas.getAttribute('data-offset'))) tuned.offset = v.split(',').map(parseFloat);
+    plan.cull = canvas.getAttribute('data-cull') !== '0';
+    plan.dbg = parseFloat(canvas.getAttribute('data-dbg') || '0');
+  })();
+
+  var proj = new Float32Array(16);
+  var dpr = 1;
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    var aspect = w / h;
+    var f = 1 / Math.tan(0.42);
+    proj.set([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, -1.002, -1, 0, 0, -0.2002, 0]);
+
+    var fr = aspect < 1 && framing.portrait ? framing.portrait : framing.landscape;
+    plan.scale = tuned.scale || fr.scale;
+    plan.offset = tuned.offset || fr.offset;
+    // The internal glow lives under the point of the skin that projects to
+    // the centre of the frame: the ray down the axis meets the (undeformed)
+    // body there. In view space, unit-body units.
+    var ox = plan.offset[0], oy = plan.offset[1], sc = plan.scale;
+    plan.glowAt = [-ox / sc, -oy / sc, Math.sqrt(Math.max(sc * sc - ox * ox - oy * oy, 0)) / sc];
+    plan.home = plan.glowAt;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  var rot = new Float32Array(9);
+
+  function use(P, t, real, extra) {
+    gl.useProgram(P.prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.enableVertexAttribArray(P.aP);
+    gl.vertexAttribPointer(P.aP, 3, gl.FLOAT, false, 0, 0);
+    gl.uniformMatrix4fv(P.u.proj, false, proj);
+    gl.uniformMatrix3fv(P.u.rot, false, rot);
+    gl.uniform1f(P.u.t, t);
+    gl.uniform1f(P.u.amp, plan.amp);
+    gl.uniform1f(P.u.scale, plan.scale);
+    gl.uniform2f(P.u.offset, plan.offset[0], plan.offset[1]);
+    gl.uniform1f(P.u.alpha, extra.alpha || 0.15);
+    if (P.u.scan) gl.uniform1f(P.u.scan, extra.scan || 0);
+    if (P.u.pulse) gl.uniform1f(P.u.pulse, extra.pulse || 0);
+    if (P.u.wet) gl.uniform1f(P.u.wet, extra.wet || 0);
+    if (P.u.dpr) gl.uniform1f(P.u.dpr, dpr);
+    if (P.u.res) gl.uniform2f(P.u.res, canvas.width, canvas.height);
+    if (P.u.heart) gl.uniform1f(P.u.heart, plan.heart || 0);
+    if (P.u.glowAmp) gl.uniform1f(P.u.glowAmp, plan.glowAmp == null ? 0.5 : plan.glowAmp);
+    if (P.u.glowSize) gl.uniform1f(P.u.glowSize, plan.glowSize || 1);
+    if (P.u.lightDir) {
+      // the light circles slowly, so the wet highlight sweeps across the body
+      var a = real * 0.11;
+      gl.uniform3f(P.u.lightDir, Math.cos(a) * 0.9, 0.95 + Math.sin(real * 0.07) * 0.2, Math.sin(a) * 0.9 + 0.5);
+    }
+    if (P.u.glowPos) {
+      // The internal light wanders on a slow lissajous path around the point
+      // of the skin that faces the page, given in view space so it stays in
+      // frame whichever way the body is turned or where it sits. rot is
+      // orthonormal, so view -> object is its transpose.
+      var g = plan.glowAt || [0, 0, 1];
+      var wn = plan.wander == null ? 1 : plan.wander;
+      var gx = g[0] + Math.sin(real * 0.13) * 0.45 * wn;
+      var gy = g[1] + Math.cos(real * 0.09) * 0.40 * wn;
+      var gz = g[2] + Math.sin(real * 0.05) * 0.20 * wn;
+      gl.uniform3f(P.u.glowPos,
+        rot[0] * gx + rot[1] * gy + rot[2] * gz,
+        rot[3] * gx + rot[4] * gy + rot[5] * gz,
+        rot[6] * gx + rot[7] * gy + rot[8] * gz);
+    }
+    if (P.u.grainT) gl.uniform1f(P.u.grainT, 0.0);
+    if (P.u.dbg) gl.uniform1f(P.u.dbg, plan.dbg || 0);
+  }
+
+  /* ---------------- presence: the mark and the body answer each other ---------------- */
+
+  // data-presence on the canvas lists what is on, space separated:
+  //   glow     the body's internal light anchors under the mark instead of wandering
+  //   breathe  that light and the mark swell together on a slow cycle
+  //   blink    the ghost blinks now and then
+  //   float    the mark drifts a few pixels up and down
+  //   enter    once, on load: the mark surfaces out of the body and the light flares
+  // Under prefers-reduced-motion only the anchored light survives.
+  var mark = document.querySelector('.mark');
+  var wrap = mark && mark.parentElement && mark.parentElement.classList.contains('mark-wrap')
+    ? mark.parentElement : mark;
+  var presence = {};
+  (canvas.getAttribute('data-presence') || '').split(/\s+/).forEach(function (k) { if (k) presence[k] = true; });
+  if (reduced) presence = { glow: presence.glow };
+  var BEAT = 5.5;   // seconds per breath
+  var markNdc = null, frames = 0, born = -1;
+
+  function locateMark() {
+    var r = mark.getBoundingClientRect();
+    if (!r.width) { markNdc = null; return; }
+    markNdc = [((r.left + r.width / 2) / window.innerWidth) * 2 - 1,
+               1 - ((r.top + r.height / 2) / window.innerHeight) * 2];
+  }
+
+  // The point on the (undeformed) body that projects to a screen position,
+  // in view space, unit-body units: the ray through that pixel meets the
+  // sphere at offset/scale. Null if the ray misses.
+  function skinAt(nx, ny) {
+    var tn = Math.tan(0.42), asp = canvas.clientWidth / canvas.clientHeight;
+    var dx = nx * tn * asp, dy = ny * tn, dz = -1;
+    var len = Math.sqrt(dx * dx + dy * dy + 1); dx /= len; dy /= len; dz /= len;
+    var cx = plan.offset[0], cy = plan.offset[1], cz = -4.2, r = plan.scale;
+    var b = dx * cx + dy * cy + dz * cz, c = cx * cx + cy * cy + cz * cz - r * r;
+    var disc = b * b - c;
+    if (disc < 0) return null;
+    var t = b - Math.sqrt(disc);
+    return [(t * dx - cx) / r, (t * dy - cy) / r, (t * dz - cz) / r];
+  }
+
+  function presenceFrame(real) {
+    if (!mark) return;
+    if (born < 0) born = real;
+    var since = real - born;
+    if (presence.glow) {
+      if (!markNdc || frames % 60 === 0) locateMark();
+      var at = markNdc && skinAt(markNdc[0], markNdc[1]);
+      if (at) { plan.glowAt = at; plan.wander = 0.12; plan.glowSize = 1.8; }
+    }
+    var beat = 0.5 + 0.5 * Math.sin(since * 2 * Math.PI / BEAT - Math.PI / 2);
+    plan.glowAmp = presence.breathe ? 0.40 + 0.32 * beat : 0.5;
+    if (presence.enter) { var e = Math.max(0, 1 - since / 1.8); plan.glowAmp += 0.55 * e * e; }
+    if (presence.breathe || presence.float) {
+      var sc = presence.breathe ? 1 + 0.03 * beat : 1;
+      var y = presence.float ? Math.sin(since * 2 * Math.PI / 7) * 3 : 0;
+      wrap.style.transform = 'translateY(' + y.toFixed(2) + 'px) scale(' + sc.toFixed(4) + ')';
+    }
+    frames++;
+  }
+
+  if (mark && presence.enter && wrap.animate) {
+    mark.animate(
+      [{ opacity: 0, transform: 'scale(0.9)', filter: 'blur(8px)' },
+       { opacity: 1, transform: 'none', filter: 'blur(0px)' }],
+      { duration: 1100, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
+  }
+
+  if (mark && presence.blink && wrap !== mark && wrap.animate) {
+    // eye centres as a percentage of the mark box, measured from the PNG
+    var EYES = [[48.1, 54.0], [60.1, 54.5]];
+    var lids = EYES.map(function (e) {
+      var d = document.createElement('span');
+      d.setAttribute('aria-hidden', 'true');
+      d.style.cssText = 'position:absolute;left:' + (e[0] - 3.1) + '%;top:' + (e[1] - 7.5) + '%;' +
+        'width:6.2%;height:15%;border-radius:50%;background:rgb(21,30,5);' +
+        'transform:scaleY(0);transform-origin:50% 0;pointer-events:none;';
+      wrap.appendChild(d);
+      return d;
+    });
+    function blink(n) {
+      lids.forEach(function (d) {
+        d.animate(
+          [{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)', offset: 0.35 },
+           { transform: 'scaleY(1)', offset: 0.55 }, { transform: 'scaleY(0)' }],
+          { duration: 230, easing: 'ease-in-out' });
+      });
+      if (n > 1) setTimeout(function () { blink(n - 1); }, 270);
+    }
+    // one early, as if it noticed you, then whenever
+    var wait = 1600;
+    (function schedule() {
+      setTimeout(function () { blink(Math.random() < 0.25 ? 2 : 1); wait = 2800 + Math.random() * 5200; schedule(); }, wait);
+    })();
+  }
+
+  var press = null, restAmp = plan.amp;
+  window.addEventListener('ectodeck:press', function (e) {
+    if (!ECTODECK.react || !e.detail.down) return;
+    var at = skinAt(e.detail.x * 2 - 1, 1 - e.detail.y * 2);
+    if (at) press = { at: at, t: performance.now() / 1000 };
+  });
+  function pressFrame(real) {
+    if (!press) return;
+    var age = real - press.t;
+    if (age > 3) {
+      press = null; plan.glowAt = plan.home; plan.glowAmp = null; plan.wander = null; plan.amp = restAmp;
+      return;
+    }
+    var w = Math.exp(-age * 1.1), h = plan.home, a = press.at;
+    plan.glowAt = [h[0] + (a[0] - h[0]) * w, h[1] + (a[1] - h[1]) * w, h[2] + (a[2] - h[2]) * w];
+    plan.wander = 1 - w;
+    plan.glowAmp = 0.5 + 0.9 * Math.exp(-age * 2.4);
+    plan.amp = restAmp * (1 + 0.45 * Math.exp(-age * 3.0));
+  }
+
+  function frame(ms) {
+    var real = ms / 1000;
+    var t = real * plan.speed;
+    presenceFrame(real);
+    pressFrame(real);
+    // autonomous: a slow yaw and a lazy nod, nothing from the pointer
+    var yaw = real * 0.07;
+    var pitch = 0.22 + Math.sin(real * 0.19) * 0.10;
+    var cy = Math.cos(yaw), sy = Math.sin(yaw), cx = Math.cos(pitch), sx = Math.sin(pitch);
+    rot.set([cy, sx * sy, -cx * sy, 0, cx, sx, sy, -sx * cy, cx * cy]);
+
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    var solid = plan.fill ? fillP : plan.deep ? deepP : null;
+    if (solid) {
+      gl.enable(gl.DEPTH_TEST);
+      if (plan.cull) { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); } else { gl.disable(gl.CULL_FACE); }
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      use(solid, t, real, plan.fill || plan.deep);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, triIdx);
+      gl.drawElements(gl.TRIANGLES, mesh.tris.length, gl.UNSIGNED_SHORT, 0);
+      gl.disable(gl.CULL_FACE);
+    }
+
+    // everything luminous is additive on black
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+
+    if (plan.lines) {
+      use(lineP, t, real, plan.lines);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIdx);
+      gl.drawElements(gl.LINES, mesh.lines.length, gl.UNSIGNED_SHORT, 0);
+    }
+    if (plan.points) {
+      use(pointP, t, real, plan.points);
+      gl.drawArrays(gl.POINTS, 0, mesh.count);
+    }
+
+    if (!reduced) requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+
+</script>
+</body>
+</html>

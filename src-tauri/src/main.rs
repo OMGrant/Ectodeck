@@ -127,6 +127,18 @@ async fn main() {
 				let _ = hide_window(app.handle());
 			}
 
+			// Copy the interface's console messages into the app's log, so
+			// problems in the window can be diagnosed from the log alone.
+			#[cfg(target_os = "linux")]
+			if let Some(window) = app.get_webview_window("main") {
+				let _ = window.with_webview(|webview| {
+					use webkit2gtk::{SettingsExt, WebViewExt};
+					if let Some(settings) = webview.inner().settings() {
+						settings.set_enable_write_console_messages_to_stdout(true);
+					}
+				});
+			}
+
 			let old = app.path().config_dir().unwrap().join("com.amansprojects.opendeck");
 			if old.exists() {
 				let _ = std::fs::rename(old, app.path().app_config_dir().unwrap());
@@ -171,15 +183,11 @@ async fn main() {
 								r#"Thanks for installing {PRODUCT_NAME}!
 If you have any issues, please reach out on any of the support channels listed on GitHub (and make sure to star the project while you're there!).
 
-Some minimal statistics (such as operating system and plugins installed) will be collected from the next time the app starts.
-If you do not wish to support development in this way, please disable statistics in the settings.
-
 Enjoy!"#,
 							))
 							.title(format!("{PRODUCT_NAME} has successfully been installed"))
 							.kind(MessageDialogKind::Info)
 							.show(|_| ());
-						settings.value.statistics = false;
 					} else {
 						app.dialog()
 							.message(format!(
@@ -198,17 +206,6 @@ If you have already donated, thank you so much for your support!"#,
 				}
 				_ => {}
 			}
-
-			use tauri_plugin_aptabase::{Builder, EventTracker, InitOptions};
-			app.handle().plugin(
-				Builder::new(if settings.value.statistics { "A-SH-3841489320" } else { "" })
-					.with_options(InitOptions {
-						host: Some("https://aptabase.amankhanna.me".to_owned()),
-						flush_interval: None,
-					})
-					.build(),
-			)?;
-			let _ = app.track_event("app_started", None);
 
 			tokio::spawn(async {
 				loop {
@@ -406,7 +403,7 @@ If you have already donated, thank you so much for your support!"#,
 		Err(error) => panic!("failed to build Tauri application: {}", error),
 	};
 
-	app.run(|app, event| {
+	app.run(|_app, event| {
 		if let tauri::RunEvent::Exit = event {
 			#[cfg(windows)]
 			futures::executor::block_on(plugins::deactivate_plugins());
@@ -418,8 +415,6 @@ If you have already donated, thank you so much for your support!"#,
 			}
 
 			tokio::spawn(elgato::reset_devices());
-			use tauri_plugin_aptabase::EventTracker;
-			app.flush_events_blocking();
 		}
 	});
 }

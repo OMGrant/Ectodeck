@@ -30,13 +30,93 @@ use crate::background::{PANEL_HEIGHT, PANEL_WIDTH};
 /// 60 on it and costs half as much.
 pub const FPS: u32 = 30;
 
+pub type Params = serde_json::Map<String, serde_json::Value>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Source {
-    Web(String),
-    Shader(String),
+    Web { url: String, params: Params },
+    Shader { code: String, params: Params },
+}
+
+impl Source {
+    /// Whether `other` is the same animation, perhaps with other parameters,
+    /// so it can be adjusted in place rather than restarted.
+    pub fn same_program(&self, other: &Source) -> bool {
+        match (self, other) {
+            (Source::Web { url: a, .. }, Source::Web { url: b, .. }) => a == b,
+            (Source::Shader { code: a, .. }, Source::Shader { code: b, .. }) => a == b,
+            _ => false,
+        }
+    }
+
+    pub fn params(&self) -> &Params {
+        match self {
+            Source::Web { params, .. } | Source::Shader { params, .. } => params,
+        }
+    }
+}
+
+/// A web background's address with its parameters in the query string:
+/// numbers as they are, booleans as 1 or 0, colours and points as
+/// comma-separated components.
+pub fn web_address(url: &str, params: &Params) -> String {
+    if params.is_empty() {
+        return url.to_string();
+    }
+    let query: Vec<String> = params
+        .iter()
+        .map(|(k, v)| {
+            let value = match v {
+                serde_json::Value::Bool(b) => (*b as u8).to_string(),
+                serde_json::Value::Array(a) => a.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","),
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            format!("{}={}", encode(k), encode(&value))
+        })
+        .collect();
+    format!("{url}{}{}", if url.contains('?') { '&' } else { '?' }, query.join("&"))
+}
+
+fn encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b',' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Something done on the deck that a background can react to.
+#[derive(Clone, Copy, Debug)]
+pub enum Input {
+    /// A key pressed or released; centre in panel pixels, top-left origin.
+    Key { index: u8, down: bool, x: f32, y: f32 },
+    /// A dial turned by some detents.
+    Dial { index: u8, ticks: i16 },
+}
+
+/// The deck's controls as the shader thread reads them.
+#[derive(Default)]
+struct Interaction {
+    mouse: [f32; 4],
+    pressed_at: Vec<(f32, f32, Instant, f32)>,
+    dials: [f32; 3],
+}
+
+impl Interaction {
+    fn snapshot(&self) -> crate::shader::Interaction {
+        crate::shader::Interaction {
+            mouse: self.mouse,
+            presses: self.pressed_at.iter().map(|&(x, y, at, key)| (x, y, at.elapsed().as_secs_f32(), key)).collect(),
+            dials: self.dials,
+        }
+    }
 }
 
 pub struct Animation {
+    params: Arc<Mutex<Params>>,
+    interaction: Arc<Mutex<Interaction>>,
     latest: Arc<Mutex<Option<RgbImage>>>,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
@@ -46,24 +126,28 @@ pub struct Animation {
 
 impl Animation {
     pub fn start(source: Source) -> Animation {
+        let params = Arc::new(Mutex::new(source.params().clone()));
+        let interaction = Arc::new(Mutex::new(Interaction::default()));
         let latest = Arc::new(Mutex::new(None));
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
         let chrome = Arc::new(Mutex::new(None));
         let (l, s, p, c) = (latest.clone(), stop.clone(), paused.clone(), chrome.clone());
+        let (pr, ia) = (params.clone(), interaction.clone());
         let thread = std::thread::Builder::new()
             .name("animation".into())
             .spawn(move || {
                 match source {
-                    Source::Shader(code) => {
-                        if let Err(e) = run_shader(&code, &l, &s, &p) {
+                    Source::Shader { code, .. } => {
+                        if let Err(e) = run_shader(&code, &pr, &ia, &l, &s, &p) {
                             log::error!("Shader background stopped: {e}");
                         }
                     }
                     // Chrome can exit under us (a crash, an update replacing
                     // its files); start it again, backing off if it keeps
                     // failing
-                    Source::Web(url) => {
+                    Source::Web { url, params } => {
+                        let url = web_address(&url, &params);
                         let mut delay = Duration::from_secs(2);
                         while !s.load(Ordering::SeqCst) {
                             let started = Instant::now();
@@ -88,7 +172,52 @@ impl Animation {
                 }
             })
             .ok();
-        Animation { latest, stop, paused, chrome, thread }
+        Animation { params, interaction, latest, stop, paused, chrome, thread }
+    }
+
+    /// Adjust the parameters of the running animation. A shader picks them up
+    /// on its next frame; a web page is reloaded with them in its address.
+    pub fn set_params(&self, source: &Source) {
+        if let Ok(mut p) = self.params.lock() {
+            *p = source.params().clone();
+        }
+        if let Source::Web { url, params } = source {
+            if let Ok(mut chrome) = self.chrome.lock() {
+                if let Some(c) = chrome.as_mut() {
+                    let _ = c.send("Page.navigate", serde_json::json!({ "url": web_address(url, params) }), true);
+                }
+            }
+        }
+    }
+
+    /// Tell the background about a key or dial.
+    pub fn input(&self, input: Input) {
+        if let Ok(mut ia) = self.interaction.lock() {
+            match input {
+                Input::Key { index, down, x, y } => {
+                    // Shadertoy measures from the bottom left
+                    let gy = PANEL_HEIGHT as f32 - y;
+                    if down {
+                        ia.mouse = [x, gy, x, gy];
+                        ia.pressed_at.insert(0, (x, gy, Instant::now(), index as f32));
+                        ia.pressed_at.truncate(8);
+                    } else {
+                        ia.mouse[2] = -ia.mouse[2].abs();
+                        ia.mouse[3] = -ia.mouse[3].abs();
+                    }
+                }
+                Input::Dial { index, ticks } => {
+                    if let Some(d) = ia.dials.get_mut(index as usize) {
+                        *d += ticks as f32;
+                    }
+                }
+            }
+        }
+        if let Ok(mut chrome) = self.chrome.lock() {
+            if let Some(c) = chrome.as_mut() {
+                let _ = c.deliver(input);
+            }
+        }
     }
 
     /// The newest frame, if one has been rendered yet.
@@ -124,7 +253,14 @@ impl Drop for Animation {
     }
 }
 
-fn run_shader(code: &str, latest: &Mutex<Option<RgbImage>>, stop: &AtomicBool, paused: &AtomicBool) -> Result<(), String> {
+fn run_shader(
+    code: &str,
+    params: &Mutex<Params>,
+    interaction: &Mutex<Interaction>,
+    latest: &Mutex<Option<RgbImage>>,
+    stop: &AtomicBool,
+    paused: &AtomicBool,
+) -> Result<(), String> {
     let mut renderer = crate::shader::ShaderRenderer::new(code, PANEL_WIDTH, PANEL_HEIGHT)?;
     log::info!("Shader background running");
     let period = Duration::from_secs_f64(1.0 / FPS as f64);
@@ -139,7 +275,9 @@ fn run_shader(code: &str, latest: &Mutex<Option<RgbImage>>, stop: &AtomicBool, p
         }
         clock += (now - last).as_secs_f32();
         last = now;
-        let frame = renderer.render(clock);
+        let values = params.lock().map(|p| p.clone()).unwrap_or_default();
+        let controls = interaction.lock().map(|i| i.snapshot()).unwrap_or_default();
+        let frame = renderer.render(clock, &values, &controls);
         if let Ok(mut l) = latest.lock() {
             *l = Some(frame);
         }
@@ -179,6 +317,28 @@ impl ChromeHandle {
             serde_json::json!({ "format": "jpeg", "quality": 85, "maxWidth": PANEL_WIDTH, "maxHeight": PANEL_HEIGHT, "everyNthFrame": 60 / FPS }),
             true,
         )
+    }
+
+    /// Pass a key or dial to the page: a real click at the key for pages
+    /// that react to the pointer, and an `ectodeck:press` or `ectodeck:dial`
+    /// event for pages written to react to the deck.
+    fn deliver(&mut self, input: Input) -> std::io::Result<()> {
+        let script = match input {
+            Input::Key { index, down, x, y } => {
+                let kind = if down { "mousePressed" } else { "mouseReleased" };
+                self.send("Input.dispatchMouseEvent", serde_json::json!({ "type": kind, "x": x, "y": y, "button": "left", "clickCount": 1 }), true)?;
+                format!(
+                    "window.dispatchEvent(new CustomEvent('ectodeck:press', {{ detail: {{ key: {index}, down: {down}, x: {}, y: {} }} }}))",
+                    x / PANEL_WIDTH as f32,
+                    y / PANEL_HEIGHT as f32
+                )
+            }
+            Input::Dial { index, ticks } => {
+                format!("window.dispatchEvent(new CustomEvent('ectodeck:dial', {{ detail: {{ dial: {index}, ticks: {ticks} }} }}))")
+            }
+        };
+        self.send("Runtime.evaluate", serde_json::json!({ "expression": script }), true)?;
+        Ok(())
     }
 
     fn stop_screencast(&mut self) -> std::io::Result<u64> {
@@ -343,7 +503,19 @@ fn run_web(
 
     while !stop.load(Ordering::SeqCst) {
         let m = read()?;
-        if m.get("method").and_then(|v| v.as_str()) != Some("Page.screencastFrame") {
+        let method = m.get("method").and_then(|v| v.as_str());
+        if method == Some("Page.loadEventFired") {
+            // a reload (new parameters) ends the screencast; start it again
+            if !paused.load(Ordering::SeqCst) {
+                if let Ok(mut chrome) = slot.lock() {
+                    if let Some(c) = chrome.as_mut() {
+                        let _ = c.start_screencast();
+                    }
+                }
+            }
+            continue;
+        }
+        if method != Some("Page.screencastFrame") {
             continue;
         }
         let p = &m["params"];

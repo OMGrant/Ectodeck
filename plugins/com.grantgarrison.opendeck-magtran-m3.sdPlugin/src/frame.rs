@@ -171,9 +171,17 @@ pub async fn set_animation(id: &str, source: Option<Source>) {
         if f.source == source {
             return;
         }
+        // the same animation with other parameters is adjusted in place
+        if let (Some(new), Some(current), Some(animation)) = (&source, &f.source, &f.animation) {
+            if new.same_program(current) {
+                animation.set_params(new);
+                f.source = source.clone();
+                return;
+            }
+        }
         log::info!("Animated background: {}", match &source {
-            Some(Source::Web(url)) => format!("web page {url}"),
-            Some(Source::Shader(_)) => "shader".to_string(),
+            Some(Source::Web { url, .. }) => format!("web page {url}"),
+            Some(Source::Shader { .. }) => "shader".to_string(),
             None => "off".to_string(),
         });
         let old = f.animation.take();
@@ -199,21 +207,44 @@ pub async fn set_animation(id: &str, source: Option<Source>) {
     }
 }
 
+/// A key or dial on the deck, passed to the animated background if there is
+/// one so it can react.
+pub async fn input(id: &str, input: crate::animation::Input) {
+    let frame = frame_for(id).await;
+    let f = frame.lock().await;
+    if let Some(animation) = &f.animation {
+        let input = match input {
+            crate::animation::Input::Key { index, down, .. } => {
+                // the key's centre on the panel
+                let lay = layout();
+                let (x, y) = lay.origin(index);
+                let half = lay.key_px() as f32 / 2.0;
+                crate::animation::Input::Key { index, down, x: x as f32 + half, y: y as f32 + half }
+            }
+            other => other,
+        };
+        animation.input(input);
+    }
+}
+
 /// Start or stop sending preview frames of the live background to the window.
 pub async fn set_preview(id: &str, on: bool) {
     log::info!("Background preview {}", if on { "on" } else { "off" });
     frame_for(id).await.lock().await.preview = on;
 }
 
-/// Frames between previews: about four a second.
-const PREVIEW_EVERY: u32 = FPS / 4;
+/// Preview frames go out with every deck frame, at three quarters of the
+/// panel's size: about the size the device view draws the panel.
+const PREVIEW_EVERY: u32 = 1;
+const PREVIEW_WIDTH: u32 = PANEL_WIDTH * 3 / 4;
+const PREVIEW_HEIGHT: u32 = PANEL_HEIGHT * 3 / 4;
 
 /// Send a small copy of the background to the window, which shows it in the
 /// device view. The window cannot render the animation itself: WebGL in its
 /// web engine crashes on NVIDIA drivers when a context is torn down.
 async fn send_preview(id: &str, background: &RgbImage) {
     use base64::Engine;
-    let small = imageops::resize(background, PANEL_WIDTH / 2, PANEL_HEIGHT / 2, imageops::FilterType::Triangle);
+    let small = imageops::resize(background, PREVIEW_WIDTH, PREVIEW_HEIGHT, imageops::FilterType::Triangle);
     let mut jpeg = std::io::Cursor::new(Vec::new());
     if image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 70).encode_image(&small).is_err() {
         return;
