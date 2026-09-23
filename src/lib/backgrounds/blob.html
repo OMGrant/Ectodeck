@@ -250,7 +250,7 @@
     '    float r = length(d);' +
     '    float dent = -0.3 * exp(-r * r / 0.17) * smoothstep(0.0, 0.6, age) * exp(-age * 0.75);' +
     '    float rr = r - age * 0.3;' +
-    '    float ripple = 0.09 * sin(rr * 7.5) * exp(-rr * rr / 0.2) * exp(-age * 0.55) * smoothstep(0.0, 0.3, r);' +
+    '    float ripple = 0.09 * sin(rr * 7.5) * exp(-rr * rr / 0.2) * exp(-age * 0.55) * smoothstep(0.0, 0.3, r) * smoothstep(0.0, 0.5, age) * (1.0 - smoothstep(age * 0.3, age * 0.3 + 0.25, r));' +
     '    h += (dent + ripple) * pokes[i].w;' +
     '  }' +
     '  return h;' +
@@ -386,7 +386,7 @@
     '    float r = length(d);' +
     '    float dent = -0.3 * exp(-r * r / 0.17) * smoothstep(0.0, 0.6, age) * exp(-age * 0.75);' +
     '    float rr = r - age * 0.3;' +
-    '    float ripple = 0.09 * sin(rr * 7.5) * exp(-rr * rr / 0.2) * exp(-age * 0.55) * smoothstep(0.0, 0.3, r);' +
+    '    float ripple = 0.09 * sin(rr * 7.5) * exp(-rr * rr / 0.2) * exp(-age * 0.55) * smoothstep(0.0, 0.3, r) * smoothstep(0.0, 0.5, age) * (1.0 - smoothstep(age * 0.3, age * 0.3 + 0.25, r));' +
     '    h += (dent + ripple) * pokes[i].w;' +
     '  }' +
     '  return h;' +
