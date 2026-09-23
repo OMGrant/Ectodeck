@@ -266,5 +266,7 @@
 	"tray.divider": "Drag to give the tray more or less room. Double-click to hide or show it.",
 	"inspector.pedal": "The Pedal has no screen or lights, so there is nothing to set here. Choose a pedal to give it an action.",
 	"inspector.all_devices": "These apply to every connected device.",
-	"tray.show": "Show actions"
+	"tray.show": "Show actions",
+	"parent_action_view.toggle_hint": "A toggle action does one thing on the first press and another on the second. Drag two actions here.",
+	"inspector.empty.hint_dial": "Drag an action from the tray onto this dial, or double-click an action to put it here."
 }

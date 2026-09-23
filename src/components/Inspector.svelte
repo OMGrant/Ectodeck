@@ -221,7 +221,7 @@
 		</div>
 
 		{#if selection.kind == "empty"}
-			<p class="mt-1.5 mb-3.5 text-[12.5px] leading-normal text-neutral-400">{$t("inspector.empty.hint")}</p>
+			<p class="mt-1.5 mb-3.5 text-[12.5px] leading-normal text-neutral-400">{selection.context.controller == "Encoder" ? $t("inspector.empty.hint_dial") : $t("inspector.empty.hint")}</p>
 			{#if copiedName}
 				<div>
 					<button class="btn" on:click={() => selection.kind == "empty" && keyCommand.set({ context: contextKey(selection.context), command: "paste" })}>

@@ -202,16 +202,22 @@
 
 	function chooseFromMenu(id: string) {
 		if (id == "opendeck_edit_profiles") showPopup = true;
-		else if (id == "opendeck_new_profile") startCreating("profile");
+		else if (id == "opendeck_new_profile") {
+			startCreating("profile");
+			fromMenu = true;
+		}
 		else value = id;
 	}
 
 	// Creating a profile or a folder happens in a field at the top of the list.
 	let creating: "profile" | "folder" | null = null;
+	// started from the profile menu rather than inside this window
+	let fromMenu = false;
 	let createName = "";
 	let createInput: HTMLInputElement;
 	function startCreating(kind: "profile" | "folder") {
 		showPopup = true;
+		fromMenu = false;
 		creating = kind;
 		createName = "";
 	}
@@ -226,6 +232,7 @@
 		await setProfile(id);
 		value = id;
 		creating = null;
+		if (fromMenu) showPopup = false;
 	}
 	$: renameValid = NAME.test(newId.trim());
 
@@ -331,7 +338,7 @@
 							<span class="truncate font-medium text-neutral-200">{leaf(id)}</span>
 							{#if id == value}<span class="text-[11px] text-neutral-400 border border-neutral-600 rounded-full px-[7px] py-px">{$t("profile_manager.in_use")}</span>{/if}
 						</button>
-						<div class="flex flex-row gap-0.5 text-xs text-neutral-400 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+						<div class="flex flex-row gap-0.5 text-xs text-neutral-500 group-hover:text-neutral-300 focus-within:text-neutral-300">
 							{#if id != value}
 								<button class="row-act" on:click={() => (renamingProfile = newId = id)}><PencilSimple size="13" />{$t("profile_manager.rename")}</button>
 							{/if}

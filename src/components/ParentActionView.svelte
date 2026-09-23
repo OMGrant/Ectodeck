@@ -166,7 +166,7 @@
 				{#if summary(instance)}<div class="truncate max-w-52 font-mono text-xs text-neutral-400">{summary(instance)}</div>{/if}
 			</div>
 			<button
-				class="row-act ml-auto opacity-0 group-hover:opacity-100 focus:opacity-100 text-neutral-400"
+				class="row-act ml-auto text-neutral-500 group-hover:text-neutral-300"
 				on:click|stopPropagation={() => removeInstance(index)}
 				tabindex={-1}
 				aria-label={$t("parent_action_view.remove", { name: instance.action.name })}
@@ -193,6 +193,9 @@
 			</div>
 		{/if}
 	{/each}
+	{#if parentUuid == "opendeck.toggleaction" && children.length == 0}
+		<p class="mb-1 text-[12.5px] leading-normal text-neutral-400">{$t("parent_action_view.toggle_hint")}</p>
+	{/if}
 	{#if parentUuid != "opendeck.toggleaction" || children.length < 2}
 		<!-- svelte-ignore a11y-no-noninteractive-tabindex -->
 		<div

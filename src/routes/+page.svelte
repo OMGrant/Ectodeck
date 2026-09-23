@@ -122,7 +122,7 @@
 					on:pointerdown={dragDivider}
 					on:dblclick={toggleTray}
 				>
-					<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-1 rounded-full bg-neutral-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+					<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-1 rounded-full bg-neutral-700 group-hover:bg-neutral-500 transition-colors"></div>
 				</div>
 				<div class="flex flex-col min-h-0" class:flex-1={trayMin > 0} class:hidden={trayMin == 0}>
 					<ActionList bind:this={$actionList} />

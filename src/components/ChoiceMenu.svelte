@@ -23,6 +23,7 @@
 	import CaretDown from "phosphor-svelte/lib/CaretDown";
 	import Check from "phosphor-svelte/lib/Check";
 	import { createEventDispatcher, tick } from "svelte";
+	import { portal } from "$lib/portal";
 
 	export let label: string;
 	export let current: string;
@@ -34,17 +35,24 @@
 	let root: HTMLDivElement;
 	let menu: HTMLDivElement;
 
-	// Menus open downwards, or upwards when the window has more room above.
-	let above = false;
-	let maxHeight = 320;
+	// The menu is drawn above the whole app, anchored to its button, so no
+	// scrolling box or window can cut it off. It opens downwards, or upwards
+	// when the window has more room above.
+	let place = "";
+	function position() {
+		const r = root.getBoundingClientRect();
+		const below = innerHeight - r.bottom - 12;
+		const over = r.top - 12;
+		const above = below < 240 && over > below;
+		const maxHeight = Math.min(320, above ? over : below);
+		const vertical = above ? `bottom: ${innerHeight - r.top + 4}px;` : `top: ${r.bottom + 4}px;`;
+		const horizontal = variant == "icon" ? `right: ${innerWidth - r.right}px;` : `left: ${Math.min(r.left, innerWidth - 200)}px;`;
+		place = `${vertical} ${horizontal} max-height: ${maxHeight}px; min-width: ${variant == "icon" ? 176 : Math.max(r.width, variant == "crumb" ? 240 : 0)}px;`;
+	}
 	async function toggle() {
 		open = !open;
 		if (open) {
-			const r = root.getBoundingClientRect();
-			const below = innerHeight - r.bottom - 12;
-			const over = r.top - 12;
-			above = below < 240 && over > below;
-			maxHeight = Math.min(320, above ? over : below);
+			position();
 			await tick();
 			const selected = menu?.querySelector<HTMLButtonElement>("[aria-checked='true']") ?? menu?.querySelector<HTMLButtonElement>("button");
 			selected?.focus();
@@ -72,7 +80,11 @@
 	}
 
 	function onWindowClick(event: MouseEvent) {
-		if (open && !root.contains(event.target as Node)) open = false;
+		if (open && !root.contains(event.target as Node) && !menu?.contains(event.target as Node)) open = false;
+	}
+	// a menu stays with its button; if the page moves under it, it closes
+	function onScroll(event: Event) {
+		if (open && !menu?.contains(event.target as Node)) open = false;
 	}
 
 	const triggers = {
@@ -83,7 +95,7 @@
 	};
 </script>
 
-<svelte:window on:click={onWindowClick} on:keydown={onKeydown} />
+<svelte:window on:click={onWindowClick} on:keydown={onKeydown} on:resize={() => (open = false)} on:scroll|capture={onScroll} />
 
 <div class="relative" class:w-full={variant == "field"} bind:this={root}>
 	<button
@@ -103,19 +115,12 @@
 
 	{#if open}
 		<div
+			use:portal={"body"}
 			bind:this={menu}
 			role="menu"
 			aria-label={label}
-			style="max-height: {maxHeight}px;"
-			class="absolute min-w-full w-max max-w-80 overflow-y-auto p-[5px] text-[13px] text-neutral-200 bg-neutral-800 border border-neutral-600 rounded-[10px] shadow-xl shadow-black/50 z-40"
-			class:min-w-60={variant == "crumb"}
-			class:top-full={!above}
-			class:mt-1={!above}
-			class:bottom-full={above}
-			class:mb-1={above}
-			class:left-0={variant != "icon"}
-			class:right-0={variant == "icon"}
-			class:min-w-44={variant == "icon"}
+			style={place}
+			class="fixed w-max max-w-80 overflow-y-auto p-[5px] text-[13px] text-neutral-200 bg-neutral-800 border border-neutral-600 rounded-[10px] shadow-xl shadow-black/50 z-50"
 		>
 			{#each sections as section, i}
 				{#if i > 0 && !section.heading}<div class="my-[5px] mx-1 border-t border-neutral-700"></div>{/if}

@@ -327,7 +327,7 @@
 							<button class="row-act" on:click={() => invoke("open_log_directory")}><Scroll size="13" />{$t("plugin_manager.view_logs")}</button>
 							<button class="row-act" on:click={() => invoke("reload_plugin", { id: plugin.id })}><ArrowClockwise size="13" />{$t("plugin_manager.try_again")}</button>
 						{/if}
-						<div class="opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+						<div>
 							<ChoiceMenu variant="icon" label={$t("inspector.more")} current="" sections={rowMenu(plugin)} on:choose={(e) => rowCommand(plugin, e.detail)}>
 								<DotsThree slot="icon" size="16" />
 							</ChoiceMenu>
