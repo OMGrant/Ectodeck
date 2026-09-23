@@ -241,7 +241,7 @@
     '        + sin(o.x*4.3+o.y*3.7+t*0.4)*0.035) * amp;' +
     '}' +
     'vec3 surf(vec3 o){ return o * (1.0 + bump(o)); }' +
-    'float pokeHeight(vec2 at, float aspect){' +
+    'float pokePart(vec2 at, float aspect, float wantDent){' +
     '  float h = 0.0;' +
     '  for (int i = 0; i < 4; i++) {' +
     '    if (pokes[i].w <= 0.0) continue;' +
@@ -251,10 +251,11 @@
     '    float dent = -0.5 * exp(-r * r / 0.17) * smoothstep(0.0, 0.6, age) * exp(-age * 0.75);' +
     '    float rr = r - age * 0.3;' +
     '    float ripple = 0.09 * sin(rr * 7.5) * exp(-rr * rr / 0.2) * exp(-age * 0.55) * smoothstep(0.0, 0.3, r) * smoothstep(0.0, 0.5, age) * (1.0 - smoothstep(age * 0.3, age * 0.3 + 0.25, r));' +
-    '    h += (dent + ripple) * pokes[i].w;' +
+    '    h += mix(ripple, dent, wantDent) * pokes[i].w;' +
     '  }' +
     '  return h;' +
     '}' +
+    'float pokeHeight(vec2 at, float aspect){ return pokePart(at, aspect, 1.0) + pokePart(at, aspect, 0.0); }' +
     'void main(){' +
     '  float d = bump(p);' +
     '  vec3 s = p * (1.0 + d);' +
@@ -278,7 +279,16 @@
     // across it, like tapping a water balloon; see pokeHeight.
     '  vec4 clip = proj * vec4(q, 1.0);' +
     '  float aspect = proj[1][1] / proj[0][0];' +
-    '  q += normalize(vN) * pokeHeight(clip.xy / clip.w, aspect) * scale;' +
+    // the dent sinks straight away from the viewer, along the line of sight,
+    // so each point stays where it was on screen and the dent is exactly as
+    // round as its footprint; the ripple moves along the normal, which is
+    // what lets it slosh the edge
+    '  vec2 at = clip.xy / clip.w;' +
+    '  q += normalize(q) * -pokePart(at, aspect, 1.0) * scale;' +
+    // skin seen edge-on would fold into points if pushed, so the ripple fades
+    // out toward the outline and the outline only swells gently
+    '  float facing = smoothstep(0.05, 0.6, abs(dot(normalize(vN), normalize(-q))));' +
+    '  q += normalize(vN) * pokePart(at, aspect, 0.0) * scale * facing;' +
     '  vV = normalize(-q);' +
     '  vD = q.z;';
 
@@ -377,7 +387,7 @@
     'uniform highp float amp; uniform highp mat3 rot;' +
     // Ectodeck: the key-press pokes, as in the vertex stage
     'uniform highp vec4 pokes[4];' +
-    'float pokeHeight(vec2 at, float aspect){' +
+    'float pokePart(vec2 at, float aspect, float wantDent){' +
     '  float h = 0.0;' +
     '  for (int i = 0; i < 4; i++) {' +
     '    if (pokes[i].w <= 0.0) continue;' +
@@ -387,10 +397,11 @@
     '    float dent = -0.5 * exp(-r * r / 0.17) * smoothstep(0.0, 0.6, age) * exp(-age * 0.75);' +
     '    float rr = r - age * 0.3;' +
     '    float ripple = 0.09 * sin(rr * 7.5) * exp(-rr * rr / 0.2) * exp(-age * 0.55) * smoothstep(0.0, 0.3, r) * smoothstep(0.0, 0.5, age) * (1.0 - smoothstep(age * 0.3, age * 0.3 + 0.25, r));' +
-    '    h += (dent + ripple) * pokes[i].w;' +
+    '    h += mix(ripple, dent, wantDent) * pokes[i].w;' +
     '  }' +
     '  return h;' +
     '}' +
+    'float pokeHeight(vec2 at, float aspect){ return pokePart(at, aspect, 1.0) + pokePart(at, aspect, 0.0); }' +
     // The same displacement the vertex shader applies, evaluated per pixel
     // from the interpolated body direction, so the shading normal is exact
     // everywhere instead of being the vertex normal smeared across a
