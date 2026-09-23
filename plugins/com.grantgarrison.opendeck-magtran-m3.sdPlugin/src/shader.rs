@@ -58,6 +58,8 @@ uniform vec4 iMouse;
 uniform vec4 iDate;
 uniform vec4 iKeyPresses[8];
 uniform vec3 iDials;
+uniform float iAudioBands[32];
+uniform float iAudioLevel;
 out vec4 ectodeckFragColor;
 ";
 
@@ -128,6 +130,9 @@ pub struct Interaction {
     /// Newest first: key centre (bottom-left origin), seconds since, index.
     pub presses: Vec<(f32, f32, f32, f32)>,
     pub dials: [f32; 3],
+    /// What is playing: 32 bands and the overall level, each 0 to 1.
+    pub audio_bands: [f32; 32],
+    pub audio_level: f32,
 }
 
 // every channel is kept: buffers use alpha as data; the shown picture's
@@ -347,6 +352,8 @@ impl ShaderRenderer {
             gl.uniform_4_f32_slice(u("iKeyPresses").as_ref(), &presses);
             let d = interaction.dials;
             gl.uniform_3_f32(u("iDials").as_ref(), d[0], d[1], d[2]);
+            gl.uniform_1_f32_slice(u("iAudioBands").as_ref(), &interaction.audio_bands);
+            gl.uniform_1_f32(u("iAudioLevel").as_ref(), interaction.audio_level);
             for input in &self.inputs {
                 let value = params.get(&input.name).or_else(|| self.defaults.get(&input.name));
                 let n = |i: usize| value.and_then(|v| v.get(i)).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;

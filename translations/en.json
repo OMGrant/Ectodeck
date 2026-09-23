@@ -281,5 +281,8 @@
 	"instance_editor.tile.deck_shown": "Follows the deck's Key tiles, which are shown: a dark tile behind this key.",
 	"instance_editor.tile.deck_hidden": "Follows the deck's Key tiles, which are hidden: the background shows through this key.",
 	"instance_editor.tile.own": "This key keeps its own coloured tile whatever the deck's Key tiles setting says.",
-	"instance_editor.tile.black_hint": "This deck has no screen behind its keys, so keys sit on black unless you pick a colour."
+	"instance_editor.tile.black_hint": "This deck has no screen behind its keys, so keys sit on black unless you pick a colour.",
+	"device_view.animation.group.scenes": "Scenes",
+	"device_view.animation.group.abstract": "Abstract",
+	"device_view.animation.group.music": "Music · listens to what's playing"
 }

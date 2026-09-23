@@ -15,6 +15,7 @@ mod device;
 mod inputs;
 mod mappings;
 mod shader;
+mod audio;
 mod frame;
 mod layout;
 mod watcher;

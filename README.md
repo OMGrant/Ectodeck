@@ -11,6 +11,7 @@ OpenDeck is built around Elgato's hardware: a grid of separate keys, with any di
 - **Rounded keys** on those decks, on the hardware and in the device view.
 - **Dials on the side.** A deck can declare that its dials run down the right. Ectodeck draws them there, lined up with the key grid.
 - **Vector icons.** OpenDeck's own icons (Multi Action, Toggle Action and the status overlays) are redrawn as SVG, so they stay sharp at any size and have no background of their own.
+- **Animated backgrounds** on those decks, drawn live and reacting to the keys and dials. Scenes: Aquarium (press a key to feed the fish, twice to tap the glass), Birds, Sky, Synthwave and Warp. Abstract: Aurora, Blob, Ember, Ink, Lava Lamp, Life and Nebula. Music: Milkdrop and Spectrum, which listen to what the computer is playing (the speakers' output, never the microphone, and only while one of them is showing). Any web page or Shadertoy-style shader can be a background too.
 - **Built-in MagTran M3 support.** The device plugin for the VSDinside MagTran M3 ships with Ectodeck. See [its README](plugins/com.grantgarrison.opendeck-magtran-m3.sdPlugin/README.md).
 
 A deck that declares none of these features is drawn exactly as OpenDeck draws it.
@@ -50,6 +51,12 @@ Everything about using Ectodeck day to day, from actions and profiles to plugins
 Ectodeck exists because of [OpenDeck](https://github.com/nekename/OpenDeck) by [nekename](https://github.com/nekename), who built everything Ectodeck builds on. If Ectodeck is useful to you, consider supporting OpenDeck's development on [GitHub Sponsors](https://github.com/sponsors/nekename), [Ko-fi](https://ko-fi.com/nekename) or [Liberapay](https://liberapay.com/nekename).
 
 Please report problems with Ectodeck's additions here, not to OpenDeck.
+
+Some built-in backgrounds are made from open-source work, each under the MIT License, with its licence kept beside it in [third_party](third_party):
+
+- **Milkdrop** runs [Butterchurn](https://github.com/jberg/butterchurn) and its [preset pack](https://github.com/jberg/butterchurn-presets) by Jordan Berg, a web port of Ryan Geiss's Milkdrop, with presets by the Milkdrop community.
+- **Ink** is [WebGL Fluid Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation) by Pavel Dobryakov.
+- **Birds** and **Sky** are [Vanta](https://github.com/tengbao/vanta) effects by Teng Bao, on [three.js](https://github.com/mrdoob/three.js).
 
 ## License
 

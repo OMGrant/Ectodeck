@@ -1,0 +1,426 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Aquarium</title>
+<!--
+  Ectodeck's built-in Aquarium: a planted tank drawn with the 2D canvas.
+  A key press sprinkles food at that key and the fish nearby come to eat;
+  two quick presses on one key tap the glass and scatter them. The first
+  dial turns the time of day, the second adds or removes fish.
+-->
+<script type="application/json" id="ectodeck-inputs">
+{
+  "DESCRIPTION": "A planted tank with clownfish, a blue tang, angelfish and a school of neon tetras. Press a key to feed the fish there; press it twice quickly to tap the glass. The first dial turns the time of day, the second adds or removes fish.",
+  "INPUTS": [
+    { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 0, "VALUES": [0, 1, 2], "LABELS": ["Day", "Dusk", "Night"] },
+    { "NAME": "fish", "TYPE": "float", "LABEL": "Fish", "DEFAULT": 1, "MIN": 0.3, "MAX": 2 },
+    { "NAME": "bubbles", "TYPE": "bool", "LABEL": "Bubbler", "DEFAULT": true }
+  ]
+}
+</script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #06182b; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="tank" aria-hidden="true"></canvas>
+<script>
+(function () {
+  // ---- settings, from the address or the declared defaults
+  var q = new URLSearchParams(location.search);
+  var declared = {};
+  JSON.parse(document.getElementById('ectodeck-inputs').textContent).INPUTS.forEach(function (i) { declared[i.NAME] = i.DEFAULT; });
+  var setting = function (k) { return q.has(k) ? parseFloat(q.get(k)) : Number(declared[k]); };
+  var light = Math.round(setting('time')) % 3;          // 0 day, 1 dusk, 2 night; eased below
+  var fishScale = Math.min(2, Math.max(0.3, setting('fish')));
+  var bubbler = q.has('bubbles') ? q.get('bubbles') === '1' : declared.bubbles;
+
+  var canvas = document.getElementById('tank');
+  var c = canvas.getContext('2d');
+  var W = 854, H = 480;
+  function resize() {
+    var r = window.devicePixelRatio || 1;
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * r); canvas.height = Math.round(H * r);
+    c.setTransform(r, 0, 0, r, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  var rand = function (a, b) { return a + Math.random() * (b - a); };
+  var mix = function (a, b, t) { return a + (b - a) * t; };
+  var clamp = function (v, a, b) { return Math.max(a, Math.min(b, v)); };
+  var SURFACE = 22;
+  var sandAt = function (x) { return H - 58 + Math.sin(x * 0.011) * 9 + Math.sin(x * 0.027 + 1.3) * 4; };
+
+  // ---- light: day, dusk and night, blended so the dial eases between them
+  var LOOKS = [
+    { top: [38, 132, 158], mid: [16, 76, 112], deep: [6, 30, 52], rays: 0.16, sand: [196, 176, 134], plant: [58, 142, 84], dim: 0 },
+    { top: [196, 116, 88], mid: [70, 58, 104], deep: [16, 20, 46], rays: 0.12, sand: [150, 116, 104], plant: [58, 100, 80], dim: 0.15 },
+    { top: [18, 40, 78], mid: [8, 20, 46], deep: [3, 8, 20], rays: 0.07, sand: [70, 80, 96], plant: [28, 66, 62], dim: 0.45 },
+  ];
+  var lightNow = light;
+  function look() {
+    var i = Math.floor(lightNow) % 3, j = (i + 1) % 3, t = lightNow - Math.floor(lightNow);
+    var a = LOOKS[i], b = LOOKS[j];
+    var m = function (k) { return a[k].map(function (v, n) { return mix(v, b[k][n], t); }); };
+    return { top: m('top'), mid: m('mid'), deep: m('deep'), sand: m('sand'), plant: m('plant'), rays: mix(a.rays, b.rays, t), dim: mix(a.dim, b.dim, t) };
+  }
+  var rgb = function (v, k) { k = k === undefined ? 1 : k; return 'rgb(' + (v[0] * k | 0) + ',' + (v[1] * k | 0) + ',' + (v[2] * k | 0) + ')'; };
+
+  // ---- the tank's furniture
+  var plants = [];
+  function makePlants() {
+    plants = [];
+    var spots = [0.04, 0.1, 0.17, 0.3, 0.46, 0.58, 0.71, 0.83, 0.9, 0.96];
+    spots.forEach(function (s, n) {
+      var x = s * W + rand(-12, 12);
+      var kelp = n % 3 != 1;
+      plants.push({ x: x, h: kelp ? rand(0.45, 0.8) * H : rand(0.14, 0.24) * H, blades: kelp ? 1 : 5, width: kelp ? rand(9, 14) : 4, phase: rand(0, 6.28), shade: rand(0.75, 1.1), front: n % 4 == 0 });
+    });
+  }
+  var rocks = [];
+  function makeRocks() {
+    rocks = [[0.22, 34, 22], [0.26, 20, 14], [0.63, 46, 28], [0.68, 26, 16], [0.88, 30, 18]].map(function (r) {
+      var x = r[0] * W;
+      return { x: x, y: sandAt(x) + 6, rx: r[1], ry: r[2], tone: rand(0.8, 1.05) };
+    });
+  }
+  makePlants(); makeRocks();
+
+  // ---- fish
+  var SPECIES = {
+    clown: { len: 40, tall: 0.46, speed: 42, wiggle: 9, school: false },
+    tang: { len: 58, tall: 0.62, speed: 50, wiggle: 7, school: false },
+    angel: { len: 44, tall: 1.05, speed: 30, wiggle: 5, school: false },
+    tetra: { len: 20, tall: 0.34, speed: 64, wiggle: 14, school: true },
+  };
+  var fish = [];
+  function addFish(kind, x, y) {
+    var s = SPECIES[kind];
+    var z = rand(0.78, 1.05);
+    fish.push({ kind: kind, s: s, x: x === undefined ? rand(60, W - 60) : x, y: y === undefined ? rand(SURFACE + 40, sandAt(0) - 50) : y,
+      vx: rand(-1, 1) * s.speed, vy: rand(-0.2, 0.2) * s.speed, z: z, face: 1, tail: rand(0, 6.28), wanderAt: 0, tx: 0, ty: 0,
+      full: rand(0, 1), fright: 0, hue: rand(-8, 8) });
+  }
+  var roster = [];
+  function stock() {
+    roster = [];
+    var n = function (k) { return Math.max(0, Math.round(k * fishScale)); };
+    for (var i = 0; i < n(2); i++) roster.push('clown');
+    for (var i = 0; i < n(1); i++) roster.push('tang');
+    for (var i = 0; i < n(2); i++) roster.push('angel');
+    for (var i = 0; i < n(11); i++) roster.push('tetra');
+    fish = [];
+    roster.forEach(function (k) { addFish(k); });
+  }
+  stock();
+
+  var food = [];
+  var bubbles = [];
+  var rings = [];
+
+  // ---- the deck: food at a key, a tap on the glass when pressed twice
+  var lastPress = { key: -1, at: 0 };
+  function feed(x, y) {
+    for (var i = 0; i < 6; i++) food.push({ x: x + rand(-18, 18), y: y + rand(-10, 10), vy: rand(10, 18), sway: rand(0, 6.28), size: rand(2, 3.2), hue: rand(18, 42) });
+    rings.push({ x: x, y: y, age: 0, kind: 'drop' });
+  }
+  function tap(x, y) {
+    rings.push({ x: x, y: y, age: 0, kind: 'tap' });
+    fish.forEach(function (f) {
+      var dx = f.x - x, dy = f.y - y, d = Math.hypot(dx, dy) || 1;
+      if (d < 260) { f.fright = 1.2; f.vx += dx / d * f.s.speed * 4; f.vy += dy / d * f.s.speed * 3; }
+    });
+    for (var i = 0; i < 5; i++) bubbles.push({ x: x + rand(-10, 10), y: y + rand(-6, 6), r: rand(1.5, 3.5), wob: rand(0, 6.28), v: rand(30, 55) });
+  }
+  window.addEventListener('ectodeck:press', function (e) {
+    var d = e.detail; if (!d.down) return;
+    var x = d.x * W, y = d.y * H, now = performance.now();
+    if (lastPress.key === d.key && now - lastPress.at < 380) { tap(x, y); lastPress.key = -1; }
+    else { feed(x, y); lastPress = { key: d.key, at: now }; }
+  });
+  window.addEventListener('ectodeck:dial', function (e) {
+    var d = e.detail;
+    if (d.dial === 0) light = (light + (d.ticks > 0 ? 1 : 2)) % 3;
+    else if (d.dial === 1) {
+      fishScale = clamp(fishScale + d.ticks * 0.1, 0.3, 2);
+      var want = Math.round(16 * fishScale);
+      while (fish.length < want) addFish(['tetra', 'tetra', 'clown', 'angel', 'tang'][fish.length % 5], rand(0, 1) < 0.5 ? -30 : W + 30);
+      while (fish.length > want) fish.pop();
+    }
+  });
+
+  // ---- movement
+  function steer(f, dt, t) {
+    var s = f.s, want = s.speed * (f.fright > 0 ? 2.6 : 1);
+    var ax = 0, ay = 0;
+    // food: the nearest pellet in reach, while hungry
+    var target = null, best = 1e9;
+    if (f.full < 1) food.forEach(function (p) { var d = Math.hypot(p.x - f.x, p.y - f.y); if (d < 230 && d < best) { best = d; target = p; } });
+    if (target && f.fright <= 0) {
+      ax += (target.x - f.x) / best * want * 3; ay += (target.y - f.y) / best * want * 3;
+      if (best < 7 + s.len * 0.2) { target.eaten = true; f.full = Math.min(1.4, f.full + 0.35); bubbles.push({ x: f.x + f.face * s.len * 0.4, y: f.y, r: 1.4, wob: 0, v: 40 }); }
+    } else {
+      if (t > f.wanderAt || Math.hypot(f.tx - f.x, f.ty - f.y) < 20) {
+        f.tx = rand(50, W - 50); f.ty = rand(SURFACE + 30, sandAt(f.tx) - 30 - s.len * s.tall);
+        f.wanderAt = t + rand(3, 8);
+      }
+      var d = Math.hypot(f.tx - f.x, f.ty - f.y) || 1;
+      ax += (f.tx - f.x) / d * want * 0.9; ay += (f.ty - f.y) / d * want * 0.5;
+    }
+    // schooling for tetras: stay together, match heading, keep a little room
+    if (s.school) {
+      var cx = 0, cy = 0, vx = 0, vy = 0, n = 0;
+      fish.forEach(function (o) {
+        if (o === f || !o.s.school) return;
+        var dx = o.x - f.x, dy = o.y - f.y, d = Math.hypot(dx, dy);
+        if (d < 110) { cx += o.x; cy += o.y; vx += o.vx; vy += o.vy; n++; }
+        if (d < 16 && d > 0) { ax -= dx / d * 90; ay -= dy / d * 90; }
+      });
+      if (n) { ax += (cx / n - f.x) * 0.9 + (vx / n - f.vx) * 0.9; ay += (cy / n - f.y) * 0.9 + (vy / n - f.vy) * 0.9; }
+    }
+    // everyone keeps a little distance from bigger fish
+    fish.forEach(function (o) {
+      if (o === f) return;
+      var dx = o.x - f.x, dy = o.y - f.y, d = Math.hypot(dx, dy), room = (o.s.len + f.s.len) * 0.45;
+      if (d < room && d > 0) { ax -= dx / d * 60; ay -= dy / d * 60; }
+    });
+    // the glass, the surface and the sand
+    var top = SURFACE + 16, bottom = sandAt(f.x) - 14 - s.len * s.tall * 0.5;
+    if (f.x < 40) ax += (40 - f.x) * 6; if (f.x > W - 40) ax -= (f.x - (W - 40)) * 6;
+    if (f.y < top) ay += (top - f.y) * 8; if (f.y > bottom) ay -= (f.y - bottom) * 8;
+
+    f.vx += ax * dt; f.vy += ay * dt;
+    var sp = Math.hypot(f.vx, f.vy), max = want * 1.3;
+    if (sp > max) { f.vx *= max / sp; f.vy *= max / sp; }
+    f.vy *= 1 - dt * 1.5; // fish swim mostly level
+    f.x += f.vx * dt; f.y += f.vy * dt;
+    f.full = Math.max(0, f.full - dt * 0.02);
+    f.fright = Math.max(0, f.fright - dt);
+    // turning: the body narrows through side-on, as a fish seen from the glass does
+    var goal = f.vx >= 0 ? 1 : -1;
+    if (Math.abs(f.vx) > 4) f.face += clamp(goal - f.face, -dt * 3.2, dt * 3.2);
+    f.tail += dt * (4 + Math.hypot(f.vx, f.vy) / s.speed * s.wiggle);
+  }
+
+  // ---- drawing a fish, facing right; the caller flips and tilts it
+  function bodyPath(L, T) {
+    c.beginPath();
+    c.moveTo(L * 0.5, 0);
+    c.bezierCurveTo(L * 0.42, -T * 0.62, -L * 0.05, -T * 0.58, -L * 0.36, -T * 0.12);
+    c.lineTo(-L * 0.36, T * 0.12);
+    c.bezierCurveTo(-L * 0.05, T * 0.58, L * 0.42, T * 0.62, L * 0.5, 0);
+    c.closePath();
+  }
+  function tail(L, T, swing, colour, fork) {
+    c.save();
+    c.translate(-L * 0.34, 0);
+    c.rotate(swing);
+    c.beginPath();
+    c.moveTo(0, 0);
+    c.quadraticCurveTo(-L * 0.12, -T * 0.2, -L * 0.3, -T * 0.52);
+    c.quadraticCurveTo(-L * (fork ? 0.18 : 0.26), 0, -L * 0.3, T * 0.52);
+    c.quadraticCurveTo(-L * 0.12, T * 0.2, 0, 0);
+    c.fillStyle = colour; c.fill();
+    c.restore();
+  }
+  function eye(L, T) {
+    c.beginPath(); c.arc(L * 0.3, -T * 0.08, Math.max(1.4, T * 0.1), 0, 6.283); c.fillStyle = '#f4f4ee'; c.fill();
+    c.beginPath(); c.arc(L * 0.315, -T * 0.08, Math.max(0.9, T * 0.065), 0, 6.283); c.fillStyle = '#0b0b0e'; c.fill();
+  }
+  function drawFish(f, dim) {
+    var s = f.s, L = s.len * f.z, T = L * s.tall, swing = Math.sin(f.tail) * 0.35;
+    c.save();
+    c.translate(f.x, f.y + Math.sin(f.tail * 0.3) * 0.8);
+    // tall angelfish stay nearly upright; slim fish tip into their climbs
+    var lean = f.kind === 'angel' ? 0.12 : 0.4;
+    var tilt = clamp(Math.atan2(f.vy, Math.abs(f.vx) + 1) * 0.6, -lean, lean);
+    c.scale(Math.abs(f.face) < 0.15 ? 0.15 * Math.sign(f.face || 1) : f.face, 1);
+    c.rotate(tilt);
+    c.globalAlpha = 1 - dim * 0.35;
+    if (f.kind === 'clown') {
+      tail(L, T, swing, '#e8671c', false);
+      c.save(); c.beginPath(); c.ellipse(-L * 0.02, -T * 0.42, L * 0.2, T * 0.22, 0, Math.PI, 0); c.fillStyle = '#e8671c'; c.fill(); c.restore();
+      bodyPath(L, T);
+      var g = c.createLinearGradient(0, -T * 0.5, 0, T * 0.5); g.addColorStop(0, '#ff8a2a'); g.addColorStop(1, '#e05712');
+      c.fillStyle = g; c.fill();
+      c.save(); bodyPath(L, T); c.clip();
+      [[0.26, 0.09], [-0.02, 0.11], [-0.27, 0.07]].forEach(function (b) {
+        c.fillStyle = '#fbf6ee'; c.fillRect(L * b[0] - L * b[1] / 2, -T, L * b[1], T * 2);
+        c.fillStyle = '#1b1411'; c.fillRect(L * b[0] - L * b[1] / 2 - 1.1, -T, 1.1, T * 2); c.fillRect(L * b[0] + L * b[1] / 2, -T, 1.1, T * 2);
+      });
+      c.restore();
+    } else if (f.kind === 'tang') {
+      tail(L, T, swing, '#ffd23a', true);
+      bodyPath(L, T);
+      var g = c.createLinearGradient(0, -T * 0.5, 0, T * 0.5); g.addColorStop(0, '#2f6fe8'); g.addColorStop(1, '#1b45b8');
+      c.fillStyle = g; c.fill();
+      c.save(); bodyPath(L, T); c.clip();
+      c.strokeStyle = '#0c1733'; c.lineWidth = T * 0.14; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(L * 0.3, -T * 0.22); c.quadraticCurveTo(0, -T * 0.05, -L * 0.3, T * 0.18); c.stroke();
+      c.beginPath(); c.arc(-L * 0.02, -T * 0.08, T * 0.12, 0, 6.283); c.fillStyle = '#1b45b8'; c.fill();
+      c.restore();
+    } else if (f.kind === 'angel') {
+      c.fillStyle = 'rgba(232,226,200,0.85)';
+      c.beginPath(); c.moveTo(L * 0.1, -T * 0.3); c.quadraticCurveTo(-L * 0.1, -T * 0.95, -L * 0.36, -T * 0.9); c.quadraticCurveTo(-L * 0.2, -T * 0.4, -L * 0.3, -T * 0.1); c.fill();
+      c.beginPath(); c.moveTo(L * 0.1, T * 0.3); c.quadraticCurveTo(-L * 0.1, T * 0.95, -L * 0.36, T * 0.9); c.quadraticCurveTo(-L * 0.2, T * 0.4, -L * 0.3, T * 0.1); c.fill();
+      tail(L * 0.9, T * 0.5, swing * 0.6, 'rgba(232,226,200,0.8)', false);
+      c.beginPath(); c.moveTo(L * 0.5, 0); c.bezierCurveTo(L * 0.38, -T * 0.42, -L * 0.1, -T * 0.4, -L * 0.34, 0); c.bezierCurveTo(-L * 0.1, T * 0.4, L * 0.38, T * 0.42, L * 0.5, 0);
+      c.fillStyle = '#ece6cc'; c.fill();
+      c.save(); c.clip();
+      c.fillStyle = 'rgba(40,34,30,0.85)';
+      [0.24, 0.02, -0.2].forEach(function (x) { c.fillRect(L * x - 2, -T, 4, T * 2); });
+      c.restore();
+      T = T * 0.55;
+    } else {
+      tail(L, T, swing * 1.2, 'rgba(210,225,235,0.7)', false);
+      bodyPath(L, T);
+      c.fillStyle = 'rgba(214,226,232,0.92)'; c.fill();
+      c.save(); bodyPath(L, T); c.clip();
+      c.fillStyle = '#d8283a'; c.fillRect(-L * 0.4, T * 0.02, L * 0.62, T * 0.5);
+      var g = c.createLinearGradient(-L * 0.4, 0, L * 0.4, 0); g.addColorStop(0, 'rgba(40,220,255,0.6)'); g.addColorStop(0.5, '#3ff0ff'); g.addColorStop(1, 'rgba(40,220,255,0.3)');
+      c.fillStyle = g; c.fillRect(-L * 0.4, -T * 0.16, L * 0.8, T * 0.2);
+      c.restore();
+    }
+    eye(L, T);
+    c.restore();
+    c.globalAlpha = 1;
+  }
+
+  // ---- the scene
+  var last = performance.now(), start = last;
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000), t = (now - start) / 1000;
+    last = now;
+    lightNow += clamp(((light - lightNow) % 3 + 4.5) % 3 - 1.5, -dt * 0.6, dt * 0.6);
+    lightNow = (lightNow + 3) % 3;
+    var L = look();
+
+    // water
+    var g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, rgb(L.top)); g.addColorStop(0.45, rgb(L.mid)); g.addColorStop(1, rgb(L.deep));
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+
+    // light from above, slowly swaying
+    c.save(); c.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < 7; i++) {
+      var x = ((i + 0.5) / 7) * W + Math.sin(t * 0.21 + i * 1.7) * 40, w = 30 + 26 * Math.sin(i * 2.3 + t * 0.13) ** 2;
+      var lean = Math.sin(t * 0.1 + i) * 60 + 50;
+      var rg = c.createLinearGradient(0, 0, 0, H * 0.9);
+      rg.addColorStop(0, 'rgba(210,240,255,' + L.rays + ')'); rg.addColorStop(1, 'rgba(210,240,255,0)');
+      c.fillStyle = rg;
+      c.beginPath(); c.moveTo(x - w * 0.3, 0); c.lineTo(x + w * 0.3, 0); c.lineTo(x + lean + w, H * 0.9); c.lineTo(x + lean - w, H * 0.9); c.fill();
+    }
+    c.restore();
+
+    // far silhouettes
+    c.fillStyle = rgb(L.deep, 1.25);
+    c.beginPath(); c.moveTo(0, H);
+    for (var x = 0; x <= W; x += 20) c.lineTo(x, H - 110 - Math.sin(x * 0.006 + 1) * 28 - Math.sin(x * 0.019) * 10);
+    c.lineTo(W, H); c.fill();
+
+    // plants behind the fish
+    plants.forEach(function (p) { if (!p.front) drawPlant(p, L, t); });
+    rocks.forEach(function (r) { drawRock(r, L); });
+
+    // sand, with light playing on it
+    var sg = c.createLinearGradient(0, H - 70, 0, H);
+    sg.addColorStop(0, rgb(L.sand, 1)); sg.addColorStop(1, rgb(L.sand, 0.62));
+    c.fillStyle = sg;
+    c.beginPath(); c.moveTo(0, H);
+    for (var x = 0; x <= W; x += 8) c.lineTo(x, sandAt(x));
+    c.lineTo(W, H); c.fill();
+    c.save(); c.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < 26; i++) {
+      var cx = (i * 97.3 + Math.sin(t * 0.7 + i) * 30) % W, cy = sandAt(cx) + 12 + (i % 4) * 9;
+      c.fillStyle = 'rgba(255,250,220,' + (0.05 * (1 - L.dim) * (0.6 + 0.4 * Math.sin(t * 1.3 + i * 2.1))) + ')';
+      c.beginPath(); c.ellipse(cx, cy, 16 + (i % 3) * 6, 3.5, 0, 0, 6.283); c.fill();
+    }
+    c.restore();
+
+    // food, sinking; the fish, back to front; plants in front
+    food.forEach(function (p) {
+      p.sway += dt * 2; p.y += p.vy * dt; p.x += Math.sin(p.sway) * 6 * dt;
+      var floor = sandAt(p.x) + 2;
+      if (p.y > floor) { p.y = floor; p.settled = (p.settled || 0) + dt; }
+      c.fillStyle = 'hsl(' + p.hue + ',70%,' + (46 - L.dim * 18) + '%)';
+      c.beginPath(); c.arc(p.x, p.y, p.size, 0, 6.283); c.fill();
+    });
+    food = food.filter(function (p) { return !p.eaten && (p.settled || 0) < 14; });
+    fish.forEach(function (f) { steer(f, dt, t); });
+    fish.slice().sort(function (a, b) { return a.z - b.z; }).forEach(function (f) { drawFish(f, L.dim); });
+    plants.forEach(function (p) { if (p.front) drawPlant(p, L, t); });
+
+    // bubbles from the bubbler and from fish
+    if (bubbler && Math.random() < dt * 7) bubbles.push({ x: W * 0.93 + rand(-4, 4), y: sandAt(W * 0.93) - 4, r: rand(1.5, 4.5), wob: rand(0, 6.28), v: rand(45, 75) });
+    c.lineWidth = 1;
+    bubbles.forEach(function (b) {
+      b.y -= b.v * dt; b.wob += dt * 5; var x = b.x + Math.sin(b.wob) * 1.6;
+      c.strokeStyle = 'rgba(220,245,255,0.55)'; c.beginPath(); c.arc(x, b.y, b.r, 0, 6.283); c.stroke();
+      c.fillStyle = 'rgba(255,255,255,0.5)'; c.beginPath(); c.arc(x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.3, 0, 6.283); c.fill();
+    });
+    bubbles = bubbles.filter(function (b) { return b.y > SURFACE; });
+
+    // rings where food lands and where the glass is tapped
+    rings.forEach(function (r) {
+      r.age += dt;
+      var k = r.kind === 'tap' ? 1 : 0.5, rad = 8 + r.age * (r.kind === 'tap' ? 260 : 60);
+      c.strokeStyle = 'rgba(220,245,255,' + Math.max(0, (0.4 - r.age * 0.6) * k) + ')';
+      c.lineWidth = r.kind === 'tap' ? 2 : 1.2;
+      c.beginPath(); c.arc(r.x, r.y, rad, 0, 6.283); c.stroke();
+    });
+    rings = rings.filter(function (r) { return r.age < 0.8; });
+
+    // the surface
+    var surf = c.createLinearGradient(0, 0, 0, SURFACE + 8);
+    surf.addColorStop(0, 'rgba(230,250,255,' + (0.28 - L.dim * 0.2) + ')'); surf.addColorStop(1, 'rgba(230,250,255,0)');
+    c.fillStyle = surf;
+    c.beginPath(); c.moveTo(0, 0);
+    for (var x = 0; x <= W; x += 12) c.lineTo(x, SURFACE + Math.sin(x * 0.03 + t * 1.6) * 2 + Math.sin(x * 0.011 - t) * 2);
+    c.lineTo(W, 0); c.fill();
+
+    // night: moonlight and a soft vignette
+    if (L.dim > 0.02) {
+      var v = c.createRadialGradient(W * 0.5, H * 0.35, H * 0.2, W * 0.5, H * 0.5, W * 0.7);
+      v.addColorStop(0, 'rgba(0,0,10,0)'); v.addColorStop(1, 'rgba(0,0,10,' + L.dim * 0.8 + ')');
+      c.fillStyle = v; c.fillRect(0, 0, W, H);
+    }
+    requestAnimationFrame(frame);
+  }
+  function drawPlant(p, L, t) {
+    var base = sandAt(p.x) + 4;
+    for (var b = 0; b < p.blades; b++) {
+      var off = (b - (p.blades - 1) / 2) * 5, h = p.h * (p.blades > 1 ? 0.6 + 0.4 * ((b * 37) % 7) / 7 : 1);
+      var seg = 12, prevX = p.x + off, prevY = base;
+      c.strokeStyle = rgb(L.plant, p.shade * (p.front ? 0.8 : 1));
+      c.lineCap = 'round';
+      for (var i = 1; i <= seg; i++) {
+        var k = i / seg;
+        var x = p.x + off + Math.sin(t * 0.9 + p.phase + k * 2.2 + b) * 16 * k * k + Math.sin(t * 0.4 + p.phase) * 6 * k;
+        var y = base - h * k;
+        c.lineWidth = p.width * (1 - k * 0.7);
+        c.beginPath(); c.moveTo(prevX, prevY); c.lineTo(x, y); c.stroke();
+        if (p.blades == 1 && i % 3 == 0 && i < seg) {
+          c.fillStyle = rgb(L.plant, p.shade * 1.1);
+          var side = i % 2 ? 1 : -1;
+          c.beginPath(); c.ellipse(x + side * 9, y, 10, 3.2, side * 0.5 + Math.sin(t + i) * 0.2, 0, 6.283); c.fill();
+        }
+        prevX = x; prevY = y;
+      }
+    }
+  }
+  function drawRock(r, L) {
+    var g = c.createRadialGradient(r.x - r.rx * 0.3, r.y - r.ry * 0.6, 2, r.x, r.y, r.rx);
+    g.addColorStop(0, rgb([120, 124, 130], r.tone * (1 - L.dim * 0.6))); g.addColorStop(1, rgb([44, 48, 58], r.tone * (1 - L.dim * 0.6)));
+    c.fillStyle = g;
+    c.beginPath(); c.ellipse(r.x, r.y, r.rx, r.ry, 0, Math.PI, 0); c.fill();
+  }
+  window.addEventListener('resize', function () { makePlants(); makeRocks(); });
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

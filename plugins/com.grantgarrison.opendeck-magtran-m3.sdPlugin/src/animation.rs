@@ -115,6 +115,7 @@ impl Interaction {
             mouse: self.mouse,
             presses: self.pressed_at.iter().map(|&(x, y, at, key)| (x, y, at.elapsed().as_secs_f32(), key)).collect(),
             dials: self.dials,
+            ..Default::default()
         }
     }
 }
@@ -152,6 +153,12 @@ impl Animation {
                     // its files); start it again, backing off if it keeps
                     // failing
                     Source::Web { url, params } => {
+                        // a page that dances to music gets the sound as events,
+                        // sent from a thread of their own while the page runs
+                        if crate::audio::wanted_by_page(&url) {
+                            let (s2, p2, c2) = (s.clone(), p.clone(), c.clone());
+                            let _ = std::thread::Builder::new().name("audio-events".into()).spawn(move || feed_page_audio(&s2, &p2, &c2));
+                        }
                         let url = web_address(&url, &params);
                         let mut delay = Duration::from_secs(2);
                         while !s.load(Ordering::SeqCst) {
@@ -268,6 +275,7 @@ fn run_shader(
 ) -> Result<(), String> {
     let mut renderer = crate::shader::ShaderRenderer::new(code, PANEL_WIDTH, PANEL_HEIGHT)?;
     log::info!("Shader background running");
+    let mut tap = if crate::audio::wanted_by_shader(code) { crate::audio::AudioTap::start() } else { None };
     let period = Duration::from_secs_f64(1.0 / FPS as f64);
     let mut clock = 0.0f32;
     let mut last = Instant::now();
@@ -281,7 +289,12 @@ fn run_shader(
         clock += (now - last).as_secs_f32();
         last = now;
         let values = params.lock().map(|p| p.clone()).unwrap_or_default();
-        let controls = interaction.lock().map(|i| i.snapshot()).unwrap_or_default();
+        let mut controls = interaction.lock().map(|i| i.snapshot()).unwrap_or_default();
+        if let Some(t) = tap.as_mut() {
+            let sound = t.frame();
+            controls.audio_bands = sound.bands;
+            controls.audio_level = sound.level;
+        }
         let frame = renderer.render(clock, &values, &controls);
         if let Ok(mut l) = latest.lock() {
             *l = Some(frame);
@@ -292,6 +305,30 @@ fn run_shader(
         }
     }
     Ok(())
+}
+
+/// Sends the sound to a web background each frame as an `ectodeck:audio` event.
+fn feed_page_audio(stop: &AtomicBool, paused: &AtomicBool, chrome: &Mutex<Option<ChromeHandle>>) {
+    let Some(mut tap) = crate::audio::AudioTap::start() else { return };
+    let period = Duration::from_secs_f64(1.0 / FPS as f64);
+    while !stop.load(Ordering::SeqCst) {
+        let started = Instant::now();
+        if !paused.load(Ordering::SeqCst) {
+            let sound = tap.frame();
+            let script = format!(
+                "window.dispatchEvent(new CustomEvent('ectodeck:audio', {{ detail: {{ bands: {:?}, level: {}, wave: {:?} }} }}))",
+                sound.bands.map(|b| (b * 1000.0).round() / 1000.0),
+                (sound.level * 1000.0).round() / 1000.0,
+                sound.wave
+            );
+            if let Ok(mut c) = chrome.lock() {
+                if let Some(c) = c.as_mut() {
+                    let _ = c.send("Runtime.evaluate", serde_json::json!({ "expression": script }), true);
+                }
+            }
+        }
+        std::thread::sleep(period.saturating_sub(started.elapsed()));
+    }
 }
 
 /// A headless Chrome and the pipe that drives it.

@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Milkdrop</title>
+<!--
+  Ectodeck's built-in Milkdrop: Winamp's music visualiser, as Butterchurn
+  (MIT, Jordan Berg) runs it, with its main pack of 100 community presets.
+  It dances to whatever the computer is playing, which Ectodeck hands it as
+  ectodeck:audio events. A key press moves to the next preset; the first
+  dial steps through them both ways.
+
+  Built by scripts/build_backgrounds.py, which inlines the two libraries
+  from third_party/butterchurn; edit this source, not the built page.
+-->
+<script type="application/json" id="ectodeck-inputs">
+{
+  "DESCRIPTION": "Winamp's Milkdrop visualiser, dancing to whatever your computer is playing. A key press moves to the next look; the first dial steps through them. Uses Butterchurn and its presets (MIT).",
+  "INPUTS": [
+    { "NAME": "every", "TYPE": "float", "LABEL": "Change every (s)", "DEFAULT": 30, "MIN": 0, "MAX": 120 },
+    { "NAME": "blend", "TYPE": "float", "LABEL": "Blend (s)", "DEFAULT": 2.5, "MIN": 0, "MAX": 8 },
+    { "NAME": "shuffle", "TYPE": "bool", "LABEL": "Shuffle", "DEFAULT": true },
+    { "NAME": "brightness", "TYPE": "float", "LABEL": "Brightness", "DEFAULT": 0.8, "MIN": 0.3, "MAX": 1 }
+  ]
+}
+</script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="viz" aria-hidden="true"></canvas>
+<script>/*BUTTERCHURN*/</script>
+<script>/*BUTTERCHURN_PRESETS*/</script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var declared = {};
+  JSON.parse(document.getElementById('ectodeck-inputs').textContent).INPUTS.forEach(function (i) { declared[i.NAME] = i.DEFAULT; });
+  var num = function (k) { return q.has(k) ? parseFloat(q.get(k)) : Number(declared[k]); };
+  var every = num('every'), blend = num('blend');
+  var shuffle = q.has('shuffle') ? q.get('shuffle') === '1' : declared.shuffle;
+
+  var engine = window.butterchurn.default || window.butterchurn;
+  var pack = window.butterchurnPresets.default || window.butterchurnPresets;
+  var presets = pack.getPresets();
+  var names = Object.keys(presets);
+  if (shuffle) for (var i = names.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = names[i]; names[i] = names[j]; names[j] = t; }
+
+  var canvas = document.getElementById('viz');
+  // many presets run bright; a little less keeps the keys' icons readable
+  canvas.style.filter = 'brightness(' + num('brightness') + ')';
+  var W = window.innerWidth, H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  var audio = new (window.AudioContext || window.webkitAudioContext)();
+  var viz = engine.createVisualizer(audio, canvas, { width: W, height: H, pixelRatio: 1, textureRatio: 1 });
+  window.addEventListener('resize', function () { W = window.innerWidth; H = window.innerHeight; canvas.width = W; canvas.height = H; viz.setRendererSize(W, H); });
+
+  var index = 0, changedAt = performance.now();
+  function show(i, seconds) {
+    index = (i + names.length) % names.length;
+    viz.loadPreset(presets[names[index]], seconds);
+    changedAt = performance.now();
+  }
+  show(0, 0);
+
+  // the sound, from Ectodeck; silence until the first event arrives
+  var wave = new Uint8Array(1024).fill(128);
+  window.addEventListener('ectodeck:audio', function (e) {
+    var w = e.detail.wave;
+    if (!w) return;
+    for (var i = 0; i < 1024 && i < w.length; i++) wave[i] = w[i];
+  });
+  window.addEventListener('ectodeck:press', function (e) { if (e.detail.down) show(index + 1, blend); });
+  window.addEventListener('ectodeck:dial', function (e) { if (e.detail.dial === 0) show(index + (e.detail.ticks > 0 ? 1 : -1), Math.min(blend, 1)); });
+
+  function frame(now) {
+    if (every > 0 && now - changedAt > every * 1000) show(index + 1, blend);
+    viz.render({ audioLevels: { timeByteArray: wave, timeByteArrayL: wave, timeByteArrayR: wave } });
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

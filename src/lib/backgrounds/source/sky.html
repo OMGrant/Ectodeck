@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sky</title>
+<!--
+  Ectodeck's built-in Sky: drifting clouds under a low sun, from Vanta (MIT,
+  Teng Bao) on three.js (MIT). A key press gusts the wind for a moment; the
+  first dial moves the sun from morning through sunset to night.
+
+  Built by scripts/build_backgrounds.py, which inlines the libraries from
+  third_party; edit this source, not the built page.
+-->
+<script type="application/json" id="ectodeck-inputs">
+{
+  "DESCRIPTION": "Soft clouds drifting past a low sun. A key press gusts the wind; the first dial moves the sun from morning to sunset to night. From Vanta (MIT) on three.js (MIT).",
+  "INPUTS": [
+    { "NAME": "time", "TYPE": "long", "LABEL": "Time of day", "DEFAULT": 2, "VALUES": [0, 1, 2, 3], "LABELS": ["Morning", "Afternoon", "Sunset", "Night"] },
+    { "NAME": "speed", "TYPE": "float", "LABEL": "Wind", "DEFAULT": 0.8, "MIN": 0.2, "MAX": 3 }
+  ]
+}
+</script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #6a9ad6; }
+  #sky { position: fixed; inset: 0; }
+</style>
+</head>
+<body>
+<div id="sky" aria-hidden="true"></div>
+<script>/*THREE*/</script>
+<script>/*VANTA_CLOUDS*/</script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var declared = {};
+  JSON.parse(document.getElementById('ectodeck-inputs').textContent).INPUTS.forEach(function (i) { declared[i.NAME] = i.DEFAULT; });
+  var num = function (k) { return q.has(k) ? parseFloat(q.get(k)) : Number(declared[k]); };
+  // each time of day: sky, clouds, their shadows, the sun, its glow and its light
+  var TIMES = [
+    { skyColor: 0x8fc4ee, cloudColor: 0xc6d8ee, cloudShadowColor: 0x5a7394, sunColor: 0xffe6a8, sunGlareColor: 0xffc38a, sunlightColor: 0xffe8c0 },
+    { skyColor: 0x68b8d7, cloudColor: 0xadc1de, cloudShadowColor: 0x183550, sunColor: 0xff9919, sunGlareColor: 0xff6633, sunlightColor: 0xff9933 },
+    { skyColor: 0xd4745a, cloudColor: 0xe0a88c, cloudShadowColor: 0x4a2a44, sunColor: 0xff7a2a, sunGlareColor: 0xff4e2e, sunlightColor: 0xff8a50 },
+    { skyColor: 0x0c1428, cloudColor: 0x3a4a6a, cloudShadowColor: 0x05080f, sunColor: 0xdfe8ff, sunGlareColor: 0x6a80b0, sunlightColor: 0x9ab0e0 },
+  ];
+  var time = Math.round(num('time')) % 4, base = num('speed');
+  var effect = VANTA.CLOUDS(Object.assign({ el: '#sky', THREE: THREE, mouseControls: false, touchControls: false, gyroControls: false, speed: base }, TIMES[time]));
+
+  var gust = 0;
+  window.addEventListener('ectodeck:press', function (e) { if (e.detail.down) gust = 1; });
+  window.addEventListener('ectodeck:dial', function (e) {
+    if (e.detail.dial !== 0) return;
+    time = (time + (e.detail.ticks > 0 ? 1 : 3)) % 4;
+    effect.setOptions(TIMES[time]);
+  });
+  (function wind() {
+    if (gust > 0) { gust = Math.max(0, gust - 0.012); effect.setOptions({ speed: base * (1 + gust * 4) }); }
+    requestAnimationFrame(wind);
+  })();
+})();
+</script>
+</body>
+</html>

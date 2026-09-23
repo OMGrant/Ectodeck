@@ -24,15 +24,35 @@
 	import aurora from "$lib/backgrounds/aurora.frag?raw";
 	import nebula from "$lib/backgrounds/nebula.frag?raw";
 	import ember from "$lib/backgrounds/ember.frag?raw";
-	import blob from "$lib/backgrounds/blob.html?raw";
-	const builtinShaders = [
-		{ id: "aurora", name: "Aurora", source: aurora },
-		{ id: "nebula", name: "Nebula", source: nebula },
-		{ id: "ember", name: "Ember", source: ember },
+	import synthwave from "$lib/backgrounds/synthwave.frag?raw";
+	import lava from "$lib/backgrounds/lava.frag?raw";
+	import warp from "$lib/backgrounds/warp.frag?raw";
+	import life from "$lib/backgrounds/life.frag?raw";
+	import spectrum from "$lib/backgrounds/spectrum.frag?raw";
+	type Group = "scenes" | "abstract" | "music";
+	const builtinShaders: { id: string; name: string; source: string; group: Group }[] = [
+		{ id: "synthwave", name: "Synthwave", source: synthwave, group: "scenes" },
+		{ id: "warp", name: "Warp", source: warp, group: "scenes" },
+		{ id: "aurora", name: "Aurora", source: aurora, group: "abstract" },
+		{ id: "nebula", name: "Nebula", source: nebula, group: "abstract" },
+		{ id: "ember", name: "Ember", source: ember, group: "abstract" },
+		{ id: "lava", name: "Lava Lamp", source: lava, group: "abstract" },
+		{ id: "life", name: "Life", source: life, group: "abstract" },
+		{ id: "spectrum", name: "Spectrum", source: spectrum, group: "music" },
 	];
 	// Built-in web pages, written to the configuration directory when chosen,
 	// since the page renderer opens files rather than the app's own assets.
-	const builtinPages = [{ id: "blob", name: "Blob", file: "blob.html", html: blob }];
+	// Some carry whole libraries, so each is loaded only when it is needed.
+	const pageSources = import.meta.glob("$lib/backgrounds/*.html", { query: "?raw", import: "default" }) as Record<string, () => Promise<string>>;
+	const page = (file: string) => pageSources[`/src/lib/backgrounds/${file}`];
+	const builtinPages: { id: string; name: string; file: string; group: Group; load: () => Promise<string> }[] = [
+		{ id: "aquarium", name: "Aquarium", file: "aquarium.html", group: "scenes", load: page("aquarium.html") },
+		{ id: "birds", name: "Birds", file: "birds.html", group: "scenes", load: page("birds.html") },
+		{ id: "sky", name: "Sky", file: "sky.html", group: "scenes", load: page("sky.html") },
+		{ id: "blob", name: "Blob", file: "blob.html", group: "abstract", load: page("blob.html") },
+		{ id: "ink", name: "Ink", file: "ink.html", group: "abstract", load: page("ink.html") },
+		{ id: "milkdrop", name: "Milkdrop", file: "milkdrop.html", group: "music", load: page("milkdrop.html") },
+	];
 
 	// A built-in page's address carries a fingerprint of its contents, so a
 	// newer version of the page is a different address: the renderer loads
@@ -43,8 +63,9 @@
 		return (h >>> 0).toString(36);
 	}
 	async function writeBuiltinPage(page: (typeof builtinPages)[number]): Promise<string> {
-		const path = await invoke<string>("save_background_page", { name: page.file, contents: page.html });
-		return path + "#" + fingerprint(page.html);
+		const html = await page.load();
+		const path = await invoke<string>("save_background_page", { name: page.file, contents: html });
+		return path + "#" + fingerprint(html);
 	}
 	const isBuiltin = (a: AnimatedBackground | null) =>
 		!!a &&
@@ -55,8 +76,8 @@
 	async function readInputs(a: AnimatedBackground | null) {
 		if (!a) return [];
 		if (a.kind == "shader") return shaderInputs(a.source);
-		const page = builtinPages.find((p) => p.name == a.name);
-		if (page) return pageInputs(page.html);
+		const builtin = builtinPages.find((p) => p.name == a.name);
+		if (builtin) return pageInputs(await builtin.load());
 		// a page kept on disk can be read back through the local file server
 		if (a.url.startsWith("/")) {
 			try {
@@ -93,17 +114,13 @@
 				{ id: "picture:choose", label: $t("device_view.picture.choose") },
 			],
 		},
-		{
-			heading: $t("device_view.animation.builtin"),
+		...(["scenes", "abstract", "music"] as Group[]).map((group) => ({
+			heading: $t("device_view.animation.group." + group),
 			items: [
-				...builtinPages.map((p) => ({ id: "page:" + p.id, label: p.name, selected: animated?.kind == "web" && animated.name == p.name })),
-				...builtinShaders.map((s) => ({
-					id: "builtin:" + s.id,
-					label: s.name,
-					selected: animated?.kind == "shader" && animated.name == s.name,
-				})),
-			],
-		},
+				...builtinPages.filter((p) => p.group == group).map((p) => ({ id: "page:" + p.id, label: p.name, selected: animated?.kind == "web" && animated.name == p.name })),
+				...builtinShaders.filter((s) => s.group == group).map((s) => ({ id: "builtin:" + s.id, label: s.name, selected: animated?.kind == "shader" && animated.name == s.name })),
+			].sort((a, b) => a.label.localeCompare(b.label)),
+		})),
 		{
 			heading: $t("device_view.animation.custom"),
 			items: [
@@ -199,7 +216,7 @@
 		// bring a built-in chosen under an older version up to date: a page
 		const current = animated;
 		const page = current?.kind == "web" ? builtinPages.find((p) => p.name == current.name) : undefined;
-		if (current?.kind == "web" && page && !current.url.endsWith("#" + fingerprint(page.html))) {
+		if (current?.kind == "web" && page && !current.url.endsWith("#" + fingerprint(await page.load()))) {
 			await setAnimated({ ...current, url: await writeBuiltinPage(page) });
 		}
 		// and a built-in shader saved with older code
