@@ -22,6 +22,17 @@
 //!   have w = -1.
 //! - `iDials`: each dial's accumulated turns, in detents.
 //!
+//! Multi-pass shaders follow ISF's PASSES: the header lists passes, each
+//! drawing into a named TARGET buffer (PERSISTENT to keep its contents from
+//! frame to frame, FLOAT for floating-point pixels), and the last pass with
+//! no TARGET is the picture shown. The same source runs for every pass with
+//! `PASSINDEX` telling it which; every buffer is a `sampler2D` of its name,
+//! read with `texture()` or ISF's `IMG_NORM_PIXEL` and `IMG_PIXEL`. A pass
+//! may give its buffer a WIDTH and HEIGHT relative to the picture, as ISF
+//! writes them ("$WIDTH/4"); `RENDERSIZE` is the size of the pass being
+//! drawn, `iResolution` always the picture's. This is what a simulation,
+//! such as a fluid, needs: memory between frames, and a coarser grid.
+//!
 //! An OpenGL context belongs to the thread that made it current, so a
 //! renderer is created and used on one thread.
 
@@ -119,12 +130,78 @@ pub struct Interaction {
     pub dials: [f32; 3],
 }
 
+// every channel is kept: buffers use alpha as data; the shown picture's
+// alpha is ignored
 const EPILOGUE: &str = "
 void main() {
     vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
     mainImage(color, gl_FragCoord.xy);
-    ectodeckFragColor = vec4(color.rgb, 1.0);
+    ectodeckFragColor = color;
 }";
+
+/// One pass of a multi-pass shader.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pass {
+    /// The buffer it draws into, or None for the shown picture.
+    pub target: Option<String>,
+    pub float: bool,
+    /// The buffer's size as a fraction of the picture's, per axis.
+    pub scale: (f32, f32),
+}
+
+/// An ISF size expression relative to the picture: "$WIDTH", "$WIDTH/4",
+/// "$HEIGHT*0.5". Anything else is the full size.
+fn size_scale(v: &serde_json::Value) -> f32 {
+    let Some(text) = v.as_str() else { return 1.0 };
+    let t: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let rest = t.trim_start_matches("$WIDTH").trim_start_matches("$HEIGHT");
+    if rest == t {
+        return 1.0;
+    }
+    let factor = if let Some(n) = rest.strip_prefix('/') {
+        n.parse::<f32>().ok().filter(|n| *n > 0.0).map(|n| 1.0 / n)
+    } else if let Some(n) = rest.strip_prefix('*') {
+        n.parse::<f32>().ok()
+    } else if rest.is_empty() {
+        Some(1.0)
+    } else {
+        None
+    };
+    factor.unwrap_or(1.0).clamp(0.01, 1.0)
+}
+
+/// The ISF header's PASSES, or a single pass to the picture when it has none.
+pub fn parse_passes(source: &str) -> Vec<Pass> {
+    let single = vec![Pass { target: None, float: false, scale: (1.0, 1.0) }];
+    let trimmed = source.trim_start();
+    let Some(body) = trimmed.strip_prefix("/*") else { return single };
+    let Some(end) = body.find("*/") else { return single };
+    let Ok(header) = serde_json::from_str::<serde_json::Value>(body[..end].trim()) else { return single };
+    let Some(list) = header["PASSES"].as_array() else { return single };
+    let mut passes: Vec<Pass> = list
+        .iter()
+        .map(|p| Pass {
+            target: p["TARGET"].as_str().filter(|t| t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')).map(str::to_owned),
+            float: p["FLOAT"].as_bool().unwrap_or(false),
+            scale: (size_scale(&p["WIDTH"]), size_scale(&p["HEIGHT"])),
+        })
+        .collect();
+    if passes.last().is_none_or(|p| p.target.is_some()) {
+        passes.push(Pass { target: None, float: false, scale: (1.0, 1.0) });
+    }
+    passes
+}
+
+/// A buffer a pass draws into: two textures, one read while the other is
+/// drawn, swapped after each pass that writes it.
+struct Buffer {
+    name: String,
+    width: u32,
+    height: u32,
+    textures: [glow::Texture; 2],
+    framebuffers: [glow::Framebuffer; 2],
+    read: usize,
+}
 
 type Egl = egl::DynamicInstance<egl::EGL1_4>;
 
@@ -144,6 +221,8 @@ pub struct ShaderRenderer {
     last_time: f32,
     inputs: Vec<Input>,
     defaults: serde_json::Map<String, serde_json::Value>,
+    passes: Vec<Pass>,
+    buffers: Vec<Buffer>,
 }
 
 impl ShaderRenderer {
@@ -180,8 +259,51 @@ impl ShaderRenderer {
         };
 
         let (inputs, defaults) = parse_inputs(source);
+        let passes = parse_passes(source);
+        // a buffer takes its format and size from the first pass that draws it
+        let mut names: Vec<(String, bool, u32, u32)> = vec![];
+        for p in &passes {
+            if let Some(t) = &p.target {
+                if !names.iter().any(|(n, ..)| n == t) {
+                    let bw = ((width as f32 * p.scale.0).round() as u32).max(1);
+                    let bh = ((height as f32 * p.scale.1).round() as u32).max(1);
+                    names.push((t.clone(), p.float, bw, bh));
+                }
+            }
+        }
         unsafe {
-            let program = compile(&gl, source, &inputs)?;
+            let buffer_names: Vec<String> = names.iter().map(|(n, ..)| n.clone()).collect();
+            let program = compile(&gl, source, &inputs, &buffer_names)?;
+            let float_ok = gl.supported_extensions().contains("GL_EXT_color_buffer_float");
+            let mut buffers = vec![];
+            for (name, float, bw, bh) in &names {
+                let (internal, kind) = if *float && float_ok { (glow::RGBA32F, glow::FLOAT) } else if *float { (glow::RGBA16F, glow::HALF_FLOAT) } else { (glow::RGBA8, glow::UNSIGNED_BYTE) };
+                let linear = !*float || internal == glow::RGBA16F || gl.supported_extensions().contains("GL_OES_texture_float_linear");
+                let mut textures = vec![];
+                let mut fbos = vec![];
+                for _ in 0..2 {
+                    let t = gl.create_texture()?;
+                    gl.bind_texture(glow::TEXTURE_2D, Some(t));
+                    gl.tex_image_2d(glow::TEXTURE_2D, 0, internal as i32, *bw as i32, *bh as i32, 0, glow::RGBA, kind, glow::PixelUnpackData::Slice(None));
+                    let filter = if linear { glow::LINEAR } else { glow::NEAREST } as i32;
+                    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, filter);
+                    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, filter);
+                    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
+                    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+                    let f = gl.create_framebuffer()?;
+                    gl.bind_framebuffer(glow::FRAMEBUFFER, Some(f));
+                    gl.framebuffer_texture_2d(glow::FRAMEBUFFER, glow::COLOR_ATTACHMENT0, glow::TEXTURE_2D, Some(t), 0);
+                    if gl.check_framebuffer_status(glow::FRAMEBUFFER) != glow::FRAMEBUFFER_COMPLETE {
+                        return Err(format!("buffer {name} could not be drawn into"));
+                    }
+                    // start from zero, which a new texture does not promise
+                    gl.clear_color(0.0, 0.0, 0.0, 0.0);
+                    gl.clear(glow::COLOR_BUFFER_BIT);
+                    textures.push(t);
+                    fbos.push(f);
+                }
+                buffers.push(Buffer { name: name.clone(), width: *bw, height: *bh, textures: [textures[0], textures[1]], framebuffers: [fbos[0], fbos[1]], read: 0 });
+            }
             let framebuffer = gl.create_framebuffer()?;
             let renderbuffer = gl.create_renderbuffer()?;
             gl.bind_renderbuffer(glow::RENDERBUFFER, Some(renderbuffer));
@@ -194,7 +316,7 @@ impl ShaderRenderer {
             let vao = gl.create_vertex_array()?;
             Ok(ShaderRenderer {
                 egl, display, context, surface: Some(surface), gl, program, framebuffer, renderbuffer, vao,
-                width, height, frame: 0, last_time: 0.0, inputs, defaults,
+                width, height, frame: 0, last_time: 0.0, inputs, defaults, passes, buffers,
             })
         }
     }
@@ -207,7 +329,6 @@ impl ShaderRenderer {
         let mut rgba = vec![0u8; (w * h * 4) as usize];
         unsafe {
             let gl = &self.gl;
-            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.framebuffer));
             gl.viewport(0, 0, w as i32, h as i32);
             gl.use_program(Some(self.program));
             let u = |name: &str| gl.get_uniform_location(self.program, name);
@@ -242,7 +363,34 @@ impl ShaderRenderer {
                 }
             }
             gl.bind_vertex_array(Some(self.vao));
-            gl.draw_arrays(glow::TRIANGLES, 0, 3);
+            for (index, pass) in self.passes.iter().enumerate() {
+                gl.uniform_1_i32(u("PASSINDEX").as_ref(), index as i32);
+                // every buffer readable at its latest contents
+                for (unit, b) in self.buffers.iter().enumerate() {
+                    gl.active_texture(glow::TEXTURE0 + unit as u32);
+                    gl.bind_texture(glow::TEXTURE_2D, Some(b.textures[b.read]));
+                    gl.uniform_1_i32(u(&b.name).as_ref(), unit as i32);
+                }
+                let written = pass.target.as_ref().and_then(|t| self.buffers.iter().position(|b| &b.name == t));
+                let (pw, ph) = match written {
+                    Some(i) => {
+                        let b = &self.buffers[i];
+                        gl.bind_framebuffer(glow::FRAMEBUFFER, Some(b.framebuffers[1 - b.read]));
+                        (b.width, b.height)
+                    }
+                    None => {
+                        gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.framebuffer));
+                        (w, h)
+                    }
+                };
+                gl.viewport(0, 0, pw as i32, ph as i32);
+                gl.uniform_2_f32(u("RENDERSIZE").as_ref(), pw as f32, ph as f32);
+                gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                if let Some(i) = written {
+                    self.buffers[i].read = 1 - self.buffers[i].read;
+                }
+            }
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.framebuffer));
             gl.read_pixels(0, 0, w as i32, h as i32, glow::RGBA, glow::UNSIGNED_BYTE, glow::PixelPackData::Slice(Some(&mut rgba)));
         }
         self.frame += 1;
@@ -264,6 +412,12 @@ impl Drop for ShaderRenderer {
     fn drop(&mut self) {
         unsafe {
             self.gl.delete_vertex_array(self.vao);
+            for b in &self.buffers {
+                for i in 0..2 {
+                    self.gl.delete_framebuffer(b.framebuffers[i]);
+                    self.gl.delete_texture(b.textures[i]);
+                }
+            }
             self.gl.delete_renderbuffer(self.renderbuffer);
             self.gl.delete_framebuffer(self.framebuffer);
             self.gl.delete_program(self.program);
@@ -307,11 +461,17 @@ fn open_display(egl: &Egl) -> Result<egl::Display, String> {
     }
 }
 
-unsafe fn compile(gl: &glow::Context, body: &str, inputs: &[Input]) -> Result<glow::Program, String> {
+unsafe fn compile(gl: &glow::Context, body: &str, inputs: &[Input], buffers: &[String]) -> Result<glow::Program, String> {
     unsafe {
         let program = gl.create_program()?;
         let mut shaders = vec![];
-        let declarations: String = inputs.iter().map(|i| format!("uniform {} {};\n", i.kind.glsl(), i.name)).collect();
+        let mut declarations: String = inputs.iter().map(|i| format!("uniform {} {};\n", i.kind.glsl(), i.name)).collect();
+        declarations.push_str("uniform int PASSINDEX;\nuniform vec2 RENDERSIZE;\n");
+        declarations.push_str("#define IMG_NORM_PIXEL(image, uv) texture(image, uv)\n#define IMG_PIXEL(image, px) texture(image, (px) / iResolution.xy)\n");
+        declarations.push_str("#define IMG_THIS_PIXEL(image) texture(image, gl_FragCoord.xy / RENDERSIZE)\n#define IMG_THIS_NORM_PIXEL(image) IMG_THIS_PIXEL(image)\n");
+        for b in buffers {
+            declarations.push_str(&format!("uniform sampler2D {b};\n"));
+        }
         for (kind, src) in [(glow::VERTEX_SHADER, VERTEX.to_string()), (glow::FRAGMENT_SHADER, format!("{PRELUDE}{declarations}{body}{EPILOGUE}"))] {
             let s = gl.create_shader(kind)?;
             gl.shader_source(s, &src);
@@ -342,6 +502,21 @@ fn seconds_today() -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_isf_passes() {
+        let src = r#"/*{ "PASSES": [ { "TARGET": "flow", "PERSISTENT": true, "FLOAT": true }, { "TARGET": "smoke" }, {} ] }*/ x"#;
+        assert_eq!(parse_passes(src), vec![
+            Pass { target: Some("flow".into()), float: true, scale: (1.0, 1.0) },
+            Pass { target: Some("smoke".into()), float: false, scale: (1.0, 1.0) },
+            Pass { target: None, float: false, scale: (1.0, 1.0) },
+        ]);
+        assert_eq!(parse_passes("void mainImage(out vec4 c, in vec2 p) {}"), vec![Pass { target: None, float: false, scale: (1.0, 1.0) }]);
+        let sized = parse_passes(r#"/*{ "PASSES": [ { "TARGET": "a", "WIDTH": "$WIDTH/4", "HEIGHT": "$HEIGHT * 0.5" } ] }*/"#);
+        assert_eq!(sized[0].scale, (0.25, 0.5));
+        // a header whose last pass draws a buffer still gets a pass to show
+        assert_eq!(parse_passes(r#"/*{ "PASSES": [ { "TARGET": "a" } ] }*/"#).len(), 2);
+    }
 
     #[test]
     fn reads_isf_inputs_and_defaults() {

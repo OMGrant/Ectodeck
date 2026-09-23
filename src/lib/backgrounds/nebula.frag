@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other. A key press is a drop pressing into them, pushing the smoke away.",
+  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other, as a fluid. A key press pushes a burst of flow out from the key, and the smoke swirls away from it.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -64,6 +64,175 @@
       "LABEL": "React to presses",
       "DEFAULT": true
     }
+  ],
+  "PASSES": [
+    {
+      "TARGET": "curl",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "flow",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "pressure",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "flow",
+      "PERSISTENT": true,
+      "FLOAT": true,
+      "WIDTH": "$WIDTH/4",
+      "HEIGHT": "$HEIGHT/4"
+    },
+    {
+      "TARGET": "smoke",
+      "PERSISTENT": true,
+      "FLOAT": true
+    },
+    {}
   ]
 }*/
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -79,39 +248,10 @@ float fbm(vec2 p) {
     return v;
 }
 
-// A press is a drop pressing into smoky liquid. A soft front travels out
-// from the key and shoves the smoke ahead of it, so the smoke is seen moving
-// away; it fades to nothing at the very centre, so nothing pinches there,
-// and the middle sinks and darkens a little as if pressed in. The front's
-// shape billows with the smoke's own texture.
-vec2 drop(vec2 uv, out float stir, out float sink) {
-    stir = 0.0;
-    sink = 0.0;
-    vec2 at = uv;
-    for (int i = 0; i < 8; i++) {
-        vec4 p = iKeyPresses[i];
-        if (p.w < 0.0 || p.z > 4.0) continue;
-        float age = p.z;
-        vec2 c = (p.xy - 0.5 * iResolution.xy) / iResolution.y;
-        vec2 d = uv - c;
-        float billow = 1.0 + 0.4 * (fbm(uv * 3.5 + vec2(age * 0.4, -age * 0.3)) - 0.5);
-        float r = length(d) * billow;
-        // travels out quickly at first, then slows
-        float front = 0.34 * (1.0 - exp(-age * 1.5));
-        float fade = smoothstep(0.0, 0.2, age) * exp(-age * 0.8);
-        float wave = exp(-pow((r - front) / 0.075, 2.0)) * smoothstep(0.0, 0.05, r) * fade;
-        at -= d / max(length(d), 1e-3) * wave * 0.07;
-        stir += wave;
-        sink += exp(-r * r / max(front * front, 1e-3)) * fade * 0.08;
-    }
-    return at;
-}
-
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+// The nebula's own look, drifting slowly: the smoke relaxes toward this.
+vec3 nebula(vec2 fragCoord) {
     vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     float t = iTime * 0.03 * speed;
-    float stir = 0.0, sink = 0.0;
-    if (react) uv = drop(uv, stir, sink);
     vec2 q = vec2(fbm(uv * zoom + t), fbm(uv * zoom - t + 4.7));
     vec2 r = vec2(fbm(uv * zoom + 3.0 * q + vec2(1.7, 9.2) + t * 1.5), fbm(uv * zoom + 3.0 * q + vec2(8.3, 2.8) - t));
     float f = fbm(uv * zoom + 3.5 * r);
@@ -119,9 +259,85 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     col = mix(col, colour2.rgb, 0.75 * smoothstep(0.45, 0.85, length(q) * f * 1.6));
     col = mix(col, colour3.rgb, smoothstep(0.55, 0.9, r.x * f * 1.5) * 0.6);
     col *= (0.25 + 0.65 * smoothstep(0.25, 0.8, f)) * brightness;
-    // the middle of the sink darkens a little as it recedes
-    // the middle sinks and darkens a little; the front carries a trace of glow
-    col *= 1.0 - clamp(sink * 3.0, 0.0, 0.25);
-    col += colour2.rgb * stir * 0.12 * brightness;
-    fragColor = vec4(pow(col, vec3(1.1)), 1.0);
+    return pow(col, vec3(1.1));
+}
+
+// A small fluid simulation in the standard stable-fluids shape. The flow
+// runs on a grid a quarter of the picture's size, where the pressure solve
+// can reach across a key's width each frame; the smoke it carries is drawn
+// at full size, so it stays sharp. Passes (see PASSES):
+//
+//   0       curl       how much the flow swirls at each point
+//   1       flow       the flow carried along by itself, key-press jets
+//                      added, and vorticity confinement, which feeds the
+//                      swirls back in so eddies stay alive instead of blurring
+//   2-21    pressure   twenty relaxation steps toward the pressure that makes
+//                      the flow incompressible, kept between frames
+//   22      flow       the pressure's push applied, so nothing is compressed:
+//                      that is what makes a jet curl into rolling eddies
+//   23      smoke      the nebula's colours, carried by the flow, relaxing
+//                      slowly back toward the nebula's own drifting pattern
+//   24      shown      the smoke
+//
+// Velocity is in grid cells per frame. A press shoots five short jets out from
+// around the key; each curls into a pair of eddies that roll outward
+// carrying smoke, so the smoke billows away from the key.
+const float SIM = 4.0;   // the flow grid is the picture's size over this
+
+vec4 at(sampler2D image, vec2 uv) { return texture(image, uv); }
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / RENDERSIZE;
+    vec2 dx = vec2(1.0 / RENDERSIZE.x, 0.0), dy = vec2(0.0, 1.0 / RENDERSIZE.y);
+    int last = 24;
+
+    if (PASSINDEX == 0) {
+        float c = 0.5 * ((at(flow, uv + dx).y - at(flow, uv - dx).y) - (at(flow, uv + dy).x - at(flow, uv - dy).x));
+        fragColor = vec4(c, 0.0, 0.0, 1.0);
+    } else if (PASSINDEX == 1) {
+        if (iFrame < 2) { fragColor = vec4(0.0); return; }
+        vec2 v = at(flow, uv - at(flow, uv).xy / RENDERSIZE).xy;
+        // vorticity confinement: push along the swirl, toward stronger swirl
+        float cL = abs(at(curl, uv - dx).x), cR = abs(at(curl, uv + dx).x);
+        float cB = abs(at(curl, uv - dy).x), cT = abs(at(curl, uv + dy).x);
+        vec2 g = vec2(cR - cL, cT - cB);
+        g /= length(g) + 1e-5;
+        v += vec2(g.y, -g.x) * at(curl, uv).x * 0.3;
+        if (react) {
+            for (int i = 0; i < 8; i++) {
+                vec4 p = iKeyPresses[i];
+                if (p.w < 0.0 || p.z > 0.15) continue;
+                vec2 key = p.xy / SIM;
+                // five narrow jets at uneven angles, far enough apart that
+                // each curls into its own pair of eddies instead of adding up
+                // to a plain outward burst, which a liquid cannot do
+                float seed = p.w * 1.7 + floor(p.x * 0.1) * 0.3;
+                for (int j = 0; j < 5; j++) {
+                    float a = float(j) * 1.2566 + 0.5 * sin(seed + float(j) * 2.3) + seed;
+                    vec2 dir = vec2(cos(a), sin(a));
+                    vec2 d = fragCoord - (key + dir * 8.0);
+                    v += dir * 1.6 * exp(-dot(d, d) / 7.0);
+                }
+            }
+        }
+        v *= 0.995;
+        float s = length(v);
+        if (s > 3.0) v *= 3.0 / s;
+        fragColor = vec4(v, 0.0, 1.0);
+    } else if (PASSINDEX < last - 2) {
+        float divergence = 0.5 * ((at(flow, uv + dx).x - at(flow, uv - dx).x) + (at(flow, uv + dy).y - at(flow, uv - dy).y));
+        float p = (at(pressure, uv - dx).x + at(pressure, uv + dx).x + at(pressure, uv - dy).x + at(pressure, uv + dy).x - divergence) * 0.25;
+        fragColor = vec4(p * (PASSINDEX == 2 ? 0.98 : 1.0), 0.0, 0.0, 1.0);
+    } else if (PASSINDEX == last - 2) {
+        vec2 v = at(flow, uv).xy - 0.5 * vec2(at(pressure, uv + dx).x - at(pressure, uv - dx).x, at(pressure, uv + dy).x - at(pressure, uv - dy).x);
+        fragColor = vec4(v, 0.0, 1.0);
+    } else if (PASSINDEX == last - 1) {
+        vec3 base = nebula(fragCoord);
+        if (iFrame < 3) { fragColor = vec4(base, 1.0); return; }
+        // the flow's cells are SIM pixels across
+        vec3 carried = at(smoke, uv - at(flow, uv).xy * SIM / RENDERSIZE).rgb;
+        fragColor = vec4(mix(carried, base, 0.008), 1.0);
+    } else {
+        fragColor = vec4(at(smoke, uv).rgb, 1.0);
+    }
 }
