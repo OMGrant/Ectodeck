@@ -248,7 +248,7 @@
     '    float age = pokes[i].z;' +
     '    vec2 d = (at - pokes[i].xy) * vec2(aspect, 1.0);' +
     '    float r = length(d);' +
-    '    float dent = -0.13 * exp(-r * r / 0.05) * min(1.0, age * 10.0) * exp(-age * 2.0);' +
+    '    float dent = -0.22 * exp(-r * r / 0.05) * smoothstep(0.0, 0.25, age) * exp(-age * 0.9);' +
     '    float rr = r - age * 0.35;' +
     '    float ripple = 0.08 * sin(rr * 11.0) * exp(-rr * rr / 0.12) * exp(-age * 0.75) * smoothstep(0.0, 0.2, r);' +
     '    h += (dent + ripple) * pokes[i].w;' +
@@ -384,7 +384,7 @@
     '    float age = pokes[i].z;' +
     '    vec2 d = (at - pokes[i].xy) * vec2(aspect, 1.0);' +
     '    float r = length(d);' +
-    '    float dent = -0.13 * exp(-r * r / 0.05) * min(1.0, age * 10.0) * exp(-age * 2.0);' +
+    '    float dent = -0.22 * exp(-r * r / 0.05) * smoothstep(0.0, 0.25, age) * exp(-age * 0.9);' +
     '    float rr = r - age * 0.35;' +
     '    float ripple = 0.08 * sin(rr * 11.0) * exp(-rr * rr / 0.12) * exp(-age * 0.75) * smoothstep(0.0, 0.2, r);' +
     '    h += (dent + ripple) * pokes[i].w;' +

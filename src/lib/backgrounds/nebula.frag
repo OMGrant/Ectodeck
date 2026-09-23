@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other, as a fluid. A key press pushes a burst of flow out from the key, and the smoke swirls away from it.",
+  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other, as a fluid. A key press stirs a broad puff of turbulence into the smoke around the key.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -279,12 +279,22 @@ vec3 nebula(vec2 fragCoord) {
 //                      slowly back toward the nebula's own drifting pattern
 //   24      shown      the smoke
 //
-// Velocity is in grid cells per frame. A press shoots five short jets out from
-// around the key; each curls into a pair of eddies that roll outward
-// carrying smoke, so the smoke billows away from the key.
+// Velocity is in grid cells per frame. A press stirs one broad turbulent puff
+// into the flow around the key, and the smoke billows in swirls of several
+// sizes, spreading and settling.
 const float SIM = 4.0;   // the flow grid is the picture's size over this
 
 vec4 at(sampler2D image, vec2 uv) { return texture(image, uv); }
+
+// The stream function of a press's puff, in flow-grid cells: broad noise,
+// faded out over about two keys around the key. Its curl is the
+// puff's velocity, swirling and free of compression by construction.
+float stream(vec2 c, vec2 key, float seed) {
+    vec2 d = c - key;
+    float fade = exp(-dot(d, d) / (2.0 * 17.0 * 17.0));
+    float n = noise(c / 14.0 + seed) - 0.5;
+    return n * fade * 20.0;
+}
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / RENDERSIZE;
@@ -306,18 +316,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         if (react) {
             for (int i = 0; i < 8; i++) {
                 vec4 p = iKeyPresses[i];
-                if (p.w < 0.0 || p.z > 0.15) continue;
+                if (p.w < 0.0 || p.z > 0.3) continue;
                 vec2 key = p.xy / SIM;
-                // five narrow jets at uneven angles, far enough apart that
-                // each curls into its own pair of eddies instead of adding up
-                // to a plain outward burst, which a liquid cannot do
-                float seed = p.w * 1.7 + floor(p.x * 0.1) * 0.3;
-                for (int j = 0; j < 5; j++) {
-                    float a = float(j) * 1.2566 + 0.5 * sin(seed + float(j) * 2.3) + seed;
-                    vec2 dir = vec2(cos(a), sin(a));
-                    vec2 d = fragCoord - (key + dir * 8.0);
-                    v += dir * 1.6 * exp(-dot(d, d) / 7.0);
-                }
+                // one broad turbulent puff around the key: a few large swirls,
+                // made as pure rotation (the curl of a stream
+                // function), which a liquid keeps whole rather than cancelling
+                float seed = p.w * 3.1 + floor(p.x * 0.05);
+                float strength = 1.0 - p.z / 0.3;
+                vec2 ex = vec2(1.0, 0.0), ey = vec2(0.0, 1.0);
+                float sN = stream(fragCoord + ey, key, seed), sS = stream(fragCoord - ey, key, seed);
+                float sE = stream(fragCoord + ex, key, seed), sW = stream(fragCoord - ex, key, seed);
+                v += vec2(sN - sS, sW - sE) * 0.5 * strength;
             }
         }
         v *= 0.995;
