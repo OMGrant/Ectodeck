@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press draws the curtain to the key and sends a surge along it.",
+  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press sends a surge along the curtain and a ray up to the key.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -89,18 +89,23 @@ float surge(vec2 uv) {
     return s;
 }
 
-// A press also draws the curtain toward the key's height at the key, so the
-// surge happens where the key is, then lets it relax back into its band.
-float bendToward(float x, float wave) {
-    float shift = 0.0;
+// A press also throws up a ray at the key, the tall shimmering streak real
+// auroras send out, spanning from the curtain to the key's height, so the
+// light arrives where the key is. The curtain itself does not move.
+float ray(vec2 uv, float band) {
+    float light = 0.0;
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
         if (p.w < 0.0 || p.z > 3.0) continue;
-        float dx = x - p.x / iResolution.x;
-        float pull = exp(-dx * dx / 0.014) * smoothstep(0.0, 0.3, p.z) * exp(-p.z * 1.1);
-        shift += (p.y / iResolution.y - wave) * pull;
+        vec2 k = p.xy / iResolution.xy;
+        float dx = uv.x - k.x;
+        float lo = min(band, k.y) - 0.08, hi = max(band, k.y) + 0.08;
+        float span = smoothstep(lo, lo + 0.1, uv.y) * (1.0 - smoothstep(hi - 0.1, hi, uv.y));
+        float streaks = 0.6 + 0.4 * noise(vec2(uv.x * 90.0, p.z * 3.0 + uv.y * 2.0));
+        float fade = smoothstep(0.0, 0.35, p.z) * exp(-p.z * 1.2);
+        light += exp(-dx * dx / 0.0018) * span * streaks * fade;
     }
-    return shift;
+    return light;
 }
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
@@ -111,12 +116,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     for (int i = 0; i < 3; i++) {
         float fi = float(i);
         float wave = height + 0.13 * fi + 0.18 * (fbm(vec2(uv.x * 2.0 + t * (1.0 + fi * 0.4), fi * 3.1 + t)) - 0.5);
-        if (react) wave += bendToward(uv.x, wave);
         float band = exp(-pow((uv.y - wave) * (9.0 - fi * 2.0), 2.0));
         float curtain = fbm(vec2(uv.x * 12.0 + fi * 5.0, uv.y * 2.0 - t * 4.0));
         vec3 hue = mix(colour1.rgb, colour2.rgb, fi / 2.0);
         col += hue * band * (0.35 + 0.65 * curtain) * 0.55 * brightness * (1.0 + lift * 0.6);
     }
+    if (react) col += mix(colour1.rgb, colour2.rgb, smoothstep(height, height + 0.4, uv.y)) * ray(uv, height + 0.13) * 0.7 * brightness;
     if (stars) col += pow(hash(floor(fragCoord)), 900.0) * 0.6 * uv.y;
     fragColor = vec4(col, 1.0);
 }
