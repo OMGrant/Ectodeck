@@ -1,7 +1,7 @@
 # MagTran M3 device plugin
 
 Device support for the VSDinside MagTran M3 (USB `5548:1020`), for
-[MagDeck](https://github.com/OMGrant/MagDeck), which bundles it, and for
+[Ectodeck](https://github.com/OMGrant/Ectodeck), which bundles it, and for
 [OpenDeck](https://github.com/nekename/OpenDeck).
 
 The M3's fifteen keys are windows onto one 854×480 display. The plugin draws
@@ -17,7 +17,7 @@ one picture. After that, a key change repaints only that key's square.
   (`{"left":43,"top":20,"right":43,"bottom":20,"key":110}`, watched live;
   add `"calibrate": true` to outline each key)
 
-MagDeck shows the dials down the right side and the background behind the
+Ectodeck shows the dials down the right side and the background behind the
 keys. Stock OpenDeck drives the keys and dials but has no background control.
 
 ## Linux permissions
@@ -31,5 +31,5 @@ sudo udevadm control --reload-rules
 
 ## Building
 
-`cargo build --release`. Inside MagDeck the plugin is built by `build.ts`
+`cargo build --release`. Inside Ectodeck the plugin is built by `build.ts`
 along with the app.

@@ -134,7 +134,7 @@ export function stripFlatBackground(image: HTMLImageElement): HTMLCanvasElement 
 
 // Whether an icon's solid background square should be removed.
 //
-// Icons shipped as files, by plugins and by MagDeck itself, are always
+// Icons shipped as files, by plugins and by Ectodeck itself, are always
 // cleaned: many plugins paint a grey or coloured square behind their glyph,
 // which clashes with the key background and with OpenDeck's own icons, drawn
 // without one. Pictures that arrive as data (ones the user chose, or ones a

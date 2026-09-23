@@ -128,13 +128,13 @@ async fn main() {
 				let _ = std::fs::rename(old, app.path().app_config_dir().unwrap());
 			}
 
-			// MagDeck keeps its own configuration, so it can run beside OpenDeck.
+			// Ectodeck keeps its own configuration, so it can run beside OpenDeck.
 			// On first run, start from the user's OpenDeck setup: copied, not
 			// moved, so OpenDeck keeps working as it was.
-			let magdeck = app.path().app_config_dir().unwrap();
+			let ectodeck = app.path().app_config_dir().unwrap();
 			let opendeck = app.path().config_dir().unwrap().join("opendeck");
-			if !magdeck.exists() && opendeck.exists() {
-				let _ = shared::copy_dir(&opendeck, &magdeck);
+			if !ectodeck.exists() && opendeck.exists() {
+				let _ = shared::copy_dir(&opendeck, &ectodeck);
 			}
 
 			let mut settings = store::get_settings();
@@ -311,7 +311,7 @@ If you have already donated, thank you so much for your support!"#,
 			tauri_plugin_log::Builder::default()
 				.targets([Target::new(TargetKind::LogDir { file_name: None }), Target::new(TargetKind::Stdout)])
 				.level(log::LevelFilter::Info)
-				.level_for("magdeck", log::LevelFilter::Debug)
+				.level_for("ectodeck", log::LevelFilter::Debug)
 				.build(),
 		)
 		.plugin(tauri_plugin_cors_fetch::init())
@@ -377,7 +377,7 @@ If you have already donated, thank you so much for your support!"#,
 						let _ = show_window(app);
 					}
 				})
-				.dbus_id("com.grantgarrison.magdeck")
+				.dbus_id("com.grantgarrison.ectodeck")
 				.build(),
 		)
 		.plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hide"])))

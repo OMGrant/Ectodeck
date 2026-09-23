@@ -2,7 +2,7 @@
 	"app": {
 		"windows": [
 			{
-				"title": "MagDeck",
+				"title": "Ectodeck",
 				"fullscreen": false,
 				"resizable": true,
 				"width": 800,

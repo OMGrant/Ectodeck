@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-	<id>magdeck</id>
+	<id>ectodeck</id>
 
-	<name>MagDeck</name>
+	<name>Ectodeck</name>
 	<summary>An enhanced fork of OpenDeck for the VSDinside MagTran M3</summary>
 	<developer id="com.grantgarrison"><name>Grant Garrison</name></developer>
-	<launchable type="desktop-id">magdeck.desktop</launchable>
+	<launchable type="desktop-id">ectodeck.desktop</launchable>
 
-	<url type="vcs-browser">https://github.com/OMGrant/MagDeck</url>
-	<url type="homepage">https://github.com/OMGrant/MagDeck</url>
-	<url type="bugtracker">https://github.com/OMGrant/MagDeck/issues</url>
+	<url type="vcs-browser">https://github.com/OMGrant/Ectodeck</url>
+	<url type="homepage">https://github.com/OMGrant/Ectodeck</url>
+	<url type="bugtracker">https://github.com/OMGrant/Ectodeck/issues</url>
 	<url type="donation">https://github.com/sponsors/nekename</url>
 
 	<metadata_license>CC-BY-SA-4.0</metadata_license>
@@ -17,11 +17,11 @@
 	<content_rating type="oars-1.1" />
 
 	<description>
-		<p>MagDeck is an enhanced fork of OpenDeck for the VSDinside MagTran M3.</p>
+		<p>Ectodeck is an enhanced fork of OpenDeck for the VSDinside MagTran M3.</p>
 		<p>It draws the M3's display behind the keys as one picture, with a background you choose and each key placed under its cap, and shows the dials down the side where they are on the deck. Support for the M3 is built in.</p>
 		<p>Everything else works as it does in OpenDeck, including Elgato Stream Decks and the majority of plugins made for the Stream Deck SDK.</p>
 		<p>Your device needs udev rules to be detected. The packages install them for the MagTran M3 and Elgato decks; for other installs, see the README on GitHub.</p>
-		<p>MagDeck is built on OpenDeck by Aman Khanna. To support OpenDeck's development, consider donating on GitHub Sponsors, Ko-fi or Liberapay.</p>
+		<p>Ectodeck is built on OpenDeck by Aman Khanna. To support OpenDeck's development, consider donating on GitHub Sponsors, Ko-fi or Liberapay.</p>
 	</description>
 
 	<branding>

@@ -12,25 +12,25 @@
 		"resources": { "target/plugins/": "plugins/" },
 		"linux": {
 			"deb": {
-				"desktopTemplate": "bundle/magdeck.desktop",
+				"desktopTemplate": "bundle/ectodeck.desktop",
 				"files": {
 					"/etc/udev/rules.d/40-streamdeck.rules": "bundle/40-streamdeck.rules",
 					"/etc/udev/rules.d/40-magtran-m3.rules": "../plugins/com.grantgarrison.opendeck-magtran-m3.sdPlugin/40-opendeck-magtran-m3.rules",
-					"/usr/share/metainfo/magdeck.metainfo.xml": "bundle/magdeck.metainfo.xml"
+					"/usr/share/metainfo/ectodeck.metainfo.xml": "bundle/ectodeck.metainfo.xml"
 				}
 			},
 			"rpm": {
-				"desktopTemplate": "bundle/magdeck.desktop",
+				"desktopTemplate": "bundle/ectodeck.desktop",
 				"files": {
 					"/etc/udev/rules.d/40-streamdeck.rules": "bundle/40-streamdeck.rules",
 					"/etc/udev/rules.d/40-magtran-m3.rules": "../plugins/com.grantgarrison.opendeck-magtran-m3.sdPlugin/40-opendeck-magtran-m3.rules",
-					"/usr/share/metainfo/magdeck.metainfo.xml": "bundle/magdeck.metainfo.xml"
+					"/usr/share/metainfo/ectodeck.metainfo.xml": "bundle/ectodeck.metainfo.xml"
 				}
 			}
 		},
 		"publisher": "Grant Garrison",
 		"shortDescription": "An enhanced fork of OpenDeck for the VSDinside MagTran M3",
-		"longDescription": "MagDeck is an enhanced fork of OpenDeck for the VSDinside MagTran M3. It keeps OpenDeck's support for Elgato Stream Decks and for plugins made for the Stream Deck SDK.",
+		"longDescription": "Ectodeck is an enhanced fork of OpenDeck for the VSDinside MagTran M3. It keeps OpenDeck's support for Elgato Stream Decks and for plugins made for the Stream Deck SDK.",
 		"category": "Productivity",
 		"icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"],
 		"macOS": {
@@ -38,9 +38,9 @@
 			"signingIdentity": "-"
 		}
 	},
-	"productName": "MagDeck",
-	"mainBinaryName": "magdeck",
-	"identifier": "magdeck",
+	"productName": "Ectodeck",
+	"mainBinaryName": "ectodeck",
+	"identifier": "ectodeck",
 	"plugins": {
 		"deep-link": {
 			"desktop": {
@@ -51,7 +51,7 @@
 	"app": {
 		"windows": [
 			{
-				"title": "MagDeck",
+				"title": "Ectodeck",
 				"fullscreen": false,
 				"resizable": true,
 				"width": 800,
