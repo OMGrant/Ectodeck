@@ -12,9 +12,9 @@
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "A murmuration of starlings wheeling over a treeline at dusk. Press a key and the birds there burst away from it; the shock runs through the whole flock. Its presets are the time of day, from afternoon to night.",
+  "DESCRIPTION": "A murmuration of starlings wheeling over a treeline at dusk. Press a key and the birds there burst away from it; the shock runs through the whole flock. Its presets are the time of day, from afternoon to night, or Automatic to follow your clock.",
   "INPUTS": [
-    { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 1, "VALUES": [0, 1, 2], "LABELS": ["Afternoon", "Dusk", "Night"], "PRESET": true },
+    { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 1, "VALUES": [-1, 0, 1, 2], "LABELS": ["Automatic", "Afternoon", "Dusk", "Night"], "PRESET": true },
     { "NAME": "birds", "TYPE": "float", "LABEL": "Birds", "DEFAULT": 1, "MIN": 0.3, "MAX": 2 }
   ]
 }
@@ -32,7 +32,32 @@
   var declared = {};
   JSON.parse(document.getElementById('ectodeck-inputs').textContent).INPUTS.forEach(function (i) { declared[i.NAME] = i.DEFAULT; });
   var setting = function (k) { return q.has(k) ? parseFloat(q.get(k)) : Number(declared[k]); };
-  var light = Math.round(setting('time')) % 3, lightNow = light;
+
+  // Automatic: the time of day where the deck is, from the computer's clock.
+  // Sunrise and sunset are estimated from the date, the time zone's daylight
+  // saving and a latitude of 35 degrees (south of the equator when daylight
+  // saving falls in January), which lands within about an hour for most places.
+  function sunHours(now) {
+    var y = now.getFullYear(), jan = new Date(y, 0, 1).getTimezoneOffset(), jul = new Date(y, 6, 1).getTimezoneOffset();
+    var lat = (jan < jul ? -35 : 35) * Math.PI / 180;
+    var noon = 12 + (now.getTimezoneOffset() < Math.max(jan, jul) ? 1 : 0);
+    var day = (now - new Date(y, 0, 0)) / 864e5;
+    var decl = -23.44 * Math.PI / 180 * Math.cos(2 * Math.PI / 365 * (day + 10));
+    var cosH = (Math.sin(-0.833 * Math.PI / 180) - Math.sin(lat) * Math.sin(decl)) / (Math.cos(lat) * Math.cos(decl));
+    var half = Math.acos(Math.max(-1, Math.min(1, cosH))) * 12 / Math.PI;
+    return { now: now.getHours() + now.getMinutes() / 60, rise: noon - half, noon: noon, set: noon + half };
+  }
+  // afternoon, dusk (and dawn) or night, by the sun
+  function clockLight() {
+    var s = sunHours(new Date());
+    if (s.now < s.rise - 0.5 || s.now >= s.set + 0.75) return 2;
+    if (s.now < s.rise + 0.75 || s.now >= s.set - 1) return 1;
+    return 0;
+  }
+  // the chosen time of day, or -1 to follow the clock
+  var timeSetting = Math.round(setting('time'));
+  var light = timeSetting < 0 ? clockLight() : timeSetting % 3, lightNow = light;
+  setInterval(function () { if (timeSetting < 0) light = clockLight(); }, 60000);
   var count = Math.round(420 * Math.min(2, Math.max(0.3, setting('birds'))));
 
   var canvas = document.getElementById('sky'), c = canvas.getContext('2d');
@@ -89,7 +114,7 @@
     var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
     var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
     for (var i = 0; i < keys.length; i++) if (['time'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
-    if (p.time !== undefined) light = Math.round(p.time) % 3;
+    if (p.time !== undefined) { timeSetting = Math.round(p.time); light = timeSetting < 0 ? clockLight() : timeSetting % 3; }
   });
 
   // a grid of cells, so each bird only looks at its neighbours

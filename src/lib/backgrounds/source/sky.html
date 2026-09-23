@@ -13,9 +13,9 @@
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "Soft clouds drifting past a low sun. Press a key and the clouds break open there, letting sunbeams through; its presets are the time of day, from morning to sunset to night. From Vanta (MIT) on three.js (MIT).",
+  "DESCRIPTION": "Soft clouds drifting past a low sun. Press a key and the clouds break open there, letting sunbeams through; its presets are the time of day, from morning to sunset to night, or Automatic to follow your clock. From Vanta (MIT) on three.js (MIT).",
   "INPUTS": [
-    { "NAME": "time", "TYPE": "long", "LABEL": "Time of day", "DEFAULT": 1, "VALUES": [0, 1, 2, 3], "LABELS": ["Morning", "Afternoon", "Sunset", "Night"], "PRESET": true },
+    { "NAME": "time", "TYPE": "long", "LABEL": "Time of day", "DEFAULT": 1, "VALUES": [-1, 0, 1, 2, 3], "LABELS": ["Automatic", "Morning", "Afternoon", "Sunset", "Night"], "PRESET": true },
     { "NAME": "speed", "TYPE": "float", "LABEL": "Wind", "DEFAULT": 0.8, "MIN": 0.2, "MAX": 3 }
   ]
 }
@@ -44,7 +44,32 @@
     { skyColor: 0xd4745a, cloudColor: 0xe0a88c, cloudShadowColor: 0x4a2a44, sunColor: 0xff7a2a, sunGlareColor: 0xff4e2e, sunlightColor: 0xff8a50 },
     { skyColor: 0x0c1428, cloudColor: 0x3a4a6a, cloudShadowColor: 0x05080f, sunColor: 0xdfe8ff, sunGlareColor: 0x6a80b0, sunlightColor: 0x9ab0e0 },
   ];
-  var time = Math.round(num('time')) % 4, base = num('speed');
+
+  // Automatic: the time of day where the deck is, from the computer's clock.
+  // Sunrise and sunset are estimated from the date, the time zone's daylight
+  // saving and a latitude of 35 degrees (south of the equator when daylight
+  // saving falls in January), which lands within about an hour for most places.
+  function sunHours(now) {
+    var y = now.getFullYear(), jan = new Date(y, 0, 1).getTimezoneOffset(), jul = new Date(y, 6, 1).getTimezoneOffset();
+    var lat = (jan < jul ? -35 : 35) * Math.PI / 180;
+    var noon = 12 + (now.getTimezoneOffset() < Math.max(jan, jul) ? 1 : 0);
+    var day = (now - new Date(y, 0, 0)) / 864e5;
+    var decl = -23.44 * Math.PI / 180 * Math.cos(2 * Math.PI / 365 * (day + 10));
+    var cosH = (Math.sin(-0.833 * Math.PI / 180) - Math.sin(lat) * Math.sin(decl)) / (Math.cos(lat) * Math.cos(decl));
+    var half = Math.acos(Math.max(-1, Math.min(1, cosH))) * 12 / Math.PI;
+    return { now: now.getHours() + now.getMinutes() / 60, rise: noon - half, noon: noon, set: noon + half };
+  }
+  // morning, afternoon, sunset or night, by the sun
+  function clockTime() {
+    var s = sunHours(new Date());
+    if (s.now < s.rise - 0.5 || s.now >= s.set + 0.75) return 3;
+    if (s.now < s.noon - 1) return 0;
+    if (s.now >= s.set - 1.25) return 2;
+    return 1;
+  }
+  // the chosen time of day, or -1 to follow the clock
+  var timeSetting = Math.round(num('time'));
+  var time = timeSetting < 0 ? clockTime() : timeSetting % 4, base = num('speed');
   var effect = VANTA.CLOUDS(Object.assign({ el: '#sky', THREE: THREE, mouseControls: false, touchControls: false, gyroControls: false, speed: base }, TIMES[time]));
 
   // a press breaks the clouds at the key: a soft bright opening that swells
@@ -63,9 +88,12 @@
     var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
     var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
     for (var i = 0; i < keys.length; i++) if (['time', 'speed'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
-    if (p.time !== undefined) { time = Math.round(p.time) % 4; effect.setOptions(TIMES[time]); }
+    if (p.time !== undefined) { timeSetting = Math.round(p.time); time = timeSetting < 0 ? clockTime() : timeSetting % 4; effect.setOptions(TIMES[time]); }
     if (p.speed !== undefined) { base = Number(p.speed); effect.setOptions({ speed: base }); }
   });
+  setInterval(function () {
+    if (timeSetting < 0 && clockTime() !== time) { time = clockTime(); effect.setOptions(TIMES[time]); }
+  }, 60000);
   var hexRgb = function (h) { return [(h >> 16) & 255, (h >> 8) & 255, h & 255]; };
   (function draw(now) {
     c.clearRect(0, 0, canvas.width, canvas.height);

@@ -4,7 +4,9 @@
 	import type { AnimatedBackground, DeviceInfo, KeyStyle } from "$lib/DeviceInfo";
 	import ChoiceMenu, { type ChoiceSection } from "./ChoiceMenu.svelte";
 	import ParameterControls from "./ParameterControls.svelte";
-	import { currentPreset, type IsfInput, pageInputs, type Preset, presetsOf, shaderInputs } from "$lib/isf";
+	import CaretDown from "phosphor-svelte/lib/CaretDown";
+	import CaretRight from "phosphor-svelte/lib/CaretRight";
+	import { currentPreset, defaultValue, type IsfInput, pageInputs, type Preset, presetsOf, shaderInputs } from "$lib/isf";
 	import { listen } from "@tauri-apps/api/event";
 	import { onDestroy } from "svelte";
 	import { getWebserverUrl } from "$lib/ports";
@@ -96,6 +98,7 @@
 		const key = a ? a.name + ":" + (a.kind == "shader" ? a.source.length : a.url) : "";
 		if (key != readFor) {
 			readFor = key;
+			lastPreset = -1;
 			readSource(a).then((text) => {
 				if (!a) {
 					inputs = [];
@@ -111,6 +114,27 @@
 	// Presets: the menu, and the Background preset action from a key or dial.
 	$: presetIndex = animated && presets.length ? currentPreset(presets, animated.params ?? {}, inputs) : -1;
 	$: presetSections = [{ items: presets.map((p, i) => ({ id: String(i), label: p.name, selected: i == presetIndex })) }] as ChoiceSection[];
+	// the preset last in effect, which Adjust's reset goes back to
+	let lastPreset = -1;
+	$: if (presets && presetIndex >= 0) lastPreset = presetIndex;
+	// back to the preset, or to the defaults when there are no presets; the
+	// frame rate is the deck's, not the look's, so it stays
+	function resetAdjustments() {
+		if (!animated) return;
+		const fps = animated.params?.fps;
+		const values = lastPreset >= 0 && presets[lastPreset] ? presets[lastPreset].values : {};
+		setAnimated({ ...animated, params: { ...(fps ? { fps } : {}), ...values } } as AnimatedBackground);
+	}
+	// whether any setting under Adjust differs from what the reset gives back
+	$: adjusted =
+		!!animated &&
+		adjustInputs.some((input) => {
+			const params = animated?.params ?? {};
+			const base = lastPreset >= 0 && presets[lastPreset] ? presets[lastPreset].values : {};
+			const now = input.NAME in params ? params[input.NAME] : defaultValue(input);
+			const then = input.NAME in base ? base[input.NAME] : defaultValue(input);
+			return JSON.stringify(now) != JSON.stringify(then);
+		});
 	function applyPreset(index: number) {
 		if (!animated || !presets[index]) return;
 		const next = { ...animated, params: { ...(animated.params ?? {}), ...presets[index].values } } as AnimatedBackground;
@@ -180,7 +204,10 @@
 		const next = { ...animated, params: { ...(animated.params ?? {}), fps: rate } } as AnimatedBackground;
 		setAnimated(next);
 	}
-	$: if (!inputs.length) adjusting = false;
+	// the input whose choices are the presets is the Preset menu itself, so
+	// Adjust holds only what can be tuned under a preset
+	$: adjustInputs = inputs.filter((input) => !(input as IsfInput & { PRESET?: boolean }).PRESET);
+	$: if (!adjustInputs.length) adjusting = false;
 	$: builtin = isBuiltin(animated);
 	let enteringUrl = false;
 	let url = "";
@@ -363,9 +390,6 @@
 				</div>
 				<div class="flex flex-row gap-1.5">
 					<ChoiceMenu label={$t("device_view.background.change")} current={$t("device_view.background.change")} sections={animationSections} on:choose={(e) => chooseAnimation(e.detail)} />
-					{#if animated && inputs.length}
-						<button class="btn quiet h-[26px]! px-2!" class:bg-neutral-750={adjusting} aria-pressed={adjusting} on:click={() => (adjusting = !adjusting)}>{$t("parameters.adjust_short")}</button>
-					{/if}
 				</div>
 			</div>
 		</div>
@@ -380,11 +404,6 @@
 				<button type="button" class="btn quiet" on:click={() => (enteringUrl = false)}>{$t("device_view.animation.cancel")}</button>
 			</form>
 		{/if}
-		{#if adjusting && animated}
-			<div class="mt-2.5">
-				<ParameterControls {inputs} values={animated.params ?? {}} on:change={(e) => changeParams(e.detail)} />
-			</div>
-		{/if}
 		{#if animated && presets.length}
 			<div class="insp-row mt-2">
 				<span class="lb">{$t("device_view.preset")}</span>
@@ -393,8 +412,29 @@
 				</div>
 			</div>
 		{/if}
+		{#if animated && adjustInputs.length}
+			<!-- Adjust unfolds under the preset: the fine-tuning of the look it sets -->
+			<div class:mt-2={!presets.length}>
+				<button class="insp-row w-full text-neutral-300 hover:text-neutral-100 transition-colors" aria-expanded={adjusting} on:click={() => (adjusting = !adjusting)}>
+					<span class="flex flex-row items-center gap-1.5">
+						{#if adjusting}<CaretDown size="12" />{:else}<CaretRight size="12" />{/if}
+						{$t("parameters.adjust_short")}
+					</span>
+				</button>
+				{#if adjusting}
+					<div class="ml-[5px] pl-3 pb-1 border-l border-neutral-700">
+						<ParameterControls inputs={adjustInputs} values={animated.params ?? {}} labelWidth="w-[74px]!" on:change={(e) => changeParams(e.detail)} />
+						{#if adjusted}
+							<button class="mt-1 text-xs text-neutral-400 hover:text-neutral-200 transition-colors" on:click={resetAdjustments}>
+								{lastPreset >= 0 && presets[lastPreset] ? $t("parameters.reset_to", { name: presets[lastPreset].name }) : $t("parameters.reset")}
+							</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		{/if}
 		{#if animated || background}
-			<div class="insp-row" class:mt-2={!(animated && presets.length)}>
+			<div class="insp-row" class:mt-2={!(animated && (presets.length || adjustInputs.length))}>
 				<label class="lb" for="bg-brightness">{$t("device_view.bg_brightness")}</label>
 				<input
 					id="bg-brightness"
