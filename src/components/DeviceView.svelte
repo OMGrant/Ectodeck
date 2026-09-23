@@ -236,7 +236,7 @@
 {#key device}
 	<span id="grid-description" class="sr-only">{$t("device_view.grid_description")}</span>
 	<div
-		class="flex flex-col justify-center grow px-16 py-6 overflow-auto"
+		class="flex flex-col grow px-16 py-6 overflow-auto before:mt-auto before:content-[''] after:mb-auto after:content-['']"
 		class:items-center={device.columns <= 9}
 		class:hidden={$inspectedParentAction || selectedDevice != device.id}
 		class:device-fade-x={overflowsX && !overflowsY}

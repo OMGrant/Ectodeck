@@ -1,4 +1,5 @@
 <script lang="ts">
+	import pluginCompatibility from "$lib/pluginCompatibility.json";
 	import ArrowClockwise from "phosphor-svelte/lib/ArrowClockwise";
 	import ArrowSquareOut from "phosphor-svelte/lib/ArrowSquareOut";
 	import CloudArrowDown from "phosphor-svelte/lib/CloudArrowDown";
@@ -183,6 +184,17 @@
 	(async () => (installed = await invoke("list_plugins")))();
 
 	let plugins: { [id: string]: GitHubPlugin };
+
+	// How each store plugin runs on Linux, recorded by scripts/plugin_compatibility.py.
+	const compatibility: { [id: string]: string } = pluginCompatibility;
+	// Store plugins for devices Ectodeck already drives; installing one would put two plugins on the same device.
+	const BUILT_IN_DEVICE_PLUGINS = ["com.coreparadox.opendeck.magtran-m3"];
+	const COMPATIBILITY_ORDER: { [verdict: string]: number } = { wine: 1, none: 2 };
+	function storeEntries(catalogue: { [id: string]: GitHubPlugin }) {
+		return Object.entries(catalogue)
+			.filter(([id]) => !BUILT_IN_DEVICE_PLUGINS.includes(id))
+			.sort(([a], [b]) => (COMPATIBILITY_ORDER[compatibility[a]] ?? 0) - (COMPATIBILITY_ORDER[compatibility[b]] ?? 0));
+	}
 	(async () => (plugins = await (await fetch("https://openactionapi.github.io/plugins/catalogue.json")).json()))();
 
 	let showArchive: boolean = false;
@@ -334,7 +346,7 @@
 			<Tooltip>{$t("plugin_manager.open_source.tooltip")}</Tooltip>
 		</div>
 		<div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-			{#each Object.entries(plugins) as [id, plugin]}
+			{#each storeEntries(plugins) as [id, plugin]}
 				<ListedPlugin
 					icon="https://openactionapi.github.io/plugins/icons/{id}.png"
 					name={plugin.name}
@@ -343,6 +355,14 @@
 					action={() => (openDetailsView = id)}
 					actionLabel={$t("plugin_manager.view_details")}
 				>
+					<svelte:fragment slot="subtitle">
+						{plugin.author}
+						{#if compatibility[id] == "wine"}
+							<span class="block mt-1 text-xs text-amber-300">{$t("plugin_manager.compatibility.wine")}</span>
+						{:else if compatibility[id] == "none"}
+							<span class="block mt-1 text-xs text-neutral-400">{$t("plugin_manager.compatibility.none")}</span>
+						{/if}
+					</svelte:fragment>
 					<ArrowSquareOut size="24" class="text-neutral-400" />
 				</ListedPlugin>
 			{/each}

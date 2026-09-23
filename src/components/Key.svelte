@@ -97,8 +97,15 @@
 		const rect = canvas.getBoundingClientRect();
 		let x = event instanceof MouseEvent && event.x ? event.x : rect.left;
 		let y = event instanceof MouseEvent && event.y ? event.y : rect.bottom;
+		// Right-clicking a key selects it first, so there is no doubt which key the menu acts on.
+		if (event instanceof MouseEvent) select(event);
 		$openContextMenu = { context, x, y };
 		await tick();
+		// Keep the menu inside the window.
+		if (contextMenuEl) {
+			const menu = contextMenuEl.getBoundingClientRect();
+			$openContextMenu = { context, x: Math.min(x, window.innerWidth - menu.width - 8), y: Math.min(y, window.innerHeight - menu.height - 8) };
+		}
 		contextMenuEl?.querySelector("button")?.focus();
 	}
 
@@ -243,7 +250,7 @@
 {#if $openContextMenu && $openContextMenu?.context == context}
 	<div
 		bind:this={contextMenuEl}
-		class="absolute w-32 font-semibold text-sm text-neutral-300 bg-neutral-700 border border-neutral-600 rounded-lg divide-y divide-neutral-600! z-10"
+		class="fixed w-32 font-semibold text-sm text-neutral-300 bg-neutral-700 border border-neutral-600 rounded-lg divide-y divide-neutral-600! z-10"
 		style={`left: ${$openContextMenu.x}px; top: ${$openContextMenu.y}px;`}
 	>
 		{#if !slot}

@@ -2,9 +2,7 @@
 	import ClockClockwise from "phosphor-svelte/lib/ClockClockwise";
 	import ClockCounterClockwise from "phosphor-svelte/lib/ClockCounterClockwise";
 	import Gear from "phosphor-svelte/lib/Gear";
-	import Heart from "phosphor-svelte/lib/Heart";
 	import Scroll from "phosphor-svelte/lib/Scroll";
-	import Star from "phosphor-svelte/lib/Star";
 	import Popup from "./Popup.svelte";
 	import Tooltip from "./Tooltip.svelte";
 
@@ -207,18 +205,9 @@
 	</div>
 
 	<svelte:fragment slot="footer">
-		<div class="flex flex-row items-center mt-4 text-sm text-neutral-400">
-			<span class="mr-1">
-				{$t("settings.footer.1")}
-				<button on:click={() => invoke("open_url", { url: "https://github.com/nekename/OpenDeck" })} class="underline">{$t("settings.footer.2")}</button>
-			</span>
-			<Star weight="fill" fill="yellow" />
-			<span class="mx-1">
-				{$t("settings.footer.3")}
-				<button on:click={() => invoke("open_url", { url: "https://github.com/sponsors/nekename" })} class="underline">{$t("settings.footer.4")}</button>
-			</span>
-			<Heart weight="fill" fill="fuchsia" />
-			<span class="ml-1">{$t("settings.footer.5")}</span>
+		<div class="mt-4 text-sm text-neutral-400">
+			{$t("settings.credit.1", { PRODUCT_NAME })}
+			<button on:click={() => invoke("open_url", { url: "https://github.com/nekename/OpenDeck" })} class="underline">{$t("settings.credit.2")}</button>.
 		</div>
 	</svelte:fragment>
 </Popup>

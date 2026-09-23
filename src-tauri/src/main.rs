@@ -181,9 +181,7 @@ async fn main() {
 						app.dialog()
 							.message(format!(
 								r#"Thanks for installing {PRODUCT_NAME}!
-If you have any issues, please reach out on any of the support channels listed on GitHub (and make sure to star the project while you're there!).
-
-Enjoy!"#,
+If something doesn't work, open an issue on {PRODUCT_NAME}'s GitHub page and describe what happened."#,
 							))
 							.title(format!("{PRODUCT_NAME} has successfully been installed"))
 							.kind(MessageDialogKind::Info)
@@ -191,12 +189,8 @@ Enjoy!"#,
 					} else {
 						app.dialog()
 							.message(format!(
-								r#"{PRODUCT_NAME} has been updated to v{}!
-Every update brings features, bug fixes, and other improvements, which I spend my time implementing for free.
-
-If you spent $125 on your hardware, please consider spending $10 on the software that makes it work.
-You can donate to support development with just a few clicks on GitHub Sponsors, Ko-fi or Liberapay.
-If you have already donated, thank you so much for your support!"#,
+								r#"{PRODUCT_NAME} has been updated to v{}.
+The release notes on GitHub list what changed."#,
 								built_info::PKG_VERSION
 							))
 							.title(format!("{PRODUCT_NAME} has successfully been updated"))
@@ -275,14 +269,15 @@ If you have already donated, thank you so much for your support!"#,
 
 			async fn update() -> Result<(), anyhow::Error> {
 				let res = reqwest::Client::new()
-					.get("https://api.github.com/repos/nekename/OpenDeck/releases/latest")
+					.get("https://api.github.com/repos/OMGrant/Ectodeck/releases/latest")
 					.header("Accept", "application/vnd.github+json")
-					.header("User-Agent", "OpenDeck")
+					.header("User-Agent", "Ectodeck")
 					.send()
 					.await?
 					.json::<serde_json::Value>()
 					.await?;
-				let tag_name = res.get("tag_name").unwrap().as_str().unwrap();
+				// Until Ectodeck publishes a release, GitHub answers with no tag at all.
+				let Some(tag_name) = res.get("tag_name").and_then(|v| v.as_str()) else { return Ok(()) };
 				if semver::Version::parse(built_info::PKG_VERSION)?.cmp(&semver::Version::parse(&tag_name[1..])?) == Ordering::Less {
 					let app = APP_HANDLE.get().unwrap();
 					app.dialog()
