@@ -10,7 +10,9 @@ export type Settings = {
 	updatecheck: boolean;
 	separatewine: boolean;
 	developer: boolean;
-	disableelgato: boolean;
+		disableelgato: boolean;
+	// each deck's profiles in the order its page tabs show them
+	profile_order?: { [device: string]: string[] };
 };
 
 import { invoke } from "@tauri-apps/api/core";

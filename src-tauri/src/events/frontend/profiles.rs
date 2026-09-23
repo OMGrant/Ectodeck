@@ -96,7 +96,11 @@ pub async fn rename_profile(device: String, old_id: String, new_id: String, reta
 		return Err(Error::new(format!("device {device} not found")));
 	}
 
-	locks.profile_stores.rename_profile(&DEVICES.get(&device).unwrap(), &old_id, &new_id, retain).await?;
+		locks.profile_stores.rename_profile(&DEVICES.get(&device).unwrap(), &old_id, &new_id, retain).await?;
+	if !retain {
+		locks.device_stores.rename_selected(&device, &old_id, &new_id)?;
+	}
+
 
 	Ok(())
 }

@@ -10,7 +10,7 @@
 	import { copiedItem, placeAction } from "$lib/propertyInspector";
 	import { markFits } from "$lib/dragFits";
 	import { localisations } from "$lib/settings";
-	import { PRODUCT_NAME, pluginManager } from "$lib/singletons";
+	import { pluginManager } from "$lib/singletons";
 
 	import { invoke } from "@tauri-apps/api/core";
 
@@ -28,23 +28,43 @@
 	reload();
 
 	let query: string = "";
-	// "All", or one plugin's actions
-	let only: string | null = null;
-	$: categoryNames = Object.keys(categories).sort((a, b) => (a == PRODUCT_NAME ? -1 : b == PRODUCT_NAME ? 1 : a.localeCompare(b)));
-	$: if (only && !categories[only]) only = null;
-	let filteredCategories: [string, { icon?: string; actions: Action[] }][] = [];
+
+	// Actions are grouped by what they do, under the names Elgato's software
+	// uses, whichever plugin brings them. Actions this list doesn't know keep
+	// the category their plugin gives them, after these.
+	const GROUPS: { key: string; uuids: string[] }[] = [
+		{ key: "navigation", uuids: ["com.amansprojects.starterpack.switchprofile"] },
+		{ key: "multi", uuids: ["opendeck.multiaction", "opendeck.toggleaction"] },
+		{ key: "system", uuids: ["com.amansprojects.starterpack.openurl", "com.amansprojects.starterpack.runcommand", "com.amansprojects.starterpack.inputsimulation"] },
+		{ key: "device", uuids: ["com.amansprojects.starterpack.devicebrightness", "opendeck.backgroundpreset"] },
+	];
+	type Group = { id: string; name: string; about?: string; actions: Action[] };
+	let groups: Group[] = [];
 	$: {
-		let lowerCaseQuery = query.toLowerCase().trim();
-		filteredCategories = Object.entries(categories)
-			.sort((a, b) => (a[0] == PRODUCT_NAME ? -1 : b[0] == PRODUCT_NAME ? 1 : a[0].localeCompare(b[0])))
-			.map(([categoryName, { icon, actions }]): [string, { icon?: string; actions: Action[] }] => {
-				if (!categoryName.toLowerCase().includes(lowerCaseQuery)) {
-					actions = actions.filter((action) => action.name.toLowerCase().includes(lowerCaseQuery));
-				}
-				actions = actions.filter((action) => !foreign.has(action.plugin) && (hasBackground || action.uuid != "opendeck.backgroundpreset"));
-				return [categoryName, { icon, actions }];
-			})
-			.filter(([name, { actions }]) => actions.length > 0 && (!only || name == only));
+		const known: Group[] = GROUPS.map((g) => ({ id: g.key, name: $t(`action_list.group.${g.key}`), about: $t(`action_list.group.${g.key}.about`), actions: [] }));
+		const others: { [name: string]: Group } = {};
+		for (const [categoryName, { actions }] of Object.entries(categories)) {
+			for (const action of actions) {
+				if (foreign.has(action.plugin) || (!hasBackground && action.uuid == "opendeck.backgroundpreset")) continue;
+				const at = GROUPS.findIndex((g) => g.uuids.includes(action.uuid));
+				if (at >= 0) known[at].actions.push(action);
+				else (others[categoryName] ||= { id: "plugin:" + categoryName, name: categoryName, actions: [] }).actions.push(action);
+			}
+		}
+		// each group in its own order, so related actions sit side by side
+		known.forEach((g, at) => g.actions.sort((a, b) => GROUPS[at].uuids.indexOf(a.uuid) - GROUPS[at].uuids.indexOf(b.uuid)));
+		groups = [...known, ...Object.values(others).sort((a, b) => a.name.localeCompare(b.name))].filter((g) => g.actions.length);
+	}
+	// "All", or one group
+	let only: string | null = null;
+	$: if (only && !groups.some((g) => g.id == only)) only = null;
+	let shown: Group[] = [];
+	$: {
+		const q = query.toLowerCase().trim();
+		shown = groups
+			.filter((g) => !only || g.id == only)
+			.map((g) => (q && !g.name.toLowerCase().includes(q) ? { ...g, actions: g.actions.filter((a) => nameOf(a).toLowerCase().includes(q)) } : g))
+			.filter((g) => g.actions.length);
 	}
 
 	// the selected key or multi action takes it; if nothing can, nothing happens
@@ -64,9 +84,9 @@
 		</label>
 		<div class="chips flex flex-row items-center gap-0.5 min-w-0 overflow-x-auto">
 			<button class="chip" class:on={!only} on:click={() => (only = null)}>{$t("action_list.all")}</button>
-			{#each categoryNames as name}
-				<button class="chip" class:on={only == name} on:click={() => (only = only == name ? null : name)}>{name}</button>
-			{/each}
+			{#each groups as g}
+					<button class="chip" class:on={only == g.id} title={g.about} on:click={() => (only = only == g.id ? null : g.id)}>{g.name}</button>
+				{/each}
 		</div>
 		<button class="ml-auto flex flex-row items-center gap-1.5 shrink-0 h-7 px-2 rounded-md text-neutral-400 hover:text-neutral-100 hover:bg-neutral-750 transition-colors" on:click={() => $pluginManager?.openStore()}>
 			<Plus size="13" />{$t("action_list.more")}
@@ -75,9 +95,9 @@
 
 	<span id="action-list-hint" class="sr-only">{$t("action_list.hint")}</span>
 	<div class="flex flex-row flex-wrap content-start gap-x-[18px] gap-y-1.5 flex-1 min-h-0 overflow-y-auto px-3.5 pt-1 pb-3.5 select-none">
-		{#each filteredCategories as [name, { actions }]}
-			<div class="flex flex-col gap-1.5" role="listbox" aria-label={name} aria-describedby="action-list-hint" tabindex="-1">
-				<span class="pl-0.5 text-[11px] font-medium text-neutral-500">{name}</span>
+		{#each shown as { name, about, actions }}
+				<div class="flex flex-col gap-1.5" role="listbox" aria-label={name} aria-describedby="action-list-hint" tabindex="-1">
+					<span class="pl-0.5 text-[11px] font-medium text-neutral-400" title={about}>{name}</span>
 				<div class="flex flex-row flex-wrap gap-1">
 					{#each actions as action}
 						<div
@@ -109,7 +129,7 @@
 				</div>
 			</div>
 		{/each}
-		{#if filteredCategories.length == 0}
+		{#if shown.length == 0}
 			<p class="py-3 text-neutral-500">{$t("action_list.none", { query })}</p>
 		{/if}
 	</div>

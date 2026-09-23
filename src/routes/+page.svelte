@@ -16,12 +16,15 @@
 	import NoDevicesDetected from "../components/NoDevicesDetected.svelte";
 	import PluginManager from "../components/PluginManager.svelte";
 	import ProfileManager from "../components/ProfileManager.svelte";
+	import ProfilePages from "../components/ProfilePages.svelte";
 	import SettingsView from "../components/SettingsView.svelte";
 	import TitleBar from "../components/TitleBar.svelte";
 
 	let devices: { [id: string]: DeviceInfo } = {};
 	let selectedDevice: string;
 	let selectedProfiles: { [id: string]: Profile } = {};
+		// per deck, its width as drawn, for the page tabs under it
+	let deckWidths: { [id: string]: number } = {};
 
 	$: for (const id of Object.keys(devices)) ensureLook(id);
 
@@ -78,7 +81,9 @@
 		};
 	}
 	$: stageWidth = columnWidth - 56;
-	$: stageHeight = trayHidden ? columnHeight - 38 - 5 - 48 : stageH != null ? stageH - 38 : columnHeight - TRAY_DEFAULT - 38 - 5;
+	// the page tabs under the deck take this much of the stage's height
+	const PAGES_H = 50;
+	$: stageHeight = (trayHidden ? columnHeight - 38 - 5 - 48 : stageH != null ? stageH - 38 : columnHeight - TRAY_DEFAULT - 38 - 5) - PAGES_H;
 
 	initPortBase();
 </script>
@@ -123,7 +128,7 @@
 				<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 				<div
 					bind:this={stageEl}
-					class="flex flex-row justify-center items-center shrink-0 px-7 pt-5 pb-[18px] bg-stage"
+					class="flex flex-col justify-center items-center shrink-0 px-7 pt-5 pb-[18px] bg-stage"
 					class:flex-1={trayHidden}
 					style={!trayHidden && stageH != null ? `height: ${stageH}px;` : ""}
 					on:click={() => {
@@ -131,11 +136,19 @@
 						$inspectedParentAction = null;
 					}}
 				>
-					{#each Object.entries(devices) as [id, device]}
-						{#if device && selectedProfiles[id]}
-							<DeviceView bind:device bind:profile={selectedProfiles[id]} bind:selectedDevice availWidth={stageWidth} availHeight={stageHeight} />
-						{/if}
-					{/each}
+					<div class="flex flex-row justify-center items-center min-h-0">
+						{#each Object.entries(devices) as [id, device]}
+							{#if device && selectedProfiles[id]}
+								<DeviceView bind:device bind:profile={selectedProfiles[id]} bind:selectedDevice bind:deckWidth={deckWidths[id]} availWidth={stageWidth} availHeight={stageHeight} />
+							{/if}
+						{/each}
+					</div>
+					{#if selectedProfiles[selectedDevice]}
+						<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+						<div class="flex justify-center shrink-0 max-w-full pt-[22px]" style="width: {deckWidths[selectedDevice] ? deckWidths[selectedDevice] + 'px' : '100%'};" on:click|stopPropagation>
+							<ProfilePages current={selectedProfiles[selectedDevice].id} />
+						</div>
+					{/if}
 				</div>
 				{#if trayHidden}
 					<div class="flex justify-center shrink-0 pb-3 bg-stage">

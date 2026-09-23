@@ -315,6 +315,17 @@ impl DeviceStores {
 		if all.contains(from_store) { Ok(from_store.clone()) } else { Ok(all.first().unwrap().clone()) }
 	}
 
+		/// A renamed profile that is the one in use stays the one in use.
+	pub fn rename_selected(&mut self, device: &str, old_id: &str, new_id: &str) -> Result<(), anyhow::Error> {
+		if let Some(store) = self.stores.get_mut(device)
+			&& store.value.selected_profile == old_id
+		{
+			store.value.selected_profile = new_id.to_owned();
+			store.save()?;
+		}
+		Ok(())
+	}
+
 	pub fn set_selected_profile(&mut self, device: &str, id: String) -> Result<(), anyhow::Error> {
 		if self.stores.contains_key(device) {
 			let store = self.stores.get_mut(device).unwrap();

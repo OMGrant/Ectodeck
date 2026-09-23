@@ -137,8 +137,10 @@ pub struct Settings {
 	pub autolaunch: bool,
 	pub updatecheck: bool,
 	pub separatewine: bool,
-	pub developer: bool,
+		pub developer: bool,
 	pub disableelgato: bool,
+	/// Each deck's profiles in the order its page tabs show them.
+	pub profile_order: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl Default for Settings {
@@ -155,8 +157,9 @@ impl Default for Settings {
 			updatecheck: option_env!("OPENDECK_DISABLE_UPDATE_CHECK").is_none() && !is_flatpak(),
 			// Consent is given by the user on install so it is OK to have the default be `true`
 			separatewine: false,
-			developer: false,
+						developer: false,
 			disableelgato: false,
+			profile_order: std::collections::HashMap::new(),
 		}
 	}
 }

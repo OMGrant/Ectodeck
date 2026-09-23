@@ -18,8 +18,9 @@
 	// can hold commands ("HTML file…") beside choices without the select
 	// value tricks that some web engines do not honour.
 	//
-	// It comes in three looks: a small button, a full-width field for forms,
-	// and a crumb for the title bar's path.
+		// It comes in these looks: a small button, a full-width field for forms, a
+	// crumb for the title bar's path, an icon, and the page tab in use under
+	// the deck.
 	import CaretDown from "phosphor-svelte/lib/CaretDown";
 	import Check from "phosphor-svelte/lib/Check";
 	import { createEventDispatcher, tick } from "svelte";
@@ -30,7 +31,7 @@
 	export let label: string;
 	export let current: string;
 	export let sections: ChoiceSection[];
-	export let variant: "button" | "field" | "crumb" | "icon" = "button";
+	export let variant: "button" | "field" | "crumb" | "icon" | "tab" = "button";
 
 	const dispatch = createEventDispatcher<{ choose: string }>();
 	let open = false;
@@ -59,7 +60,11 @@
 		const maxHeight = Math.min(320, above ? over : below);
 		const vertical = above ? `bottom: ${innerHeight - r.top + 4}px;` : `top: ${r.bottom + 4}px;`;
 		const horizontal = variant == "icon" ? `right: ${innerWidth - r.right}px;` : `left: ${Math.min(r.left, innerWidth - 200)}px;`;
-		place = `${vertical} ${horizontal} max-height: ${maxHeight}px; min-width: ${variant == "icon" ? 176 : Math.max(r.width, variant == "crumb" ? 240 : 0)}px;`;
+		place = `${vertical} ${horizontal} max-height: ${maxHeight}px; min-width: ${variant == "icon" ? 176 : Math.max(r.width, variant == "crumb" ? 240 : variant == "tab" ? 190 : 0)}px;`;
+	}
+		// for a menu opened another way, such as a right-click elsewhere
+	export async function openMenu() {
+		if (!open) await toggle();
 	}
 	async function toggle() {
 		open = !open;
@@ -100,7 +105,8 @@
 		button: "gap-1.5 h-[30px] px-[11px] font-medium text-neutral-200 bg-neutral-750 hover:bg-neutral-700 border border-neutral-600 rounded-[7px] max-w-56",
 		field: "w-full gap-1.5 h-[30px] pl-2.5 pr-2 text-neutral-200 bg-neutral-750 hover:bg-neutral-700 border border-neutral-700 rounded-[7px]",
 		crumb: "gap-1.5 h-[26px] px-[7px] font-medium text-neutral-200 hover:bg-neutral-700 rounded-md max-w-72",
-		icon: "justify-center w-7 h-7 text-neutral-400 hover:text-neutral-100 hover:bg-neutral-700 rounded-md",
+				icon: "justify-center w-7 h-7 text-neutral-400 hover:text-neutral-100 hover:bg-neutral-700 rounded-md",
+		tab: "gap-[7px] h-7 pl-[5px] pr-2 font-medium whitespace-nowrap text-neutral-100 bg-neutral-700 hover:bg-neutral-600 border border-neutral-600 rounded-[7px] max-w-60",
 	};
 </script>
 

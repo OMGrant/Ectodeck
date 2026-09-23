@@ -15,6 +15,8 @@
 
 	import { t } from "$lib/i18n";
 	import { inspectedInstance } from "$lib/propertyInspector";
+		import { byName, leaf, profileIds } from "$lib/profiles";
+	import { settings } from "$lib/settings";
 
 	import { invoke } from "@tauri-apps/api/core";
 	import { listen } from "@tauri-apps/api/event";
@@ -70,7 +72,8 @@
 				applicationProfiles = applicationProfiles;
 			}
 		}
-		await invoke("delete_profile", { device: device.id, profile: id });
+				await invoke("delete_profile", { device: device.id, profile: id });
+		if (savedOrder?.includes(id)) reorder(savedOrder.filter((p) => p != id));
 		let folder = id.includes("/") ? id.split("/")[0] : "";
 		folders[folder].splice(folders[folder].indexOf(id), 1);
 		folders = folders;
@@ -81,7 +84,7 @@
 	let newId: string = "";
 
 	async function saveRenamedProfile(oldId: string) {
-		if (!renameInput.checkValidity() || !newId) return;
+		if ((renameInput && !renameInput.checkValidity()) || !newId) return;
 		if (newId == oldId) {
 			renamingProfile = null;
 			return;
@@ -178,9 +181,78 @@
 	// a profile in a folder.
 	const NAME = /^[a-zA-Z0-9_ ]+(\/[a-zA-Z0-9_ ]+)?$/;
 	const FOLDER = /^[a-zA-Z0-9_ ]+$/;
-	// Default first, then by name, with numbers in number order ("2" before "10").
-	const byName = (a: string, b: string) => (a == "Default" ? -1 : b == "Default" ? 1 : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-	const leaf = (id: string) => (id.includes("/") ? id.split("/")[1] : id);
+		// The page tabs under the deck read the same list, in the order you gave
+	// them: that order first, then any profile it doesn't hold yet (made in the
+	// Profiles window, or from before there was an order), by name.
+	$: savedOrder = $settings?.profile_order?.[device.id];
+	$: profileIds.set(ordered(Object.values(folders).flat(), savedOrder));
+	function ordered(ids: string[], order: string[] | undefined) {
+		const kept = (order ?? []).filter((id) => ids.includes(id));
+		return [...kept, ...ids.filter((id) => !kept.includes(id)).sort(byName)];
+	}
+	function currentOrder() {
+		return ordered(Object.values(folders).flat(), savedOrder);
+	}
+	export function reorder(ids: string[]) {
+		if (!$settings) return;
+		$settings = { ...$settings, profile_order: { ...($settings.profile_order ?? {}), [device.id]: ids } };
+	}
+
+	// For the page tabs: switch, add, rename and remove, without the Profiles window.
+	export async function select(id: string) {
+		value = id;
+		oldValue = id;
+		await setProfile(id);
+	}
+	// a new profile, named "Profile 2" and so on, switched to at once
+	export async function createNext(): Promise<string> {
+		const all = Object.values(folders).flat();
+		let n = all.length + 1;
+		while (all.includes(`${$t("profile_manager.new_name")} ${n}`)) n++;
+				const id = `${$t("profile_manager.new_name")} ${n}`;
+		reorder([...currentOrder(), id]);
+		await select(id);
+		return id;
+	}
+	export function nameIsValid(id: string) {
+		return NAME.test(id.trim());
+	}
+	export async function renameTo(oldId: string, id: string): Promise<boolean> {
+		id = id.trim();
+		if (!NAME.test(id)) return false;
+		if (id == oldId) return true;
+		if (Object.values(folders).flat().includes(id)) {
+			message($t("profile_manager.rename.exists", { id }), { title: $t("profile_manager.rename.failed"), buttons: { ok: $t("dialog.ok") } });
+			return false;
+		}
+				const wasCurrent = oldId == value;
+		reorder(currentOrder().map((p) => (p == oldId ? id : p)));
+		renamingProfile = oldId;
+		newId = id;
+		await saveRenamedProfile(oldId);
+		if (wasCurrent) await select(id);
+		return true;
+	}
+			export async function duplicate(id: string) {
+		const before = Object.values(folders).flat();
+		const order = currentOrder();
+		await duplicateProfile(id);
+		const copy = Object.values(folders).flat().find((p) => !before.includes(p));
+		if (copy) reorder([...order.slice(0, order.indexOf(id) + 1), copy, ...order.slice(order.indexOf(id) + 1)]);
+	}
+	export function openManager() {
+		showPopup = true;
+	}
+	// removing the profile in use moves to its neighbour first
+	export async function remove(id: string) {
+				const all = currentOrder();
+		if (all.length < 2) return;
+		if (id == value) {
+			const at = all.indexOf(id);
+			await select(all[at + 1] ?? all[at - 1]);
+		}
+		await deleteProfile(id);
+	}
 
 	$: menuSections = [
 		{ heading: $t("profile_manager.menu_heading"), items: (folders[""] ?? []).slice().sort(byName).map((id) => ({ id, label: id, selected: id == value })) },

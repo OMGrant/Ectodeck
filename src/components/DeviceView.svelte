@@ -22,7 +22,10 @@
 	export let selectedDevice: string;
 	// The room the stage gives the deck; it is drawn at whatever scale fits.
 	export let availWidth = 0;
-	export let availHeight = 0;
+		export let availHeight = 0;
+		// the deck's width as drawn, which the page tabs under it span
+	export let deckWidth = 0;
+	$: deckWidth = naturalWidth * fit;
 	let naturalWidth = 0;
 	let naturalHeight = 0;
 	// the deck's size before scaling; a transform leaves the layout box alone
@@ -343,7 +346,7 @@
 					{/each}
 				</div>
 			</div>
-		{:else}
+				{:else}
 		<div class="relative">
 			{#if device.has_background && background}
 				<!-- The display behind the keys, drawn where it physically is. -->
