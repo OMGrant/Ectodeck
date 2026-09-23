@@ -16,6 +16,9 @@
 
 	let categories: { [name: string]: { icon?: string; actions: Action[] } } = {};
 	let plugins: any[] = [];
+	// the selected deck: a deck driver's own actions show only for its decks
+	export let deviceId: string | undefined = undefined;
+	$: foreign = new Set(plugins.filter((p) => p.device_namespace && !(deviceId ?? "").startsWith(p.device_namespace)).map((p) => p.id));
 	export async function reload() {
 		categories = await invoke("get_categories");
 		plugins = await invoke("list_plugins");
@@ -36,6 +39,7 @@
 				if (!categoryName.toLowerCase().includes(lowerCaseQuery)) {
 					actions = actions.filter((action) => action.name.toLowerCase().includes(lowerCaseQuery));
 				}
+				actions = actions.filter((action) => !foreign.has(action.plugin));
 				return [categoryName, { icon, actions }];
 			})
 			.filter(([name, { actions }]) => actions.length > 0 && (!only || name == only));

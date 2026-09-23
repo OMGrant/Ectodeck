@@ -11,6 +11,14 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 	if !action.controllers.contains(&context.controller) {
 		return Ok(None);
 	}
+	// an action from a deck's own driver plugin works on that plugin's decks only
+	if let Ok(manifest) = crate::plugins::manifest::read_manifest(&crate::shared::config_dir().join("plugins").join(&action.plugin)) {
+		if let Some(namespace) = manifest.device_namespace {
+			if !context.device.starts_with(&namespace) {
+				return Ok(None);
+			}
+		}
+	}
 
 	if context.controller == "Encoder" {
 		let _ = crate::shared::initialise_encoder_layout(&mut action, None);

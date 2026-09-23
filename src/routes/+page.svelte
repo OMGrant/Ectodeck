@@ -152,7 +152,7 @@
 					<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-1 rounded-full bg-neutral-700 group-hover:bg-neutral-500 transition-colors"></div>
 				</div>
 				<div class="flex flex-col flex-1 min-h-0" class:hidden={trayHidden}>
-					<ActionList bind:this={$actionList} />
+					<ActionList bind:this={$actionList} deviceId={selectedDevice} />
 				</div>
 			</div>
 

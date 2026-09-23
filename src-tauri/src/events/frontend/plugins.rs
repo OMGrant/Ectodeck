@@ -19,6 +19,9 @@ pub struct PluginInfo {
 	has_settings_interface: bool,
 	builtin: bool,
 	registered: bool,
+	/// For a plugin that drives decks: the prefix of their device ids. Its
+	/// actions belong to those decks only.
+	device_namespace: Option<String>,
 }
 
 #[command]
@@ -55,6 +58,7 @@ pub async fn list_plugins(app: AppHandle) -> Result<Vec<PluginInfo>, Error> {
 				has_settings_interface: manifest.has_settings_interface.unwrap_or(false),
 				builtin: builtins.contains(&id),
 				registered: registered.contains(&id),
+				device_namespace: manifest.device_namespace,
 				id,
 			});
 		}
