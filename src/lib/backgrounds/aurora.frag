@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press sends a surge along the curtain and a ray up to the key. The Background look action turns its colours round the colour wheel.",
+  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press sends a surge along the curtain and a ray up to the key. The Background preset action turns its colours round the colour wheel.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -62,7 +62,7 @@
   ]
 }*/
 
-// the Background look action turns the colours a quarter of the way round
+// the Background preset action turns the colours a quarter of the way round
 // the colour wheel per step, keeping their brightness
 vec3 lookTurn(vec3 c) {
     float a = iLook * 1.5707963;

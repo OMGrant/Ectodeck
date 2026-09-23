@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace from it: the stars stretch into streaks racing out from the key, you ride the blue tunnel for a moment, then drop back out among the stars. The Background look action changes the colour of hyperspace.",
+  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace from it: the stars stretch into streaks racing out from the key, you ride the blue tunnel for a moment, then drop back out among the stars. The Background preset action changes the colour of hyperspace.",
   "INPUTS": [
     { "NAME": "speed", "TYPE": "float", "LABEL": "Cruising speed", "DEFAULT": 1.0, "MIN": 0.1, "MAX": 4.0 },
     { "NAME": "tunnel", "TYPE": "color", "LABEL": "Hyperspace", "DEFAULT": [0.35, 0.55, 1.0, 1] },
@@ -19,7 +19,7 @@ const float STRETCH = 0.7;   // seconds for the stars to pull into streaks
 const float DROP = 3.0;      // when the jump ends
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    // the Background look action: your colour, then red, green and gold
+    // the Background preset action: your colour, then red, green and gold
     int n = int(mod(floor(iLook + 0.5), 4.0));
     vec3 hyper = n == 0 ? tunnel.rgb : n == 1 ? vec3(1.0, 0.3, 0.25) : n == 2 ? vec3(0.35, 1.0, 0.45) : vec3(1.0, 0.8, 0.35);
     vec2 centre = 0.5 * iResolution.xy;

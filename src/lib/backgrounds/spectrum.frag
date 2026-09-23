@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Spectrum: glowing bars that dance to whatever your computer is playing, bass on the left and treble on the right, with the beat pulsing through the background. A key press flashes the bars under it. The Background look action turns its colours round the colour wheel.",
+  "DESCRIPTION": "Spectrum: glowing bars that dance to whatever your computer is playing, bass on the left and treble on the right, with the beat pulsing through the background. A key press flashes the bars under it. The Background preset action turns its colours round the colour wheel.",
   "INPUTS": [
     { "NAME": "low", "TYPE": "color", "LABEL": "Bass", "DEFAULT": [1.0, 0.25, 0.55, 1] },
     { "NAME": "high", "TYPE": "color", "LABEL": "Treble", "DEFAULT": [0.25, 0.8, 1.0, 1] },
@@ -8,7 +8,7 @@
   ]
 }*/
 
-// the Background look action turns the colours a quarter of the way round
+// the Background preset action turns the colours a quarter of the way round
 // the colour wheel per step, keeping their brightness
 vec3 lookTurn(vec3 c) {
     float a = iLook * 1.5707963;

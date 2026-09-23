@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down to the horizon above the key; where it lands, the horizon flashes and a pulse of light races down the grid. The Background look action moves through four colour schemes.",
+  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down to the horizon above the key; where it lands, the horizon flashes and a pulse of light races down the grid. The Background preset action moves through four colour schemes.",
   "INPUTS": [
     { "NAME": "sky", "TYPE": "color", "LABEL": "Sky", "DEFAULT": [0.42, 0.1, 0.55, 1] },
     { "NAME": "sun", "TYPE": "color", "LABEL": "Sun", "DEFAULT": [1.0, 0.82, 0.25, 1] },
@@ -23,7 +23,7 @@ float ridge(float x) {
     return h * (0.35 + 0.65 * smoothstep(0.05, 0.42, abs(x - 0.5)));
 }
 
-// the Background look action moves through colour schemes: the one you set,
+// the Background preset action moves through colour schemes: the one you set,
 // then ocean, jungle and blood moon
 vec3 scheme(vec3 mine, vec3 ocean, vec3 jungle, vec3 blood) {
     int n = int(mod(floor(iLook + 0.5), 4.0));

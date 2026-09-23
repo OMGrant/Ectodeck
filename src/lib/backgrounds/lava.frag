@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Lava Lamp: warm wax rising, merging and splitting in a glowing glass. A key press releases a hot blob that climbs from the key. The Background look action turns its colours round the colour wheel.",
+  "DESCRIPTION": "Lava Lamp: warm wax rising, merging and splitting in a glowing glass. A key press releases a hot blob that climbs from the key. The Background preset action turns its colours round the colour wheel.",
   "INPUTS": [
     { "NAME": "wax", "TYPE": "color", "LABEL": "Wax", "DEFAULT": [1.0, 0.36, 0.12, 1] },
     { "NAME": "glass", "TYPE": "color", "LABEL": "Liquid", "DEFAULT": [0.35, 0.05, 0.3, 1] },
@@ -8,7 +8,7 @@
   ]
 }*/
 
-// the Background look action turns the colours a quarter of the way round
+// the Background preset action turns the colours a quarter of the way round
 // the colour wheel per step, keeping their brightness
 vec3 lookTurn(vec3 c) {
     float a = iLook * 1.5707963;

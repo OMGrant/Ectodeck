@@ -126,8 +126,8 @@ impl openaction::GlobalEventHandler for GlobalEventHandler {
     }
 }
 
-/// The plugin's one action, "Background look": on a key, a press moves the
-/// animated background to its next look; on a dial, turning steps through
+/// The plugin's one action, "Background preset": on a key, a press moves the
+/// animated background to its next preset; on a dial, turning steps through
 /// looks both ways and pressing moves to the next. What a look is belongs to
 /// each background (Milkdrop's presets, the aquarium's time of day, colours).
 const LOOK_ACTION: &str = "com.grantgarrison.opendeck-magtran-m3.look";
@@ -136,7 +136,7 @@ struct ActionEventHandler {}
 impl openaction::ActionEventHandler for ActionEventHandler {
     async fn key_down(&self, event: KeyEvent, _outbound: &mut openaction::OutboundEventManager) -> EventHandlerResult {
         if event.action == LOOK_ACTION {
-            log::info!("Background look: next, on {}", event.device);
+            log::info!("Background preset: next, on {}", event.device);
             crate::frame::input(&event.device, crate::animation::Input::Look { steps: 1 }).await;
         }
         Ok(())

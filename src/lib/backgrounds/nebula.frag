@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other, as a fluid. A key press stirs a broad puff of turbulence into the smoke around the key. The Background look action turns its colours round the colour wheel.",
+  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other, as a fluid. A key press stirs a broad puff of turbulence into the smoke around the key. The Background preset action turns its colours round the colour wheel.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -236,7 +236,7 @@
   ]
 }*/
 
-// the Background look action turns the colours a quarter of the way round
+// the Background preset action turns the colours a quarter of the way round
 // the colour wheel per step, keeping their brightness
 vec3 lookTurn(vec3 c) {
     float a = iLook * 1.5707963;

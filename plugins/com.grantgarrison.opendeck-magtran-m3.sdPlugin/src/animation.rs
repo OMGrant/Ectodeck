@@ -104,7 +104,7 @@ fn encode(s: &str) -> String {
 pub enum Input {
     /// A key pressed or released; centre in panel pixels, top-left origin.
     Key { index: u8, down: bool, x: f32, y: f32 },
-    /// The "Background look" action: steps to the next look (positive) or
+    /// The "Background preset" action: steps to the next preset (positive) or
     /// the previous one. Dials reach a background only through this action,
     /// never by themselves.
     Look { steps: i16 },

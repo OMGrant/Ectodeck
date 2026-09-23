@@ -7,7 +7,7 @@
   Ectodeck's built-in Ink: Pavel Dobryakov's WebGL fluid simulation (MIT),
   with bloom and sun rays. A key press throws a burst of ink from that key;
   slow splashes keep it moving when nobody is pressing. The Background
-  look action moves to the next set of colours.
+  preset action moves to the next set of colours.
 
   Built by scripts/build_backgrounds.py, which inlines the simulation from
   third_party/webgl-fluid; edit this source, not the built page.
@@ -1691,7 +1691,7 @@ function hashCode (s) {
     // the simulation measures from the bottom left
     if (e.detail.down) burst(e.detail.x, 1 - e.detail.y, 0.8);
   });
-  // the Background look action moves to the next set of colours
+  // the Background preset action moves to the next set of colours
   var paletteIndex = Math.round(num('palette'));
   window.addEventListener('ectodeck:look', function (e) {
     paletteIndex = ((paletteIndex + e.detail.steps) % PALETTES.length + PALETTES.length) % PALETTES.length;

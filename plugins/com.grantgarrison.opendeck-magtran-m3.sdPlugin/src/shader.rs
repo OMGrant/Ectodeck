@@ -20,7 +20,7 @@
 //! - `iKeyPresses[8]`: the eight most recent presses, newest first: xy the
 //!   key's centre, z seconds since the press, w the key's index; unused slots
 //!   have w = -1.
-//! - `iLook`: the look chosen with the "Background look" action, counted in
+//! - `iLook`: the preset chosen with the "Background preset" action, counted in
 //!   steps from the start (negative after stepping back). The deck's dials
 //!   reach a shader only through that action; `iDials` is kept, always zero,
 //!   for older shaders.
