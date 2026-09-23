@@ -176,11 +176,16 @@
 		background = await invoke<string | null>("get_device_background", { device: device.id });
 		keyStyle = await invoke<KeyStyle>("get_device_key_style", { device: device.id });
 		animated = await invoke<AnimatedBackground | null>("get_device_animated_background", { device: device.id });
-		// bring a built-in page chosen under an older version up to date
+		// bring a built-in chosen under an older version up to date: a page
 		const current = animated;
 		const page = current?.kind == "web" ? builtinPages.find((p) => p.name == current.name) : undefined;
 		if (current?.kind == "web" && page && !current.url.endsWith("#" + fingerprint(page.html))) {
 			await setAnimated({ ...current, url: await writeBuiltinPage(page) });
+		}
+		// and a built-in shader saved with older code
+		const shader = current?.kind == "shader" ? builtinShaders.find((b) => b.name == current.name) : undefined;
+		if (current?.kind == "shader" && shader && current.source != shader.source) {
+			await setAnimated({ ...current, source: shader.source });
 		}
 	}
 
