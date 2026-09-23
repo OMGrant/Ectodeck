@@ -11,6 +11,7 @@
 
 	import { t } from "$lib/i18n";
 	import { deviceLooks, devicePreviews } from "$lib/deviceLook";
+	import { fits, markFits } from "$lib/dragFits";
 	import { inspectedInstance, inspectedParentAction, placeAction } from "$lib/propertyInspector";
 
 	import { invoke } from "@tauri-apps/api/core";
@@ -42,11 +43,17 @@
 		dataTransfer.effectAllowed = "move";
 		dataTransfer.setData("controller", controller);
 		dataTransfer.setData("position", position.toString());
+		const array = controller == "Encoder" ? profile.sliders : controller == "Infobar" ? profile.infobars : profile.keys;
+		markFits(dataTransfer, array[position]?.children ? [controller] : (array[position]?.action.controllers ?? [controller]));
 	}
 
-	function handleDragOver(event: DragEvent) {
+	function handleDragOver(event: DragEvent, controller: string) {
 		event.preventDefault();
 		if (!event.dataTransfer) return;
+		if (!fits(event.dataTransfer, controller)) {
+			event.dataTransfer.dropEffect = "none";
+			return;
+		}
 		if (event.dataTransfer.types.includes("action")) event.dataTransfer.dropEffect = "copy";
 		else if (event.dataTransfer.types.includes("controller")) event.dataTransfer.dropEffect = "move";
 	}
@@ -320,7 +327,7 @@
 									<Key
 										context={{ device: device.id, profile: profile.id, controller: "Keypad", position: r * device.columns + c }}
 										bind:inslot={profile.keys[r * device.columns + c]}
-										on:dragover={handleDragOver}
+										on:dragover={(event) => handleDragOver(event, "Keypad")}
 										on:drop={(event) => handleDrop(event, "Keypad", r * device.columns + c)}
 										on:dragstart={(event) => handleDragStart(event, "Keypad", r * device.columns + c)}
 										{handlePaste}
@@ -354,7 +361,7 @@
 						<Key
 							context={{ device: device.id, profile: profile.id, controller: "Keypad", position: r * device.columns + c }}
 							bind:inslot={profile.keys[r * device.columns + c]}
-							on:dragover={handleDragOver}
+							on:dragover={(event) => handleDragOver(event, "Keypad")}
 							on:drop={(event) => handleDrop(event, "Keypad", r * device.columns + c)}
 							on:dragstart={(event) => handleDragStart(event, "Keypad", r * device.columns + c)}
 							{handlePaste}
@@ -394,7 +401,7 @@
 						<Key
 							context={{ device: device.id, profile: profile.id, controller: "Encoder", position: i }}
 							bind:inslot={profile.sliders[i]}
-							on:dragover={handleDragOver}
+							on:dragover={(event) => handleDragOver(event, "Encoder")}
 							on:drop={(event) => handleDrop(event, "Encoder", i)}
 							on:dragstart={(event) => handleDragStart(event, "Encoder", i)}
 							{handlePaste}
@@ -409,7 +416,7 @@
 				<Key
 					context={{ device: device.id, profile: profile.id, controller: "Encoder", position: i }}
 					bind:inslot={profile.sliders[i]}
-					on:dragover={handleDragOver}
+					on:dragover={(event) => handleDragOver(event, "Encoder")}
 					on:drop={(event) => handleDrop(event, "Encoder", i)}
 					on:dragstart={(event) => handleDragStart(event, "Encoder", i)}
 					{handlePaste}
@@ -432,7 +439,7 @@
 							<Key
 								context={{ device: device.id, profile: profile.id, controller: "Infobar", position: j }}
 								bind:inslot={profile.infobars[j]}
-								on:dragover={handleDragOver}
+								on:dragover={(event) => handleDragOver(event, "Infobar")}
 								on:drop={(event) => handleDrop(event, "Infobar", j)}
 								on:dragstart={(event) => handleDragStart(event, "Infobar", j)}
 								{handlePaste}
@@ -446,7 +453,7 @@
 				<Key
 					context={{ device: device.id, profile: profile.id, controller: "Keypad", position: device.rows * device.columns + i }}
 					bind:inslot={profile.keys[device.rows * device.columns + i]}
-					on:dragover={handleDragOver}
+					on:dragover={(event) => handleDragOver(event, "Keypad")}
 					on:drop={(event) => handleDrop(event, "Keypad", device.rows * device.columns + i)}
 					on:dragstart={(event) => handleDragStart(event, "Keypad", device.rows * device.columns + i)}
 					{handlePaste}

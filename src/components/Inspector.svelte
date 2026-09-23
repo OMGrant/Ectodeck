@@ -264,9 +264,15 @@
 		{/if}
 
 		{#if (selection.kind == "instance" || (selection.kind == "parent" && typeof $inspectedInstance == "string")) && $inspectorTab == "action" && instance}
-			<div class="flex flex-row items-center gap-1.5 mt-1 mb-1 text-[11px] text-neutral-500 after:flex-1 after:h-px after:bg-neutral-750">
-				{$t("inspector.plugin_settings", { name: pluginName(selection.kind == "instance" ? instance.action.plugin : (instance.children?.find((c) => c.context == $inspectedInstance)?.action.plugin ?? "")) })}
-			</div>
+			{@const shown = selection.kind == "instance" ? instance : instance.children?.find((c) => c.context == $inspectedInstance)}
+			{#if shown?.action.property_inspector}
+				<div class="flex flex-row items-center gap-1.5 mt-1 mb-1 text-[11px] text-neutral-500 after:flex-1 after:h-px after:bg-neutral-750">
+					{$t("inspector.plugin_settings", { name: pluginName(shown.action.plugin) })}
+				</div>
+			{:else if shown}
+				<!-- an action with no settings of its own: say what it does instead -->
+				<p class="mt-1.5 text-[12.5px] leading-normal text-neutral-400">{shown.action.tooltip || $t("inspector.no_settings")}</p>
+			{/if}
 		{/if}
 
 		<PropertyInspectorView

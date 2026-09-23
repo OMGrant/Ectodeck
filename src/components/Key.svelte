@@ -13,6 +13,7 @@
 	import { t } from "$lib/i18n";
 	import { contextKey, copiedItem, inspectedInstance, inspectedParentAction, inspectorTab, keyCommand, openContextMenu } from "$lib/propertyInspector";
 	import { portal } from "$lib/portal";
+	import { fits } from "$lib/dragFits";
 	import { CanvasLock, KEY_CORNER, renderImage } from "$lib/rendererHelper";
 	import { settings } from "$lib/settings";
 
@@ -243,7 +244,7 @@
 		on:dragstart
 		on:dragover
 		on:drop
-		on:dragenter={() => active && (dropping = true)}
+		on:dragenter={(e) => active && context && e.dataTransfer && fits(e.dataTransfer, context.controller) && (dropping = true)}
 		on:dragleave={() => (dropping = false)}
 		on:drop={() => (dropping = false)}
 		on:click|stopPropagation={select}

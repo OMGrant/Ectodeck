@@ -2,7 +2,7 @@
   "Name": "VSDinside MagTran M3",
   "Description": "Device support for the VSDinside MagTran M3 (5548:1020): keys, dials, and the display behind the keys",
   "Author": "Grant Garrison",
-  "Version": "0.8.1",
+  "Version": "0.8.2",
   "PluginUUID": "com.grantgarrison.opendeck-magtran-m3",
   "CodePaths": {
     "x86_64-unknown-linux-gnu": "x86_64-unknown-linux-gnu/bin/opendeck-magtran-m3",
@@ -21,7 +21,7 @@
       "Name": "Background preset",
       "UUID": "com.grantgarrison.opendeck-magtran-m3.look",
       "Icon": "icons/look",
-      "Tooltip": "Switches the animated background to its next preset. On a key, each press moves to the next; on a dial, turning steps through the presets.",
+      "Tooltip": "Switches the animated background to another preset. On a key, each press moves to the next. On a dial, turn right to go forward and left to go back; pressing the dial moves to the next.",
       "Controllers": [
         "Keypad",
         "Encoder"

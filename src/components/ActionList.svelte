@@ -8,6 +8,7 @@
 	import { getWebserverUrl } from "$lib/ports";
 	import { strippedIcon } from "$lib/rendererHelper";
 	import { copiedItem, placeAction } from "$lib/propertyInspector";
+	import { markFits } from "$lib/dragFits";
 	import { localisations } from "$lib/settings";
 	import { PRODUCT_NAME, pluginManager } from "$lib/singletons";
 
@@ -85,6 +86,7 @@
 								if (!event.dataTransfer) return;
 								event.dataTransfer.effectAllowed = "copy";
 								event.dataTransfer.setData("action", JSON.stringify(action));
+								markFits(event.dataTransfer, action.controllers);
 							}}
 							on:dblclick={() => place(action)}
 							on:keydown={(event) => {

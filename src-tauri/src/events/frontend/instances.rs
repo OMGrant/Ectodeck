@@ -85,10 +85,6 @@ fn instance_images_dir(context: &ActionContext) -> std::path::PathBuf {
 
 #[command]
 pub async fn move_instance(source: Context, destination: Context, retain: bool) -> Result<Option<ActionInstance>, Error> {
-	if source.controller != destination.controller {
-		return Ok(None);
-	}
-
 	{
 		let locks = crate::store::profiles::acquire_locks().await;
 		let dst = crate::store::profiles::get_slot(&destination, &locks).await?;
@@ -103,6 +99,15 @@ pub async fn move_instance(source: Context, destination: Context, retain: bool) 
 	let Some(mut new) = src.clone() else {
 		return Ok(None);
 	};
+	// Between a key and a dial, an action moves only if it works on both.
+	if source.controller != destination.controller {
+		if !new.action.controllers.contains(&destination.controller) || new.children.is_some() {
+			return Ok(None);
+		}
+		if destination.controller == "Encoder" {
+			let _ = crate::shared::initialise_encoder_layout(&mut new.action, None);
+		}
+	}
 	new.context = ActionContext::from_context(destination.clone(), 0);
 	if let Some(children) = &mut new.children {
 		for (index, instance) in children.iter_mut().enumerate() {
