@@ -11,6 +11,39 @@
 	color-scheme: dark;
 }
 
+/* The window is transparent and draws itself as a rounded rectangle, with a
+   hairline edge since the compositor gives undecorated windows no shadow.
+   Maximised, it squares off to fill the screen. */
+html,
+body {
+	background: transparent;
+}
+
+.app-window {
+	position: relative;
+	border-radius: 10px;
+	overflow: hidden;
+}
+
+/* the edge sits above the content, which would otherwise paint over it */
+.app-window::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	box-shadow: inset 0 0 0 1px var(--color-neutral-700);
+	pointer-events: none;
+	z-index: 100;
+}
+
+:root[data-maximized] .app-window {
+	border-radius: 0;
+}
+
+:root[data-maximized] .app-window::after {
+	display: none;
+}
+
 .wordmark {
 	font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
 	font-weight: 600;

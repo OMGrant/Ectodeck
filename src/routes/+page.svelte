@@ -26,9 +26,9 @@
 
 <svelte:window on:dragover={(event) => event.preventDefault()} on:drop={(event) => event.preventDefault()} />
 
-<div class="flex flex-col h-screen">
+<div class="app-window flex flex-col h-screen bg-neutral-800">
 <TitleBar />
-<div class="flex flex-row flex-1 min-h-0">
+<div class="relative flex flex-row flex-1 min-h-0">
 	<div class="flex flex-col grow min-w-0">
 		<nav class="flex flex-row justify-between items-center p-3" class:hidden={$inspectedParentAction}>
 			<div class="flex flex-col items-start space-y-1">

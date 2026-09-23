@@ -15,6 +15,10 @@
 	let maximized = false;
 	let unlisten: (() => void) | undefined;
 
+	// The window has rounded corners except when maximised; the page reads
+	// this attribute to square them off.
+	$: if (typeof document != "undefined") document.documentElement.toggleAttribute("data-maximized", maximized);
+
 	onMount(async () => {
 		maximized = await appWindow.isMaximized();
 		unlisten = await appWindow.onResized(async () => (maximized = await appWindow.isMaximized()));
@@ -29,7 +33,7 @@
 	const button = "flex items-center justify-center w-10 h-full text-neutral-400 hover:text-neutral-100 transition-colors";
 </script>
 
-<header class="relative flex flex-row items-center h-9 shrink-0 bg-neutral-900 border-b border-neutral-700 select-none" data-tauri-drag-region>
+<header class="relative flex flex-row items-center h-9 shrink-0 bg-neutral-800 border-b border-neutral-700 select-none" data-tauri-drag-region>
 	<div class="absolute inset-0 flex flex-row items-center justify-center gap-2 pointer-events-none">
 		<img src={mark} alt="" class="w-4 h-4" draggable="false" />
 		<span class="wordmark text-sm text-neutral-100">Ectodeck</span>
