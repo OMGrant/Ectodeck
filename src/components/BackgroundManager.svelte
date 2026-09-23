@@ -371,6 +371,17 @@
 </script>
 
 {#if device.has_background}
+	<!-- key tiles first: on the deck they sit above the background -->
+	<section class="insp-sect">
+		<h4>{$t("device_view.key_background")}</h4>
+		<div class="mini w-fit" role="radiogroup" aria-label={$t("device_view.key_background")}>
+			{#each backdropOptions as { value, label }}
+				<button role="radio" aria-checked={keyStyle.backdrop === value} class:on={keyStyle.backdrop === value} on:click={() => setStyle({ backdrop: value })}>{$t(label)}</button>
+			{/each}
+		</div>
+		<p class="mt-1.5 text-xs text-neutral-500">{$t("device_view.key_background.hint")}</p>
+	</section>
+
 	<section class="insp-sect">
 		<h4>{$t("device_view.background")}</h4>
 		<div class="flex flex-row items-center gap-3">
@@ -463,15 +474,5 @@
 		<input type="file" accept="image/*" class="hidden" bind:this={fileInput} on:change={choose} />
 		<input type="file" accept=".html,.htm,text/html" class="hidden" bind:this={pageInput} on:change={choosePage} />
 		<input type="file" accept=".frag,.glsl,.fs,.txt" class="hidden" bind:this={shaderInput} on:change={chooseShader} />
-	</section>
-
-	<section class="insp-sect">
-		<h4>{$t("device_view.key_background")}</h4>
-		<div class="mini w-fit" role="radiogroup" aria-label={$t("device_view.key_background")}>
-			{#each backdropOptions as { value, label }}
-				<button role="radio" aria-checked={keyStyle.backdrop === value} class:on={keyStyle.backdrop === value} on:click={() => setStyle({ backdrop: value })}>{$t(label)}</button>
-			{/each}
-		</div>
-		<p class="mt-1.5 text-xs text-neutral-500">{$t("device_view.key_background.hint")}</p>
 	</section>
 {/if}
