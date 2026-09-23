@@ -18,7 +18,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -26,9 +26,16 @@ use std::{
 
 use crate::background::{PANEL_HEIGHT, PANEL_WIDTH};
 
-/// Frames per second. The deck shows more, but 30 is indistinguishable from
-/// 60 on it and costs half as much.
+/// Frames per second unless the background's settings choose another rate
+/// with a reserved `fps` value: 15, 30, 45 or 60.
 pub const FPS: u32 = 30;
+
+pub fn fps_of(params: &Params) -> u32 {
+    match params.get("fps").and_then(|v| v.as_f64()).map(|f| f.round() as u32) {
+        Some(f @ (15 | 30 | 45 | 60)) => f,
+        _ => FPS,
+    }
+}
 
 pub type Params = serde_json::Map<String, serde_json::Value>;
 
@@ -121,6 +128,8 @@ impl Interaction {
 }
 
 pub struct Animation {
+    /// frames a second, read by the render thread and the deck's frame loop
+    pub fps: Arc<AtomicU32>,
     params: Arc<Mutex<Params>>,
     interaction: Arc<Mutex<Interaction>>,
     latest: Arc<Mutex<Option<RgbImage>>>,
@@ -132,6 +141,7 @@ pub struct Animation {
 
 impl Animation {
     pub fn start(source: Source) -> Animation {
+        let fps = Arc::new(AtomicU32::new(fps_of(source.params())));
         let params = Arc::new(Mutex::new(source.params().clone()));
         let interaction = Arc::new(Mutex::new(Interaction::default()));
         let latest = Arc::new(Mutex::new(None));
@@ -139,13 +149,13 @@ impl Animation {
         let paused = Arc::new(AtomicBool::new(false));
         let chrome = Arc::new(Mutex::new(None));
         let (l, s, p, c) = (latest.clone(), stop.clone(), paused.clone(), chrome.clone());
-        let (pr, ia) = (params.clone(), interaction.clone());
+        let (pr, ia, rate) = (params.clone(), interaction.clone(), fps.clone());
         let thread = std::thread::Builder::new()
             .name("animation".into())
             .spawn(move || {
                 match source {
                     Source::Shader { code, .. } => {
-                        if let Err(e) = run_shader(&code, &pr, &ia, &l, &s, &p) {
+                        if let Err(e) = run_shader(&code, &pr, &ia, &l, &s, &p, &rate) {
                             log::error!("Shader background stopped: {e}");
                         }
                     }
@@ -163,7 +173,7 @@ impl Animation {
                         let mut delay = Duration::from_secs(2);
                         while !s.load(Ordering::SeqCst) {
                             let started = Instant::now();
-                            if let Err(e) = run_web(&url, &l, &s, &p, &c) {
+                            if let Err(e) = run_web(&url, &l, &s, &p, &c, &rate) {
                                 log::error!("Web background stopped: {e}");
                             }
                             if let Ok(mut chrome) = c.lock() {
@@ -184,7 +194,7 @@ impl Animation {
                 }
             })
             .ok();
-        Animation { params, interaction, latest, stop, paused, chrome, thread }
+        Animation { fps, params, interaction, latest, stop, paused, chrome, thread }
     }
 
     /// Adjust the parameters of the running animation. A shader picks them up
@@ -192,6 +202,17 @@ impl Animation {
     pub fn set_params(&self, source: &Source) {
         if let Ok(mut p) = self.params.lock() {
             *p = source.params().clone();
+        }
+        let fps = fps_of(source.params());
+        if self.fps.swap(fps, Ordering::SeqCst) != fps {
+            // the page's frames come at a rate set when the screencast starts
+            if let Ok(mut chrome) = self.chrome.lock() {
+                if let Some(c) = chrome.as_mut() {
+                    c.fps = fps;
+                    let _ = c.stop_screencast();
+                    let _ = c.start_screencast();
+                }
+            }
         }
         if let Source::Web { url, params } = source {
             if let Ok(mut chrome) = self.chrome.lock() {
@@ -272,11 +293,11 @@ fn run_shader(
     latest: &Mutex<Option<RgbImage>>,
     stop: &AtomicBool,
     paused: &AtomicBool,
+    fps: &AtomicU32,
 ) -> Result<(), String> {
     let mut renderer = crate::shader::ShaderRenderer::new(code, PANEL_WIDTH, PANEL_HEIGHT)?;
     log::info!("Shader background running");
     let mut tap = if crate::audio::wanted_by_shader(code) { crate::audio::AudioTap::start() } else { None };
-    let period = Duration::from_secs_f64(1.0 / FPS as f64);
     let mut clock = 0.0f32;
     let mut last = Instant::now();
     while !stop.load(Ordering::SeqCst) {
@@ -299,6 +320,7 @@ fn run_shader(
         if let Ok(mut l) = latest.lock() {
             *l = Some(frame);
         }
+        let period = Duration::from_secs_f64(1.0 / fps.load(Ordering::SeqCst) as f64);
         let spent = now.elapsed();
         if spent < period {
             std::thread::sleep(period - spent);
@@ -337,6 +359,8 @@ pub struct ChromeHandle {
     writer: std::fs::File,
     session: String,
     next_id: u64,
+    /// frames a second to ask the screencast for
+    fps: u32,
 }
 
 impl ChromeHandle {
@@ -356,7 +380,7 @@ impl ChromeHandle {
         // the page runs at 60; every second frame gives the 30 we send
         self.send(
             "Page.startScreencast",
-            serde_json::json!({ "format": "jpeg", "quality": 85, "maxWidth": PANEL_WIDTH, "maxHeight": PANEL_HEIGHT, "everyNthFrame": 60 / FPS }),
+            serde_json::json!({ "format": "jpeg", "quality": 85, "maxWidth": PANEL_WIDTH, "maxHeight": PANEL_HEIGHT, "everyNthFrame": (60 / self.fps).max(1) }),
             true,
         )
     }
@@ -428,6 +452,7 @@ fn run_web(
     stop: &AtomicBool,
     paused: &AtomicBool,
     slot: &Mutex<Option<ChromeHandle>>,
+    fps: &AtomicU32,
 ) -> Result<(), String> {
     use std::os::unix::process::CommandExt;
 
@@ -487,7 +512,7 @@ fn run_web(
     let writer = unsafe { std::fs::File::from_raw_fd(to_chrome_w) };
     let mut reader = BufReader::new(unsafe { std::fs::File::from_raw_fd(from_chrome_r) });
 
-    let mut handle = ChromeHandle { child, writer, session: String::new(), next_id: 0 };
+    let mut handle = ChromeHandle { child, writer, session: String::new(), next_id: 0, fps: fps.load(Ordering::SeqCst) };
     let mut read = move || -> Result<serde_json::Value, String> {
         let mut buf = Vec::new();
         let n = reader.read_until(0, &mut buf).map_err(|e| e.to_string())?;

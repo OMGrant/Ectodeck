@@ -284,5 +284,8 @@
 	"instance_editor.tile.black_hint": "This deck has no screen behind its keys, so keys sit on black unless you pick a colour.",
 	"device_view.animation.group.scenes": "Scenes",
 	"device_view.animation.group.abstract": "Abstract",
-	"device_view.animation.group.music": "Music · listens to what's playing"
+	"device_view.animation.group.music": "Music · listens to what's playing",
+	"device_view.fps": "Frame rate",
+	"device_view.fps.hint": "Frames a second on the deck. Higher is smoother and uses more of the computer's power.",
+	"device_view.bg_brightness": "Brightness"
 }

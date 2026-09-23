@@ -303,7 +303,7 @@ pub async fn handle_background_preview(device_id: &str, evt: SetImageEvent) -> R
 }
 
 /// The key style chosen in OpenDeck, sent as a `setImage` with a "KeyStyle"
-/// controller whose image field carries JSON: `{"backdrop":bool}`.
+/// controller whose image field carries JSON: `{"backdrop":bool,"background_brightness":0.1-1}`.
 pub async fn handle_key_style(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {
     let v: serde_json::Value = evt
         .image
@@ -313,6 +313,7 @@ pub async fn handle_key_style(device_id: &str, evt: SetImageEvent) -> Result<(),
     let d = crate::frame::KeyStyle::default();
     let style = crate::frame::KeyStyle {
         backdrop: v.get("backdrop").and_then(|b| b.as_bool()).unwrap_or(d.backdrop),
+        background_brightness: v.get("background_brightness").and_then(|b| b.as_f64()).map(|b| b as f32).unwrap_or(d.background_brightness),
     };
     crate::frame::set_style(device_id, style).await;
     Ok(())

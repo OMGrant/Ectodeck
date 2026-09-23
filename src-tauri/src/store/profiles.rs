@@ -227,15 +227,22 @@ pub enum AnimatedBackground {
 }
 
 /// Whether a key's image sits on its own black square or straight on the
-/// display behind the keys.
+/// display behind the keys, and how bright that display's background is
+/// drawn (the keys keep their own brightness).
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct KeyStyle {
 	pub backdrop: bool,
+	#[serde(default = "full_brightness")]
+	pub background_brightness: f32,
+}
+
+fn full_brightness() -> f32 {
+	1.0
 }
 
 impl Default for KeyStyle {
 	fn default() -> Self {
-		KeyStyle { backdrop: true }
+		KeyStyle { backdrop: true, background_brightness: 1.0 }
 	}
 }
 

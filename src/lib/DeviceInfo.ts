@@ -24,6 +24,8 @@ export type PanelInfo = {
 
 export type KeyStyle = {
 	backdrop: boolean;
+	// 0.1 to 1: how bright the background is drawn behind the keys
+	background_brightness?: number;
 };
 
 // A background rendered live: a web page (a URL, or the path of an HTML file

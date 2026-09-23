@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star from above the key and a pulse of light racing down the grid. The first dial speeds up the ride.",
+  "DESCRIPTION": "Synthwave: a striped sun setting behind neon mountains over an endless grid. A key press sends a shooting star down to the horizon above the key; where it lands, the horizon flashes and a pulse of light races down the grid. The first dial speeds up the ride.",
   "INPUTS": [
     { "NAME": "sky", "TYPE": "color", "LABEL": "Sky", "DEFAULT": [0.42, 0.1, 0.55, 1] },
     { "NAME": "sun", "TYPE": "color", "LABEL": "Sun", "DEFAULT": [1.0, 0.82, 0.25, 1] },
@@ -13,6 +13,7 @@ float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 float noise(float x) { float i = floor(x), f = fract(x); return mix(hash(vec2(i, 0.0)), hash(vec2(i + 1.0, 0.0)), f * f * (3.0 - 2.0 * f)); }
 
 const float HORIZON = 0.42; // as a fraction of the height, from the bottom
+const float FLIGHT = 0.55; // seconds from a press to the star landing
 
 // the ridge line of the mountains, in picture heights above the horizon
 float ridge(float x) {
@@ -70,29 +71,42 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // the sun's reflection on the floor
         col += sun.rgb * vec3(1.0, 0.4, 0.6) * 0.25 * exp(-abs(uv.x - 0.5) * 9.0) * (1.0 - depth);
 
-        // press pulses: a band of light racing down the grid from the horizon
+        // press pulses: a band of light racing down the grid, from the moment the star lands
         for (int i = 0; i < 8; i++) {
             vec4 p = iKeyPresses[i];
-            if (p.w < 0.0 || p.z > 2.0) continue;
-            float front = p.z / 1.3;                          // depth reached so far
+            float since = p.z - FLIGHT;
+            if (p.w < 0.0 || since < 0.0 || since > 2.0) continue;
+            float front = since / 1.3;                        // depth reached so far
             float band = exp(-pow((depth - front) * 14.0, 2.0));
             float lane = exp(-pow((uv.x - p.x / iResolution.x) * aspect * 4.0 / max(depth, 0.15), 2.0));
-            col += grid.rgb * band * (0.35 + 0.8 * lane) * line * 2.5 * (1.0 - p.z / 2.0);
+            col += grid.rgb * band * (0.35 + 0.8 * lane) * line * 2.5 * (1.0 - since / 2.0);
         }
     }
 
-    // shooting stars from above each pressed key
+    // shooting stars: each falls from high up to the horizon above its key,
+    // and where it lands the horizon flashes
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
-        if (p.w < 0.0 || p.z > 1.6) continue;
-        vec2 start = vec2(p.x / iResolution.x * aspect, 1.02);
-        vec2 dir = normalize(vec2(-0.55 + hash(vec2(p.w, 3.0)) * 0.3, -0.45));
-        vec2 head = start + dir * p.z * 0.9;
+        if (p.w < 0.0 || p.z > FLIGHT + 1.2) continue;
+        float kx = p.x / iResolution.x * aspect;
+        vec2 land = vec2(kx, HORIZON);
+        vec2 start = land + vec2(0.35 + hash(vec2(p.w, 3.0)) * 0.15, 0.62);
+        vec2 dir = normalize(land - start);
+        float k = clamp(p.z / FLIGHT, 0.0, 1.0);
+        vec2 head = mix(start, land, k * k);                  // speeding up as it falls
         vec2 q = vec2(uv.x * aspect, uv.y) - head;
-        float along = dot(q, -dir), across = abs(dot(q, vec2(-dir.y, dir.x)));
-        float trail = step(0.0, along) * exp(-along * 7.0) * exp(-across * 500.0);
-        float headGlow = exp(-length(q) * 90.0);
-        col += vec3(1.0, 0.9, 1.0) * (trail + headGlow) * smoothstep(1.6, 1.0, p.z) * step(HORIZON, uv.y);
+        if (p.z < FLIGHT) {
+            float along = dot(q, -dir), across = abs(dot(q, vec2(-dir.y, dir.x)));
+            float trail = step(0.0, along) * exp(-along * 6.0) * exp(-across * 450.0);
+            col += vec3(1.0, 0.9, 1.0) * (trail + exp(-length(q) * 90.0)) * step(HORIZON, uv.y);
+        }
+        // the impact: a flash on the horizon, spreading along it
+        float since = p.z - FLIGHT;
+        if (since > 0.0) {
+            vec2 d = vec2(uv.x * aspect, uv.y) - land;
+            float fade = exp(-since * 3.0);
+            col += mix(sun.rgb, vec3(1.0), 0.5) * fade * (exp(-length(d * vec2(1.0, 4.0)) * 14.0) * 1.6 + exp(-abs(d.y) * 160.0) * exp(-abs(d.x) * (3.0 / (since + 0.1))) * 0.9);
+        }
     }
 
     fragColor = vec4(col, 1.0);

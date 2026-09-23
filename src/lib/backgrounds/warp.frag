@@ -1,8 +1,8 @@
 /*{
-  "DESCRIPTION": "Warp: flying through a field of stars past a faint nebula. A key press jumps to hyperspace for a moment: the stars stretch into streaks and the view flashes blue. The first dial sets the cruising speed.",
+  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace from it: the stars stretch into streaks racing out from the key, you ride the blue tunnel for a moment, then drop back out among the stars. The first dial sets the cruising speed.",
   "INPUTS": [
-    { "NAME": "speed", "TYPE": "float", "LABEL": "Speed", "DEFAULT": 1.0, "MIN": 0.1, "MAX": 4.0 },
-    { "NAME": "tint", "TYPE": "color", "LABEL": "Nebula", "DEFAULT": [0.25, 0.35, 0.9, 1] },
+    { "NAME": "speed", "TYPE": "float", "LABEL": "Cruising speed", "DEFAULT": 1.0, "MIN": 0.1, "MAX": 4.0 },
+    { "NAME": "tunnel", "TYPE": "color", "LABEL": "Hyperspace", "DEFAULT": [0.35, 0.55, 1.0, 1] },
     { "NAME": "density", "TYPE": "float", "LABEL": "Stars", "DEFAULT": 1.0, "MIN": 0.3, "MAX": 2.0 }
   ]
 }*/
@@ -14,48 +14,68 @@ float noise(vec2 p) {
     return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
 }
 
+// the jump, from the newest press: stretch, tunnel, drop out
+const float STRETCH = 0.7;   // seconds for the stars to pull into streaks
+const float DROP = 3.0;      // when the jump ends
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
-    // hyperspace: how far into a jump we are, from the newest press
-    float jump = 0.0;
+    vec2 centre = 0.5 * iResolution.xy;
     vec4 p = iKeyPresses[0];
-    if (p.w >= 0.0 && p.z < 2.2) jump = smoothstep(0.0, 0.35, p.z) * smoothstep(2.2, 1.2, p.z);
-    float cruise = speed * max(0.2, 1.0 + iDials.x * 0.12);
-    float travel = iTime * cruise * 0.35;
+    bool jumping = p.w >= 0.0 && p.z < DROP + 0.6;
+    float z = jumping ? p.z : 1e6;
+    float stretch = smoothstep(0.0, STRETCH, z) * (1.0 - smoothstep(DROP - 0.05, DROP + 0.05, z));
+    float inTunnel = smoothstep(STRETCH - 0.1, STRETCH + 0.3, z) * (1.0 - smoothstep(DROP - 0.4, DROP, z));
+    float flash = z > DROP ? exp(-(z - DROP) * 7.0) : exp(-z * 12.0) * 0.6;
 
-    // a faint nebula, drifting
-    float n = noise(uv * 2.5 + vec2(travel * 0.05, 0.0)) * noise(uv * 5.0 - travel * 0.03);
-    vec3 col = tint.rgb * n * 0.35 + vec3(0.005, 0.005, 0.02);
+    // the stars race out from the pressed key
+    vec2 vp = jumping ? mix(centre, p.xy, smoothstep(0.0, 0.15, z)) : centre;
+    vec2 d = fragCoord - vp;
+    float r = length(d) / iResolution.y;
+    float a = atan(d.y, d.x) / 6.2831853 + 0.5;
 
-    // stars in layers: each layer's stars sit on a grid of directions and
-    // come toward the viewer, streaking longer the faster we go
-    float stretch = 0.02 * cruise + jump * 0.9;
-    for (int layer = 0; layer < 5; layer++) {
-        float fl = float(layer);
-        float z = fract(travel * 0.25 + fl / 5.0);          // 0 far, 1 at the viewer
-        float scale = mix(28.0, 0.8, z);
-        vec2 q = uv * scale;
-        vec2 cell = floor(q);
-        for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
-            vec2 c = cell + vec2(dx, dy);
-            float h = hash(c + fl * 17.0);
-            if (h > 0.18 * density) continue;
-            vec2 star = (c + vec2(hash(c + 3.1), hash(c + 7.7))) / scale;  // its position on screen
-            // the streak runs from the star back toward the centre
-            vec2 dir = normalize(star + 1e-4);
-            vec2 d = uv - star;
-            float along = dot(d, -dir), across = abs(dot(d, vec2(-dir.y, dir.x)));
-            float len = stretch * length(star) * (0.4 + z);
-            float streak = smoothstep(len + 0.002, 0.0, along) * step(-0.003, along);
-            float size = 0.0012 + 0.003 * z;
-            float glow = exp(-across / size) * max(streak, exp(-length(d) / size));
-            float fade = smoothstep(0.0, 0.25, z) * smoothstep(1.0, 0.85, z);
-            vec3 tintStar = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.9, 0.8), hash(c + 2.2));
-            col += tintStar * glow * fade * (0.8 + jump * 1.5);
-        }
+    // how far we have travelled: cruising, plus the distance of every jump
+    float travel = iTime * 0.04 * speed * max(0.2, 1.0 + iDials.x * 0.12);
+    for (int i = 0; i < 8; i++) {
+        vec4 k = iKeyPresses[i];
+        if (k.w < 0.0) continue;
+        travel += 0.9 * clamp(k.z - STRETCH, 0.0, DROP - STRETCH) + 0.25 * clamp(k.z, 0.0, STRETCH) * clamp(k.z, 0.0, STRETCH);
     }
-    // the jump's flash and tunnel
-    col += vec3(0.3, 0.5, 1.0) * jump * 0.35 * smoothstep(0.9, 0.0, length(uv));
-    col += vec3(0.6, 0.8, 1.0) * exp(-p.z * 8.0) * step(0.0, p.w) * 0.5;
+
+    vec3 col = vec3(0.0, 0.004, 0.012);
+    // a faint nebula far behind, only when cruising
+    col += tunnel.rgb * 0.06 * noise(fragCoord / 140.0 + iTime * 0.01) * (1.0 - inTunnel);
+
+    // stars in three layers of radial sectors; each sector holds at most one
+    // star, moving outward, drawn as a streak whose length is the jump's stretch
+    for (int layer = 0; layer < 3; layer++) {
+        float fl = float(layer);
+        float N = 220.0 + fl * 180.0;
+        float sector = floor(a * N);
+        float seed = hash(vec2(sector, fl * 13.0));
+        if (seed > 0.5 * density) continue;
+        float pace = 0.5 + seed * 1.5;
+        float s = fract(seed * 37.0 + travel * pace);
+        float rad = s * s * 1.4;                                    // accelerates outward, like perspective
+        float len = 0.004 + stretch * (0.12 + 0.8 * rad) + inTunnel * 0.4 * rad;
+        // across the sector: the star's thickness in pixels
+        float across = abs(fract(a * N) - 0.5) * 6.2831853 * r / N * iResolution.y;
+        float thick = 0.6 + 1.4 * s + stretch * 0.6;
+        float body = exp(-across * across / (thick * thick));
+        float along = (rad - r) / max(len, 1e-4);                   // 0 at the head, 1 at the tail
+        float streak = step(0.0, along) * step(along, 1.0) * mix(1.0, 1.0 - along, stretch * 0.7);
+        float head = exp(-pow((r - rad) * iResolution.y / thick, 2.0));
+        float bright = (streak * (0.55 + 0.45 * stretch) + head) * body * smoothstep(0.0, mix(0.35, 0.08, stretch), rad);
+        vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), tunnel.rgb, 0.55), inTunnel);
+        col += tint * bright * (0.6 + 0.4 * seed);
+    }
+
+    // inside the tunnel: a blue glow and slow swirling light around you
+    if (inTunnel > 0.0) {
+        float swirl = noise(vec2(a * 40.0 + z * 0.8, log(r + 0.02) * 3.0 - z * 4.0));
+        col += tunnel.rgb * inTunnel * (0.12 + 0.35 * swirl * smoothstep(0.02, 0.4, r));
+        col += vec3(0.9, 0.95, 1.0) * inTunnel * 0.25 * exp(-r * 12.0);
+    }
+    // the flash of entering and leaving
+    col += vec3(0.8, 0.9, 1.0) * flash * 0.6;
     fragColor = vec4(col, 1.0);
 }

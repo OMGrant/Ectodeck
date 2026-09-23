@@ -305,12 +305,12 @@
 				{#if device.has_background && animated}
 					<!-- The live background, as the plugin renders it for the deck. -->
 					{#if preview}
-						<img src={preview} alt="" aria-hidden="true" class="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none" />
+						<img src={preview} alt="" aria-hidden="true" class="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none" style="filter: brightness({keyStyle.background_brightness ?? 1})" />
 					{:else}
 						<div class="absolute inset-0 rounded-xl bg-neutral-900 pointer-events-none" aria-hidden="true"></div>
 					{/if}
 				{:else if device.has_background && background}
-					<img src={background} alt="" aria-hidden="true" class="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none" />
+					<img src={background} alt="" aria-hidden="true" class="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none" style="filter: brightness({keyStyle.background_brightness ?? 1})" />
 				{/if}
 				<div role="rowgroup" class="contents">
 					{#each { length: device.rows } as _, r}

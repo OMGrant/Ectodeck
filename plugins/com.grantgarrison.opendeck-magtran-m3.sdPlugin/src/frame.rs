@@ -38,11 +38,14 @@ pub struct KeyStyle {
     /// key windows do. Off, the panel background shows through wherever the
     /// image is transparent.
     pub backdrop: bool,
+    /// How bright the background is drawn under the keys, 0.1 to 1. The keys
+    /// themselves stay at full strength.
+    pub background_brightness: f32,
 }
 
 impl Default for KeyStyle {
     fn default() -> Self {
-        KeyStyle { backdrop: true }
+        KeyStyle { backdrop: true, background_brightness: 1.0 }
     }
 }
 
@@ -270,7 +273,9 @@ pub async fn set_paused(id: &str, paused: bool) {
 /// Send a frame of the animation, keys on top, FPS times a second, for as
 /// long as the device has an animated background.
 async fn animate(id: String, frame: Arc<Mutex<Frame>>) {
-    let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / FPS as f64));
+    let rate = |f: &Frame| f.animation.as_ref().map(|a| a.fps.load(std::sync::atomic::Ordering::SeqCst)).unwrap_or(FPS);
+    let mut fps = rate(&*frame.lock().await);
+    let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / fps as f64));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut count = 0u32;
     loop {
@@ -279,13 +284,20 @@ async fn animate(id: String, frame: Arc<Mutex<Frame>>) {
         let lay = layout();
         let (picture, clear_windows, preview) = {
             let mut f = frame.lock().await;
-            let Some(animation) = &f.animation else {
+            if f.animation.is_none() {
                 f.animating = false;
                 return;
-            };
+            }
             if f.paused {
                 continue;
             }
+            let now = rate(&f);
+            if now != fps {
+                fps = now;
+                ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / fps as f64));
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            }
+            let Some(animation) = &f.animation else { continue };
             let Some(background) = animation.latest() else { continue };
             let preview = (f.preview && count % PREVIEW_EVERY == 0).then(|| background.clone());
             let picture = render_with(&mut f, &lay, Some(background));
@@ -454,6 +466,11 @@ fn render_with(frame: &mut Frame, layout: &Layout, background: Option<RgbImage>)
         Some(bg) => bg,
         None => RgbImage::new(PANEL_WIDTH, PANEL_HEIGHT),
     };
+    let dim = frame.style.background_brightness.clamp(0.1, 1.0);
+    if dim < 0.999 {
+        let k = (dim * 256.0) as u32;
+        canvas.pixels_mut().for_each(|p| p.0.iter_mut().for_each(|c| *c = ((*c as u32 * k) >> 8) as u8));
+    }
     let key = layout.key_px();
     if frame.tile_size != key {
         frame.tiles.iter_mut().for_each(|t| *t = None);

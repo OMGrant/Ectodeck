@@ -27,7 +27,6 @@
 	import synthwave from "$lib/backgrounds/synthwave.frag?raw";
 	import lava from "$lib/backgrounds/lava.frag?raw";
 	import warp from "$lib/backgrounds/warp.frag?raw";
-	import life from "$lib/backgrounds/life.frag?raw";
 	import spectrum from "$lib/backgrounds/spectrum.frag?raw";
 	type Group = "scenes" | "abstract" | "music";
 	const builtinShaders: { id: string; name: string; source: string; group: Group }[] = [
@@ -37,7 +36,6 @@
 		{ id: "nebula", name: "Nebula", source: nebula, group: "abstract" },
 		{ id: "ember", name: "Ember", source: ember, group: "abstract" },
 		{ id: "lava", name: "Lava Lamp", source: lava, group: "abstract" },
-		{ id: "life", name: "Life", source: life, group: "abstract" },
 		{ id: "spectrum", name: "Spectrum", source: spectrum, group: "music" },
 	];
 	// Built-in web pages, written to the configuration directory when chosen,
@@ -95,7 +93,8 @@
 	let paramTimer: ReturnType<typeof setTimeout> | undefined;
 	function changeParams(values: Record<string, unknown>) {
 		if (!animated) return;
-		const next = { ...animated, params: values } as AnimatedBackground;
+		const fps = animated.params?.fps;
+		const next = { ...animated, params: fps ? { ...values, fps } : values } as AnimatedBackground;
 		animated = next;
 		clearTimeout(paramTimer);
 		paramTimer = setTimeout(() => setAnimated(next), next.kind == "shader" ? 40 : 450);
@@ -134,6 +133,13 @@
 	$: animationLabel = animated ? animated.name : $t("device_view.animation.none");
 
 	let adjusting = false;
+	// frames a second on the deck, kept with the background's settings
+	$: fpsNow = Number(animated?.params?.fps ?? 30);
+	function setFps(rate: number) {
+		if (!animated) return;
+		const next = { ...animated, params: { ...(animated.params ?? {}), fps: rate } } as AnimatedBackground;
+		setAnimated(next);
+	}
 	$: if (!inputs.length) adjusting = false;
 	$: builtin = isBuiltin(animated);
 	let enteringUrl = false;
@@ -230,6 +236,14 @@
 		{ value: true, label: "device_view.key_background.show" },
 		{ value: false, label: "device_view.key_background.hide" },
 	];
+
+	// dims the background behind the keys; sent after a short pause while dragging
+	let brightTimer: ReturnType<typeof setTimeout> | undefined;
+	function brighten(value: number) {
+		keyStyle = { ...keyStyle, background_brightness: value };
+		clearTimeout(brightTimer);
+		brightTimer = setTimeout(() => setStyle({}), 60);
+	}
 
 	async function setStyle(change: Partial<KeyStyle>) {
 		keyStyle = { ...keyStyle, ...change };
@@ -330,6 +344,33 @@
 			<div class="mt-2.5">
 				<ParameterControls {inputs} values={animated.params ?? {}} on:change={(e) => changeParams(e.detail)} />
 			</div>
+		{/if}
+		{#if animated || background}
+			<div class="insp-row mt-2">
+				<label class="lb" for="bg-brightness">{$t("device_view.bg_brightness")}</label>
+				<input
+					id="bg-brightness"
+					type="range"
+					min="10"
+					max="100"
+					step="5"
+					class="range flex-1"
+					value={Math.round((keyStyle.background_brightness ?? 1) * 100)}
+					on:input={(e) => brighten(Number(e.currentTarget.value) / 100)}
+				/>
+				<span class="w-10 text-right tabular-nums text-neutral-200">{Math.round((keyStyle.background_brightness ?? 1) * 100)}%</span>
+			</div>
+		{/if}
+		{#if animated}
+			<div class="insp-row">
+				<span class="lb">{$t("device_view.fps")}</span>
+				<div class="mini" role="radiogroup" aria-label={$t("device_view.fps")}>
+					{#each [15, 30, 45, 60] as rate}
+						<button role="radio" aria-checked={fpsNow == rate} class:on={fpsNow == rate} on:click={() => setFps(rate)}>{rate}</button>
+					{/each}
+				</div>
+			</div>
+			<p class="text-xs text-neutral-500">{$t("device_view.fps.hint")}</p>
 		{/if}
 		<input type="file" accept="image/*" class="hidden" bind:this={fileInput} on:change={choose} />
 		<input type="file" accept=".html,.htm,text/html" class="hidden" bind:this={pageInput} on:change={choosePage} />

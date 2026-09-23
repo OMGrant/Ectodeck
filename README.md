@@ -11,7 +11,7 @@ OpenDeck is built around Elgato's hardware: a grid of separate keys, with any di
 - **Rounded keys** on those decks, on the hardware and in the device view.
 - **Dials on the side.** A deck can declare that its dials run down the right. Ectodeck draws them there, lined up with the key grid.
 - **Vector icons.** OpenDeck's own icons (Multi Action, Toggle Action and the status overlays) are redrawn as SVG, so they stay sharp at any size and have no background of their own.
-- **Animated backgrounds** on those decks, drawn live and reacting to the keys and dials. Scenes: Aquarium (press a key to feed the fish, twice to tap the glass), Birds, Sky, Synthwave and Warp. Abstract: Aurora, Blob, Ember, Ink, Lava Lamp, Life and Nebula. Music: Milkdrop and Spectrum, which listen to what the computer is playing (the speakers' output, never the microphone, and only while one of them is showing). Any web page or Shadertoy-style shader can be a background too.
+- **Animated backgrounds** on those decks, drawn live and reacting to the keys and dials. Scenes: Aquarium (press a key to feed the fish, twice to tap the glass), Birds, Sky, Synthwave and Warp. Abstract: Aurora, Blob, Ember, Ink, Lava Lamp and Nebula. Music: Milkdrop and Spectrum, which listen to what the computer is playing (the speakers' output, never the microphone, and only while one of them is showing). Any web page or Shadertoy-style shader can be a background too.
 - **Built-in MagTran M3 support.** The device plugin for the VSDinside MagTran M3 ships with Ectodeck. See [its README](plugins/com.grantgarrison.opendeck-magtran-m3.sdPlugin/README.md).
 
 A deck that declares none of these features is drawn exactly as OpenDeck draws it.
