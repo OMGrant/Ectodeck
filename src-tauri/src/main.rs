@@ -311,7 +311,7 @@ If you have already donated, thank you so much for your support!"#,
 			tauri_plugin_log::Builder::default()
 				.targets([Target::new(TargetKind::LogDir { file_name: None }), Target::new(TargetKind::Stdout)])
 				.level(log::LevelFilter::Info)
-				.level_for("opendeck", log::LevelFilter::Debug)
+				.level_for("magdeck", log::LevelFilter::Debug)
 				.build(),
 		)
 		.plugin(tauri_plugin_cors_fetch::init())
@@ -377,7 +377,7 @@ If you have already donated, thank you so much for your support!"#,
 						let _ = show_window(app);
 					}
 				})
-				.dbus_id("me.amankhanna.opendeck")
+				.dbus_id("com.grantgarrison.magdeck")
 				.build(),
 		)
 		.plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hide"])))

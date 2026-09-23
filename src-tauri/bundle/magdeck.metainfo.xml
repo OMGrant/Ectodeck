@@ -1,51 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-	<id>opendeck</id>
+	<id>magdeck</id>
 
-	<name>OpenDeck</name>
-	<summary>Use stream controllers</summary>
-	<developer id="me.amankhanna"><name>Aman Khanna</name></developer>
-	<launchable type="desktop-id">opendeck.desktop</launchable>
+	<name>MagDeck</name>
+	<summary>An enhanced fork of OpenDeck for the VSDinside MagTran M3</summary>
+	<developer id="com.grantgarrison"><name>Grant Garrison</name></developer>
+	<launchable type="desktop-id">magdeck.desktop</launchable>
 
-	<url type="vcs-browser">https://github.com/nekename/OpenDeck</url>
-	<url type="homepage">https://github.com/nekename/OpenDeck</url>
-	<url type="bugtracker">https://github.com/nekename/OpenDeck/issues</url>
-	<url type="faq">https://github.com/nekename/OpenDeck?tab=readme-ov-file#support</url>
-	<url type="contribute">https://github.com/nekename/OpenDeck?tab=readme-ov-file#building-from-source--contributing</url>
+	<url type="vcs-browser">https://github.com/OMGrant/MagDeck</url>
+	<url type="homepage">https://github.com/OMGrant/MagDeck</url>
+	<url type="bugtracker">https://github.com/OMGrant/MagDeck/issues</url>
 	<url type="donation">https://github.com/sponsors/nekename</url>
-	<url type="contact">https://discord.gg/26Nf8rHvaj</url>
 
 	<metadata_license>CC-BY-SA-4.0</metadata_license>
 	<project_license>GPL-3.0-or-later</project_license>
 	<content_rating type="oars-1.1" />
 
 	<description>
-		<p>OpenDeck is an application for using stream controller devices like the Elgato Stream Deck.</p>
-		<p>OpenDeck supports the majority of the original Stream Deck plugins, like Elgato's own Discord plugin, unlike other softwares (e.g. streamdeck-ui, StreamController, Boatswain) which are much more limited.</p>
-		<p>Please note that you will need to install udev subsystem rules for your device to be detected. For more information, see the Installation section of the project README on GitHub.</p>
-		<p>Some compiled plugins are not compiled for Linux, so you may need to have Wine (and Wine Mono) installed on your system (natively, as the Wine Flatpak is not supported). Similarly, for using plugins made with Node.js, the Node.js Flatpak is not supported.</p>
-		<p>From Multi Actions and Toggle Actions to switching profiles when you switch apps and brightness control, OpenDeck has all the features you'd expect from stream controller software.</p>
-		<p>Consider that the power of your Stream Deck actually comes from the software you use with it, then remember how much you paid for it. To support OpenDeck's development, please consider donating to me on GitHub Sponsors, Ko-fi or Liberapay.</p>
+		<p>MagDeck is an enhanced fork of OpenDeck for the VSDinside MagTran M3.</p>
+		<p>It draws the M3's display behind the keys as one picture, with a background you choose and each key placed under its cap, and shows the dials down the side where they are on the deck. Support for the M3 is built in.</p>
+		<p>Everything else works as it does in OpenDeck, including Elgato Stream Decks and the majority of plugins made for the Stream Deck SDK.</p>
+		<p>Your device needs udev rules to be detected. The packages install them for the MagTran M3 and Elgato decks; for other installs, see the README on GitHub.</p>
+		<p>MagDeck is built on OpenDeck by Aman Khanna. To support OpenDeck's development, consider donating on GitHub Sponsors, Ko-fi or Liberapay.</p>
 	</description>
-
-	<screenshots>
-		<screenshot type="default">
-			<image>https://github.com/nekename/OpenDeck/raw/release/.github/readme/mainmenu.png</image>
-			<caption>Main menu</caption>
-		</screenshot>
-		<screenshot>
-			<image>https://github.com/nekename/OpenDeck/raw/release/.github/readme/multiaction.png</image>
-			<caption>Multi action</caption>
-		</screenshot>
-		<screenshot>
-			<image>https://github.com/nekename/OpenDeck/raw/release/.github/readme/plugins.png</image>
-			<caption>Plugins</caption>
-		</screenshot>
-		<screenshot>
-			<image>https://github.com/nekename/OpenDeck/raw/release/.github/readme/profiles.png</image>
-			<caption>Profiles</caption>
-		</screenshot>
-	</screenshots>
 
 	<branding>
 		<color type="primary" scheme_preference="light">#62a0ea</color>
