@@ -5,6 +5,7 @@
 
 	import { t } from "$lib/i18n";
 	import { getWebserverUrl } from "$lib/ports";
+	import { strippedIcon } from "$lib/rendererHelper";
 	import { copiedItem } from "$lib/propertyInspector";
 	import { localisations } from "$lib/settings";
 	import { PRODUCT_NAME } from "$lib/singletons";
@@ -89,7 +90,7 @@
 				<summary class="pl-4 py-3 text-lg font-semibold text-neutral-300 hover:bg-neutral-800 transition-colors cursor-pointer">
 					{#if icon || (actions[0] && plugins.find((x) => x.id == actions[0].plugin) && categories[name].actions.every((x) => x.plugin == actions[0].plugin))}
 						<img
-							src={icon
+							use:strippedIcon={icon
 								? !icon.startsWith("opendeck/")
 									? getWebserverUrl(icon)
 									: icon.replace("opendeck", "")
@@ -122,7 +123,7 @@
 							}}
 						>
 							<img
-								src={!action.icon.startsWith("opendeck/") ? getWebserverUrl(action.icon) : action.icon.replace("opendeck", "")}
+								use:strippedIcon={!action.icon.startsWith("opendeck/") ? getWebserverUrl(action.icon) : action.icon.replace("opendeck", "")}
 								alt=""
 								class="m-0.5 mr-3 w-11 h-11 rounded-lg border border-neutral-700 pointer-events-none"
 							/>

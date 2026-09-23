@@ -173,7 +173,7 @@
 			const unlock = await lock.lock();
 			try {
 				let fallback = sl.action.states[sl.current_state]?.image ?? sl.action.icon;
-				if (state) await renderImage(canvas, context, state, fallback, showOk, showAlert, true, active, pressed, $settings?.rotation, keyStyle ? !keyStyle.backdrop : false);
+				if (state) await renderImage(canvas, context, state, fallback, showOk, showAlert, true, active, pressed, $settings?.rotation, keyStyle != null && !keyStyle.backdrop);
 			} finally {
 				unlock();
 			}

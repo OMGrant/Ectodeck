@@ -53,7 +53,7 @@ export const KEY_CORNER = 0.09;
 // from the glyph's own colour, so the edge stays smooth without a fringe of
 // the old colour. Icons without such a border pass
 // through untouched.
-function stripFlatBackground(image: HTMLImageElement): HTMLCanvasElement | HTMLImageElement {
+export function stripFlatBackground(image: HTMLImageElement): HTMLCanvasElement | HTMLImageElement {
 	const w = image.naturalWidth, h = image.naturalHeight;
 	if (!w || !h) return image;
 	const canvas = document.createElement("canvas");
@@ -132,6 +132,55 @@ function stripFlatBackground(image: HTMLImageElement): HTMLCanvasElement | HTMLI
 	return canvas;
 }
 
+// Whether an icon's solid background square should be removed.
+//
+// Icons shipped as files, by plugins and by MagDeck itself, are always
+// cleaned: many plugins paint a grey or coloured square behind their glyph,
+// which clashes with the key background and with OpenDeck's own icons, drawn
+// without one. Pictures that arrive as data (ones the user chose, or ones a
+// plugin draws live, such as album art) are cleaned only when the key's
+// background is hidden, so a chosen logo keeps its white. SVG is never
+// cleaned: it rarely has a square, and cleaning rasterises it.
+export function shouldStripIcon(source: string, keyBackgroundHidden: boolean): boolean {
+	if (/^data:image\/svg/i.test(source) || /\.svg(\?|#|$)/i.test(source)) return false;
+	return !source.startsWith("data:") || keyBackgroundHidden;
+}
+
+// For plain <img> elements showing a plugin's icon, such as the action list:
+// replaces the image with its cleaned version once loaded.
+const strippedIcons = new Map<string, Promise<string>>();
+export function strippedIcon(node: HTMLImageElement, source: string) {
+	let current = "";
+	const apply = (src: string) => {
+		current = src;
+		node.src = src;
+		if (!shouldStripIcon(src, false)) return;
+		let job = strippedIcons.get(src);
+		if (!job) {
+			job = new Promise<string>((resolve) => {
+				const image = new Image();
+				image.crossOrigin = "anonymous";
+				image.onload = () => {
+					try {
+						const cleaned = stripFlatBackground(image);
+						resolve(cleaned instanceof HTMLCanvasElement ? cleaned.toDataURL("image/png") : src);
+					} catch {
+						resolve(src);
+					}
+				};
+				image.onerror = () => resolve(src);
+				image.src = src;
+			});
+			strippedIcons.set(src, job);
+		}
+		job.then((cleaned) => {
+			if (current == src) node.src = cleaned;
+		});
+	};
+	apply(source);
+	return { update: apply };
+}
+
 export class CanvasLock {
 	currentLock = Promise.resolve();
 	async lock() {
@@ -183,6 +232,7 @@ export async function renderImage(
 		const image = document.createElement("img");
 		image.crossOrigin = "anonymous";
 		image.src = processImage ? getImage(state.image, fallback) : state.image;
+		const strip = shouldStripIcon(image.src, stripBackground);
 		if (image.src == undefined) return;
 		await new Promise((resolve, reject) => {
 			image.onload = resolve;
@@ -204,7 +254,7 @@ export async function renderImage(
 		const yScaled = canvas.height * imageScale;
 		const xOffset = (canvas.width - xScaled) / 2;
 		const yOffset = (canvas.height - yScaled) / 2;
-		context.drawImage(stripBackground ? stripFlatBackground(image) : image, xOffset, yOffset, xScaled, yScaled);
+		context.drawImage(strip ? stripFlatBackground(image) : image, xOffset, yOffset, xScaled, yScaled);
 	} catch (error: any) {
 		if (!(error instanceof Event)) console.error(error);
 		context.clearRect(0, 0, canvas.width, canvas.height);
