@@ -68,6 +68,7 @@ pub enum InboundEventType {
 	SendToPlugin(ContextAndPayloadEvent<serde_json::Value>),
 	SwitchProfile(misc::SwitchProfileEvent),
 	DeviceBrightness(misc::DeviceBrightnessEvent),
+	BackgroundPreview(PayloadEvent<devices::BackgroundPreviewPayload>),
 }
 
 pub async fn process_incoming_message(data: Result<Message, Error>, uuid: &str, skip_auth: bool) {
@@ -146,6 +147,7 @@ pub async fn process_incoming_message(data: Result<Message, Error>, uuid: &str, 
 			InboundEventType::SendToPlugin(_) => Ok(()),
 			InboundEventType::SwitchProfile(event) => misc::switch_profile(event).await,
 			InboundEventType::DeviceBrightness(event) => misc::device_brightness(event).await,
+			InboundEventType::BackgroundPreview(event) => devices::background_preview(event).await,
 		} && !error.to_string().contains("closed connection")
 		{
 			warn!("Failed to process incoming event from plugin: {}", error);

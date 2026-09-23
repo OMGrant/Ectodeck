@@ -59,6 +59,8 @@ struct Frame {
     animating: bool,
     /// The deck is asleep (brightness zero): nothing is rendered or sent.
     paused: bool,
+    /// The window is showing the device view and wants preview frames.
+    preview: bool,
     style: KeyStyle,
     /// As received from OpenDeck.
     keys: Vec<Option<DynamicImage>>,
@@ -81,6 +83,7 @@ impl Frame {
             source: None,
             animating: false,
             paused: false,
+            preview: false,
             style: KeyStyle::default(),
             keys: vec![None; KEY_COUNT],
             tiles: vec![None; KEY_COUNT],
@@ -196,6 +199,33 @@ pub async fn set_animation(id: &str, source: Option<Source>) {
     }
 }
 
+/// Start or stop sending preview frames of the live background to the window.
+pub async fn set_preview(id: &str, on: bool) {
+    log::info!("Background preview {}", if on { "on" } else { "off" });
+    frame_for(id).await.lock().await.preview = on;
+}
+
+/// Frames between previews: about four a second.
+const PREVIEW_EVERY: u32 = FPS / 4;
+
+/// Send a small copy of the background to the window, which shows it in the
+/// device view. The window cannot render the animation itself: WebGL in its
+/// web engine crashes on NVIDIA drivers when a context is torn down.
+async fn send_preview(id: &str, background: &RgbImage) {
+    use base64::Engine;
+    let small = imageops::resize(background, PANEL_WIDTH / 2, PANEL_HEIGHT / 2, imageops::FilterType::Triangle);
+    let mut jpeg = std::io::Cursor::new(Vec::new());
+    if image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 70).encode_image(&small).is_err() {
+        return;
+    }
+    let url = format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(jpeg.into_inner()));
+    if let Some(outbound) = openaction::OUTBOUND_EVENT_MANAGER.lock().await.as_mut() {
+        let _ = outbound
+            .send_event(serde_json::json!({ "event": "backgroundPreview", "payload": { "device": id, "image": url } }))
+            .await;
+    }
+}
+
 /// Pause rendering while the deck sleeps.
 pub async fn set_paused(id: &str, paused: bool) {
     let frame = frame_for(id).await;
@@ -211,10 +241,12 @@ pub async fn set_paused(id: &str, paused: bool) {
 async fn animate(id: String, frame: Arc<Mutex<Frame>>) {
     let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / FPS as f64));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut count = 0u32;
     loop {
         ticker.tick().await;
+        count = count.wrapping_add(1);
         let lay = layout();
-        let (picture, clear_windows) = {
+        let (picture, clear_windows, preview) = {
             let mut f = frame.lock().await;
             let Some(animation) = &f.animation else {
                 f.animating = false;
@@ -224,9 +256,13 @@ async fn animate(id: String, frame: Arc<Mutex<Frame>>) {
                 continue;
             }
             let Some(background) = animation.latest() else { continue };
+            let preview = (f.preview && count % PREVIEW_EVERY == 0).then(|| background.clone());
             let picture = render_with(&mut f, &lay, Some(background));
-            (picture, !f.windows_cleared)
+            (picture, !f.windows_cleared, preview)
         };
+        if let Some(bg) = preview {
+            send_preview(&id, &bg).await;
+        }
         let _write = WRITE_GUARD.lock().await;
         let result = {
             let devices = DEVICES.read().await;

@@ -183,3 +183,19 @@ pub async fn rerender_images(_event: PayloadEvent<String>) -> Result<(), anyhow:
 	crate::events::frontend::profiles::rerender_images(crate::APP_HANDLE.get().unwrap()).await?;
 	Ok(())
 }
+
+/// A small frame of a device's live background, sent by its plugin while the
+/// window has asked for previews, and passed straight to the window.
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
+pub struct BackgroundPreviewPayload {
+	pub device: String,
+	pub image: String,
+}
+
+pub async fn background_preview(event: PayloadEvent<BackgroundPreviewPayload>) -> Result<(), anyhow::Error> {
+	use tauri::{Emitter, Manager};
+	if let Some(window) = crate::APP_HANDLE.get().and_then(|app| app.get_webview_window("main")) {
+		window.emit("background_preview", event.payload)?;
+	}
+	Ok(())
+}

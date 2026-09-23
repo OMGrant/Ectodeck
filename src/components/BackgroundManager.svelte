@@ -2,6 +2,7 @@
 	import { invoke } from "@tauri-apps/api/core";
 	import { t } from "$lib/i18n";
 	import type { AnimatedBackground, DeviceInfo, KeyStyle } from "$lib/DeviceInfo";
+	import ChoiceMenu, { type ChoiceSection } from "./ChoiceMenu.svelte";
 
 	export let device: DeviceInfo;
 	export let background: string | null = null;
@@ -19,12 +20,30 @@
 		{ id: "ember", name: "Ember" },
 	];
 
-	// What the animation menu shows as chosen.
-	$: animationChoice = !animated
-		? "none"
-		: animated.kind == "shader" && builtinShaders.some((s) => s.name == animated?.name)
-			? "builtin:" + animated.name
-			: "custom";
+	// The animation menu: nothing, a built-in shader, or one of your own.
+	$: animationSections = [
+		{ items: [{ id: "none", label: $t("device_view.animation.none"), selected: !animated }] },
+		{
+			heading: $t("device_view.animation.builtin"),
+			items: builtinShaders.map((s) => ({
+				id: "builtin:" + s.id,
+				label: s.name,
+				selected: animated?.kind == "shader" && animated.name == s.name,
+			})),
+		},
+		{
+			heading: $t("device_view.animation.custom"),
+			items: [
+				...(animated && !builtinShaders.some((s) => animated?.kind == "shader" && animated.name == s.name)
+					? [{ id: "current", label: animated.name, selected: true }]
+					: []),
+				{ id: "url", label: $t("device_view.animation.url") },
+				{ id: "page", label: $t("device_view.animation.page") },
+				{ id: "shader", label: $t("device_view.animation.shader") },
+			],
+		},
+	] as ChoiceSection[];
+	$: animationLabel = animated ? animated.name : $t("device_view.animation.none");
 
 	let enteringUrl = false;
 	let url = "";
@@ -35,22 +54,19 @@
 		await invoke("set_device_animated_background", { device: device.id, background: value });
 	}
 
-	async function chooseAnimation(event: Event) {
-		const select = event.target as HTMLSelectElement;
-		const value = select.value;
-		// the menu holds commands as well as choices; show the real choice again
-		select.value = animationChoice;
-		if (value == "none") await setAnimated(null);
-		else if (value.startsWith("builtin:")) {
-			const shader = builtinShaders.find((s) => "builtin:" + s.name == value);
+	async function chooseAnimation(id: string) {
+		if (id == "none") await setAnimated(null);
+		else if (id.startsWith("builtin:")) {
+			const shader = builtinShaders.find((s) => "builtin:" + s.id == id);
 			if (!shader) return;
-			const source = await (await fetch(`/backgrounds/${shader.id}.frag`)).text();
-			await setAnimated({ kind: "shader", name: shader.name, source });
-		} else if (value == "url") {
+			const response = await fetch(`/backgrounds/${shader.id}.frag`);
+			if (!response.ok) return console.error(`Built-in shader ${shader.id} is missing`);
+			await setAnimated({ kind: "shader", name: shader.name, source: await response.text() });
+		} else if (id == "url") {
 			url = animated?.kind == "web" && !animated.url.startsWith("/") ? animated.url : "";
 			enteringUrl = true;
-		} else if (value == "page") pageInput.click();
-		else if (value == "shader") shaderInput.click();
+		} else if (id == "page") pageInput.click();
+		else if (id == "shader") shaderInput.click();
 	}
 
 	function readText(event: Event): Promise<{ name: string; text: string } | null> {
@@ -173,26 +189,7 @@
 		<input type="file" accept="image/*" class="hidden" bind:this={fileInput} on:change={choose} />
 
 		<span class="ml-4 text-neutral-400">{$t("device_view.animation")}</span>
-		<select
-			class="px-2 py-0.5 text-neutral-300 bg-neutral-700 hover:bg-neutral-600 transition-colors border border-neutral-600 rounded-lg"
-			value={animationChoice}
-			on:change={chooseAnimation}
-		>
-			<option value="none">{$t("device_view.animation.none")}</option>
-			<optgroup label={$t("device_view.animation.builtin")}>
-				{#each builtinShaders as shader}
-					<option value={"builtin:" + shader.name}>{shader.name}</option>
-				{/each}
-			</optgroup>
-			{#if animationChoice == "custom" && animated}
-				<option value="custom">{animated.name}</option>
-			{/if}
-			<optgroup label={$t("device_view.animation.custom")}>
-				<option value="url">{$t("device_view.animation.url")}</option>
-				<option value="page">{$t("device_view.animation.page")}</option>
-				<option value="shader">{$t("device_view.animation.shader")}</option>
-			</optgroup>
-		</select>
+		<ChoiceMenu label={$t("device_view.animation")} current={animationLabel} sections={animationSections} on:choose={(e) => chooseAnimation(e.detail)} />
 		{#if enteringUrl}
 			<form class="flex flex-row items-center gap-1" on:submit|preventDefault={applyUrl}>
 				<!-- svelte-ignore a11y-autofocus -->

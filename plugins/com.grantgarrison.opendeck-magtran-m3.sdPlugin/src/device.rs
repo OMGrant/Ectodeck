@@ -285,6 +285,13 @@ pub async fn handle_animated_background(device_id: &str, evt: SetImageEvent) -> 
     Ok(())
 }
 
+/// The window asking for preview frames ("on") or no longer ("BackgroundPreview"
+/// controller, no image).
+pub async fn handle_background_preview(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {
+    crate::frame::set_preview(device_id, evt.image.is_some()).await;
+    Ok(())
+}
+
 /// The key style chosen in OpenDeck, sent as a `setImage` with a "KeyStyle"
 /// controller whose image field carries JSON: `{"backdrop":bool}`.
 pub async fn handle_key_style(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {

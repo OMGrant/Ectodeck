@@ -2,8 +2,8 @@
 	import type { ActionInstance } from "$lib/ActionInstance";
 	import type { Context } from "$lib/Context";
 	import type { AnimatedBackground, DeviceInfo, KeyStyle } from "$lib/DeviceInfo";
-	import { shaderCanvas } from "$lib/shaderPreview";
-	import { getWebserverUrl } from "$lib/ports";
+	import { listen } from "@tauri-apps/api/event";
+	import { onDestroy } from "svelte";
 	import type { Profile } from "$lib/Profile";
 	import type { CopiedItem } from "$lib/propertyInspector";
 
@@ -99,6 +99,28 @@
 	let background: string | null = null;
 	let keyStyle: KeyStyle = { backdrop: true };
 	let animated: AnimatedBackground | null = null;
+
+	// The live background is previewed from frames the plugin sends, a few a
+	// second, while this view is visible. The window cannot run the animation
+	// itself: WebGL in its web engine crashes on NVIDIA drivers.
+	let preview: string | null = null;
+	let previewOn: string | null = null;
+	let visible = typeof document == "undefined" || document.visibilityState == "visible";
+	function setPreview(deviceId: string | null) {
+		if (previewOn == deviceId) return;
+		if (previewOn) invoke("set_background_preview", { device: previewOn, on: false });
+		previewOn = deviceId;
+		preview = null;
+		if (deviceId) invoke("set_background_preview", { device: deviceId, on: true });
+	}
+	$: setPreview(device.has_background && animated && visible ? device.id : null);
+	const unlisten = listen<{ device: string; image: string }>("background_preview", ({ payload }) => {
+		if (payload.device == previewOn) preview = payload.image;
+	});
+	onDestroy(() => {
+		setPreview(null);
+		unlisten.then((f) => f());
+	});
 
 	// Map the panel onto the rendered key grid by pitch and centre: the rendered
 	// grid is device.columns keys across, so its pitch is its width over the
@@ -209,6 +231,8 @@
 	}
 </script>
 
+<svelte:document on:visibilitychange={() => (visible = document.visibilityState == "visible")} />
+
 {#key device}
 	<span id="grid-description" class="sr-only">{$t("device_view.grid_description")}</span>
 	<div
@@ -237,19 +261,13 @@
 		{#if panelLayout}
 			<!-- The panel, at fixed scale, with the keys placed on it by geometry. -->
 			<div class="relative" style="width:{panelLayout.width}px;height:{panelLayout.height}px;">
-				{#if device.has_background && animated && device.panel}
-					<!-- The live background, drawn at the panel's own size and scaled to fit. -->
-					<div class="absolute inset-0 overflow-hidden rounded-xl pointer-events-none" aria-hidden="true">
-						{#if animated.kind == "shader"}
-							<canvas use:shaderCanvas={animated.source} width={device.panel.width} height={device.panel.height} class="w-full h-full"></canvas>
-						{:else}
-							<iframe
-								title=""
-								src={animated.url.startsWith("/") ? getWebserverUrl(animated.url.slice(1)) : animated.url}
-								style="width:{device.panel.width}px;height:{device.panel.height}px;transform:scale({panelLayout.scale});transform-origin:0 0;border:0;"
-							></iframe>
-						{/if}
-					</div>
+				{#if device.has_background && animated}
+					<!-- The live background, as the plugin renders it for the deck. -->
+					{#if preview}
+						<img src={preview} alt="" aria-hidden="true" class="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none" />
+					{:else}
+						<div class="absolute inset-0 rounded-xl bg-neutral-900 pointer-events-none" aria-hidden="true"></div>
+					{/if}
 				{:else if device.has_background && background}
 					<img src={background} alt="" aria-hidden="true" class="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none" />
 				{/if}

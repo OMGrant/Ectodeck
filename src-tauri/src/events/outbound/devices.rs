@@ -164,6 +164,26 @@ pub async fn update_animated_background(device: String, background: Option<crate
 	Ok(())
 }
 
+/// Ask the plugin to send, or stop sending, preview frames of the live
+/// background. The window turns this on only while it is showing.
+pub async fn set_background_preview(device: String, on: bool) -> Result<(), anyhow::Error> {
+	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
+		send_to_plugin(
+			plugin,
+			&SetImageEvent {
+				event: "setImage",
+				device,
+				controller: Some("BackgroundPreview".to_owned()),
+				position: None,
+				image: on.then(|| "on".to_owned()),
+			},
+		)
+		.await?;
+	}
+
+	Ok(())
+}
+
 pub async fn clear_screen(device: String) -> Result<(), anyhow::Error> {
 	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
 		send_to_plugin(

@@ -68,6 +68,8 @@ impl openaction::GlobalEventHandler for GlobalEventHandler {
         let id = event.device.clone();
         let result = if event.controller == Some("Background".to_string()) {
             device::handle_set_background(&id, event).await
+        } else if event.controller == Some("BackgroundPreview".to_string()) {
+            device::handle_background_preview(&id, event).await
         } else if event.controller == Some("AnimatedBackground".to_string()) {
             device::handle_animated_background(&id, event).await
         } else if event.controller == Some("KeyStyle".to_string()) {

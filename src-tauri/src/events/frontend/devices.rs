@@ -86,3 +86,11 @@ pub async fn save_background_page(name: String, contents: String) -> Result<Stri
 	std::fs::write(&path, contents).map_err(anyhow::Error::from)?;
 	Ok(path.to_string_lossy().into_owned())
 }
+
+/// Turn preview frames of the live background on while the device view is
+/// visible, and off when it is not.
+#[command]
+pub async fn set_background_preview(device: String, on: bool) -> Result<(), Error> {
+	crate::events::outbound::devices::set_background_preview(device, on).await?;
+	Ok(())
+}
