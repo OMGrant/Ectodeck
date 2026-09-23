@@ -91,21 +91,19 @@ float surge(vec2 uv, float band) {
     return s;
 }
 
-// A press also throws up a ray at the key, the tall shimmering streak real
-// auroras send out, spanning from the curtain to the key's height, so the
-// light arrives where the key is. The curtain itself does not move.
-float ray(vec2 uv, float band) {
+// A press also lights a ray at the key: a short shimmering streak, the
+// kind real auroras throw out, centred on the key itself, so the light is
+// where the key is and nowhere else. The curtain itself does not move.
+float ray(vec2 uv) {
     float light = 0.0;
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
         if (p.w < 0.0 || p.z > 3.0) continue;
         vec2 k = p.xy / iResolution.xy;
-        float dx = uv.x - k.x;
-        float lo = min(band, k.y) - 0.08, hi = max(band, k.y) + 0.08;
-        float span = smoothstep(lo, lo + 0.1, uv.y) * (1.0 - smoothstep(hi - 0.1, hi, uv.y));
+        float dx = uv.x - k.x, dy = uv.y - k.y;
         float streaks = 0.6 + 0.4 * noise(vec2(uv.x * 90.0, p.z * 3.0 + uv.y * 2.0));
         float fade = smoothstep(0.0, 0.35, p.z) * exp(-p.z * 1.2);
-        light += exp(-dx * dx / 0.0018) * span * streaks * fade;
+        light += exp(-dx * dx / 0.0018) * exp(-dy * dy / 0.03) * streaks * fade;
     }
     return light;
 }
@@ -123,7 +121,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         vec3 hue = mix(colour1.rgb, colour2.rgb, fi / 2.0);
         col += hue * band * (0.35 + 0.65 * curtain) * 0.55 * brightness * (1.0 + lift * 0.6);
     }
-    if (react) col += mix(colour1.rgb, colour2.rgb, smoothstep(height, height + 0.4, uv.y)) * ray(uv, height + 0.13) * 0.7 * brightness;
+    if (react) col += mix(colour1.rgb, colour2.rgb, smoothstep(height, height + 0.4, uv.y)) * ray(uv) * 0.8 * brightness;
     if (stars) col += pow(hash(floor(fragCoord)), 900.0) * 0.6 * uv.y;
     fragColor = vec4(col, 1.0);
 }

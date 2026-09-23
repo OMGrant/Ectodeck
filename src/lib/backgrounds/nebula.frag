@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other. A key press is a drop falling into them, and the smoke sinks away from it.",
+  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other. A key press is a drop pressing into them, pushing the smoke away.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -79,10 +79,11 @@ float fbm(vec2 p) {
     return v;
 }
 
-// A press is a drop falling into smoky liquid, and the smoke sinks away from
-// it: around the key the smoke draws in and shrinks toward the centre, as if
-// receding into depth, then fills back. It swells from nothing at the key
-// (no point at its centre), and its edge billows with the smoke's texture.
+// A press is a drop pressing into smoky liquid. A soft front travels out
+// from the key and shoves the smoke ahead of it, so the smoke is seen moving
+// away; it fades to nothing at the very centre, so nothing pinches there,
+// and the middle sinks and darkens a little as if pressed in. The front's
+// shape billows with the smoke's own texture.
 vec2 drop(vec2 uv, out float stir, out float sink) {
     stir = 0.0;
     sink = 0.0;
@@ -93,17 +94,15 @@ vec2 drop(vec2 uv, out float stir, out float sink) {
         float age = p.z;
         vec2 c = (p.xy - 0.5 * iResolution.xy) / iResolution.y;
         vec2 d = uv - c;
-        // spreads fast at first, then slows, like a drop settling
-        float reach = 0.05 + 0.2 * (1.0 - exp(-age * 1.6));
-        // the smoke's texture makes the front uneven
-        float billow = 1.0 + 0.45 * (fbm(uv * 3.5 + vec2(age * 0.4, -age * 0.3)) - 0.5);
-        float x = length(d) * billow / reach;
-        float strength = 0.11 * smoothstep(0.0, 0.25, age) * exp(-age * 0.9);
-        float shape = exp(-x * x);
-        // d / reach is smooth through the centre, so nothing pinches there
-        at += d / reach * strength * shape;
-        stir += strength * shape * x;
-        sink += strength * shape;
+        float billow = 1.0 + 0.4 * (fbm(uv * 3.5 + vec2(age * 0.4, -age * 0.3)) - 0.5);
+        float r = length(d) * billow;
+        // travels out quickly at first, then slows
+        float front = 0.34 * (1.0 - exp(-age * 1.5));
+        float fade = smoothstep(0.0, 0.2, age) * exp(-age * 0.8);
+        float wave = exp(-pow((r - front) / 0.075, 2.0)) * smoothstep(0.0, 0.05, r) * fade;
+        at -= d / max(length(d), 1e-3) * wave * 0.07;
+        stir += wave;
+        sink += exp(-r * r / max(front * front, 1e-3)) * fade * 0.08;
     }
     return at;
 }
@@ -121,6 +120,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     col = mix(col, colour3.rgb, smoothstep(0.55, 0.9, r.x * f * 1.5) * 0.6);
     col *= (0.25 + 0.65 * smoothstep(0.25, 0.8, f)) * brightness;
     // the middle of the sink darkens a little as it recedes
+    // the middle sinks and darkens a little; the front carries a trace of glow
     col *= 1.0 - clamp(sink * 3.0, 0.0, 0.25);
+    col += colour2.rgb * stir * 0.12 * brightness;
     fragColor = vec4(pow(col, vec3(1.1)), 1.0);
 }

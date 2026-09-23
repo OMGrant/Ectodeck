@@ -249,8 +249,8 @@
     '    vec2 d = (at - pokes[i].xy) * vec2(aspect, 1.0);' +
     '    float r = length(d);' +
     '    float dent = -0.13 * exp(-r * r / 0.018) * min(1.0, age * 10.0) * exp(-age * 2.0);' +
-    '    float rr = r - age * 0.85;' +
-    '    float ripple = 0.045 * sin(rr * 26.0) * exp(-rr * rr / 0.035) * exp(-age * 1.5) * smoothstep(0.0, 0.12, r);' +
+    '    float rr = r - age * 0.35;' +
+    '    float ripple = 0.08 * sin(rr * 11.0) * exp(-rr * rr / 0.12) * exp(-age * 0.75) * smoothstep(0.0, 0.2, r);' +
     '    h += (dent + ripple) * pokes[i].w;' +
     '  }' +
     '  return h;' +
@@ -385,8 +385,8 @@
     '    vec2 d = (at - pokes[i].xy) * vec2(aspect, 1.0);' +
     '    float r = length(d);' +
     '    float dent = -0.13 * exp(-r * r / 0.018) * min(1.0, age * 10.0) * exp(-age * 2.0);' +
-    '    float rr = r - age * 0.85;' +
-    '    float ripple = 0.045 * sin(rr * 26.0) * exp(-rr * rr / 0.035) * exp(-age * 1.5) * smoothstep(0.0, 0.12, r);' +
+    '    float rr = r - age * 0.35;' +
+    '    float ripple = 0.08 * sin(rr * 11.0) * exp(-rr * rr / 0.12) * exp(-age * 0.75) * smoothstep(0.0, 0.2, r);' +
     '    h += (dent + ripple) * pokes[i].w;' +
     '  }' +
     '  return h;' +
@@ -427,7 +427,7 @@
     '  vec2 e = 2.0 / res;' +
     '  vec2 slope = vec2(pokeHeight(fndc + vec2(e.x, 0.0), faspect) - pokeHeight(fndc - vec2(e.x, 0.0), faspect),' +
     '                    pokeHeight(fndc + vec2(0.0, e.y), faspect) - pokeHeight(fndc - vec2(0.0, e.y), faspect)) / (2.0 * e);' +
-    '  n = normalize(n - vec3(slope, 0.0) * 0.3);' +
+    '  n = normalize(n - vec3(slope, 0.0) * 0.55);' +
     '  vec3 v = normalize(vV);' +
     '  vec3 L = normalize(lightDir);' +
     '  float fres = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 3.2);' +
@@ -742,7 +742,7 @@
   });
   function pokeFrame(real) {
     pokeData.fill(0);
-    pokeList = pokeList.filter(function (k) { return real - k.t < 3; });
+    pokeList = pokeList.filter(function (k) { return real - k.t < 5; });
     pokeList.forEach(function (k, i) {
       var age = real - k.t;
       // the shaders shape the dent and ripple from the age
