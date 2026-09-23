@@ -132,6 +132,38 @@ pub async fn update_key_style(device: String, style: crate::store::profiles::Key
 	Ok(())
 }
 
+/// Push the live background, or `None` to stop it. Rides on `setImage` with an
+/// "AnimatedBackground" controller; the image field carries JSON the plugin
+/// reads as `{"kind":"web","url":...}` or `{"kind":"shader","source":...}`.
+/// Pages kept on disk are sent as file URLs, which the plugin's renderer
+/// opens directly.
+pub async fn update_animated_background(device: String, background: Option<crate::store::profiles::AnimatedBackground>) -> Result<(), anyhow::Error> {
+	use crate::store::profiles::AnimatedBackground;
+	let image = match background {
+		None => None,
+		Some(AnimatedBackground::Web { url, .. }) => {
+			let url = if url.starts_with('/') { format!("file://{url}") } else { url };
+			Some(serde_json::json!({ "kind": "web", "url": url }).to_string())
+		}
+		Some(AnimatedBackground::Shader { source, .. }) => Some(serde_json::json!({ "kind": "shader", "source": source }).to_string()),
+	};
+	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
+		send_to_plugin(
+			plugin,
+			&SetImageEvent {
+				event: "setImage",
+				device,
+				controller: Some("AnimatedBackground".to_owned()),
+				position: None,
+				image,
+			},
+		)
+		.await?;
+	}
+
+	Ok(())
+}
+
 pub async fn clear_screen(device: String) -> Result<(), anyhow::Error> {
 	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
 		send_to_plugin(

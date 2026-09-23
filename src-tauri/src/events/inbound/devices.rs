@@ -38,6 +38,10 @@ pub async fn register_device(uuid: &str, mut event: PayloadEvent<crate::shared::
 			if background.is_some() {
 				let _ = crate::events::outbound::devices::update_background(event.payload.id.clone(), background).await;
 			}
+			let animated = locks.device_stores.get_animated_background(&event.payload.id).unwrap_or(None);
+			if animated.is_some() {
+				let _ = crate::events::outbound::devices::update_animated_background(event.payload.id.clone(), animated).await;
+			}
 		}
 
 		let selected_profile = locks.device_stores.get_selected_profile(&event.payload.id)?;

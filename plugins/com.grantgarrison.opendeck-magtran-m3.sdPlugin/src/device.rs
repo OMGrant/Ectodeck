@@ -268,6 +268,23 @@ pub async fn handle_set_background(device_id: &str, evt: SetImageEvent) -> Resul
     Ok(())
 }
 
+/// An animated background, sent as a `setImage` with an "AnimatedBackground"
+/// controller whose image field carries JSON: `{"kind":"web","url":...}` or
+/// `{"kind":"shader","source":...}`. No image stops it.
+pub async fn handle_animated_background(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {
+    let v: Option<serde_json::Value> = evt.image.as_deref().and_then(|s| serde_json::from_str(s).ok());
+    let source = v.and_then(|v| {
+        let text = |k: &str| v.get(k).and_then(|s| s.as_str()).map(str::to_owned);
+        match v.get("kind").and_then(|k| k.as_str()) {
+            Some("web") => text("url").map(crate::animation::Source::Web),
+            Some("shader") => text("source").map(crate::animation::Source::Shader),
+            _ => None,
+        }
+    });
+    crate::frame::set_animation(device_id, source).await;
+    Ok(())
+}
+
 /// The key style chosen in OpenDeck, sent as a `setImage` with a "KeyStyle"
 /// controller whose image field carries JSON: `{"backdrop":bool}`.
 pub async fn handle_key_style(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {

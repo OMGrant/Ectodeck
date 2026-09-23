@@ -14,6 +14,7 @@
 
 use crate::{
     DEVICES, WRITE_GUARD,
+    animation::{Animation, FPS, Source},
     background::{PANEL_HEIGHT, PANEL_WIDTH, cover_fit},
     device::handle_error,
     layout::{Layout, layout},
@@ -52,9 +53,19 @@ const CORNER: f32 = 0.09;
 struct Frame {
     /// Cover-fitted to the panel once, when set.
     background: Option<RgbImage>,
+    /// When set, replaces `background` with frames rendered live.
+    animation: Option<Animation>,
+    source: Option<Source>,
+    animating: bool,
+    /// The deck is asleep (brightness zero): nothing is rendered or sent.
+    paused: bool,
     style: KeyStyle,
-    /// As received from OpenDeck, scaled at paint time.
+    /// As received from OpenDeck.
     keys: Vec<Option<DynamicImage>>,
+    /// Each key scaled to the layout's key size, made once per image rather
+    /// than on every frame.
+    tiles: Vec<Option<image::RgbaImage>>,
+    tile_size: u32,
     repaint_scheduled: bool,
     windows_cleared: bool,
     /// The last frame put on the wire, so a change that nets out to the same
@@ -66,8 +77,14 @@ impl Frame {
     fn new() -> Self {
         Frame {
             background: None,
+            animation: None,
+            source: None,
+            animating: false,
+            paused: false,
             style: KeyStyle::default(),
             keys: vec![None; KEY_COUNT],
+            tiles: vec![None; KEY_COUNT],
+            tile_size: 0,
             repaint_scheduled: false,
             windows_cleared: false,
             last_sent: None,
@@ -130,6 +147,7 @@ pub async fn set_key(id: &str, pos: u8, image: Option<DynamicImage>) {
         return;
     }
     f.keys[pos as usize] = image;
+    f.tiles[pos as usize] = None;
     schedule(id, &frame, &mut f);
 }
 
@@ -137,7 +155,103 @@ pub async fn clear_keys(id: &str) {
     let frame = frame_for(id).await;
     let mut f = frame.lock().await;
     f.keys.iter_mut().for_each(|k| *k = None);
+    f.tiles.iter_mut().for_each(|t| *t = None);
     schedule(id, &frame, &mut f);
+}
+
+/// Start, change or stop the animated background. `None` returns to the
+/// still one.
+pub async fn set_animation(id: &str, source: Option<Source>) {
+    let frame = frame_for(id).await;
+    let old = {
+        let mut f = frame.lock().await;
+        if f.source == source {
+            return;
+        }
+        log::info!("Animated background: {}", match &source {
+            Some(Source::Web(url)) => format!("web page {url}"),
+            Some(Source::Shader(_)) => "shader".to_string(),
+            None => "off".to_string(),
+        });
+        let old = f.animation.take();
+        f.source = source.clone();
+        if let Some(src) = source {
+            let animation = Animation::start(src);
+            animation.set_paused(f.paused);
+            f.animation = Some(animation);
+            if !f.animating {
+                f.animating = true;
+                tokio::spawn(animate(id.to_string(), frame.clone()));
+            }
+        } else {
+            // the deck shows the last animated frame; repaint all of it
+            f.last_sent = None;
+            schedule(id, &frame, &mut f);
+        }
+        old
+    };
+    // stopping a source waits for its thread; not while holding the frame
+    if let Some(old) = old {
+        let _ = tokio::task::spawn_blocking(move || drop(old)).await;
+    }
+}
+
+/// Pause rendering while the deck sleeps.
+pub async fn set_paused(id: &str, paused: bool) {
+    let frame = frame_for(id).await;
+    let mut f = frame.lock().await;
+    f.paused = paused;
+    if let Some(a) = &f.animation {
+        a.set_paused(paused);
+    }
+}
+
+/// Send a frame of the animation, keys on top, FPS times a second, for as
+/// long as the device has an animated background.
+async fn animate(id: String, frame: Arc<Mutex<Frame>>) {
+    let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / FPS as f64));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        ticker.tick().await;
+        let lay = layout();
+        let (picture, clear_windows) = {
+            let mut f = frame.lock().await;
+            let Some(animation) = &f.animation else {
+                f.animating = false;
+                return;
+            };
+            if f.paused {
+                continue;
+            }
+            let Some(background) = animation.latest() else { continue };
+            let picture = render_with(&mut f, &lay, Some(background));
+            (picture, !f.windows_cleared)
+        };
+        let _write = WRITE_GUARD.lock().await;
+        let result = {
+            let devices = DEVICES.read().await;
+            let Some(device) = devices.get(&id) else { continue };
+            let sent = crate::background::send_region(device, &picture, 0, 0).await;
+            match sent {
+                Ok(_) if clear_windows => device.clear_all_button_images().await.and(device.flush().await).map(|_| true),
+                other => other.map(|_| false),
+            }
+        };
+        match result {
+            Ok(cleared) => {
+                let mut f = frame.lock().await;
+                f.last_sent = None;
+                if cleared {
+                    f.windows_cleared = true;
+                }
+            }
+            Err(e) => {
+                frame.lock().await.animating = false;
+                handle_error(&id, e).await;
+                return;
+            }
+        }
+    }
 }
 
 /// Paint the current state again, for a device that has just come up.
@@ -148,7 +262,8 @@ pub async fn repaint(id: &str) {
 }
 
 fn schedule(id: &str, frame: &Arc<Mutex<Frame>>, f: &mut Frame) {
-    if f.repaint_scheduled {
+    // while animating, every frame already carries every change
+    if f.repaint_scheduled || f.animation.is_some() {
         return;
     }
     f.repaint_scheduled = true;
@@ -165,7 +280,11 @@ async fn repaint_later(id: String, frame: Arc<Mutex<Frame>>) {
     let (picture, clear_windows, last) = {
         let mut f = frame.lock().await;
         f.repaint_scheduled = false;
-        let picture = render(&f, &lay);
+        if f.animation.is_some() {
+            f.repaint_scheduled = false;
+            return;
+        }
+        let picture = render(&mut f, &lay);
         if f.last_sent.as_ref() == Some(&picture) {
             return;
         }
@@ -257,19 +376,30 @@ fn regions(last: Option<&RgbImage>, next: &RgbImage, layout: &Layout) -> Option<
     if keys.len() > 6 { None } else { Some(keys) }
 }
 
-/// Composite the background and keys into a landscape panel frame.
-fn render(frame: &Frame, layout: &Layout) -> RgbImage {
-    let mut canvas = match &frame.background {
-        Some(bg) => bg.clone(),
+/// Composite the still background and keys into a landscape panel frame.
+fn render(frame: &mut Frame, layout: &Layout) -> RgbImage {
+    render_with(frame, layout, None)
+}
+
+/// Composite the keys onto `background`, or onto the still background.
+fn render_with(frame: &mut Frame, layout: &Layout, background: Option<RgbImage>) -> RgbImage {
+    let mut canvas = match background.or_else(|| frame.background.clone()) {
+        Some(bg) => bg,
         None => RgbImage::new(PANEL_WIDTH, PANEL_HEIGHT),
     };
     let key = layout.key_px();
+    if frame.tile_size != key {
+        frame.tiles.iter_mut().for_each(|t| *t = None);
+        frame.tile_size = key;
+    }
     let style = frame.style;
-    for (pos, image) in frame.keys.iter().enumerate() {
-        let Some(image) = image else { continue };
-        let tile = resize_premultiplied(image, key);
+    for pos in 0..frame.keys.len() {
+        let Some(image) = &frame.keys[pos] else { continue };
+        if frame.tiles[pos].is_none() {
+            frame.tiles[pos] = Some(resize_premultiplied(image, key));
+        }
         let (x, y) = layout.origin(pos as u8);
-        draw_key(&mut canvas, &tile, x, y, style);
+        draw_key(&mut canvas, frame.tiles[pos].as_ref().unwrap(), x, y, style);
     }
     if layout.calibrate {
         overlay_guides(&mut canvas, layout);
@@ -401,7 +531,7 @@ mod tests {
         f.keys[0] = Some(solid(96, 96, [255, 0, 0]));
         f.keys[14] = Some(solid(72, 72, [0, 0, 255]));
         let l = Layout { left: 28.0, bottom: 8.0, ..Layout::FIRMWARE };
-        let out = render(&f, &l);
+        let out = render(&mut f, &l);
         assert_eq!((out.width(), out.height()), (PANEL_WIDTH, PANEL_HEIGHT));
         // key 1 fills (28,18)..(138,128); checked at edge midpoints, clear
         // of the rounded corners
@@ -424,9 +554,9 @@ mod tests {
         f.keys[7] = Some(DynamicImage::ImageRgba8(image::RgbaImage::new(96, 96)));
         let l = Layout::FIRMWARE;
         let centre = (372 + 55, 185 + 55);
-        assert_eq!(render(&f, &l).get_pixel(centre.0, centre.1).0, [0, 0, 0]);
+        assert_eq!(render(&mut f, &l).get_pixel(centre.0, centre.1).0, [0, 0, 0]);
         f.style.backdrop = false;
-        assert_eq!(render(&f, &l).get_pixel(centre.0, centre.1).0, [9, 90, 9]);
+        assert_eq!(render(&mut f, &l).get_pixel(centre.0, centre.1).0, [9, 90, 9]);
     }
 
     #[test]
@@ -452,7 +582,7 @@ mod tests {
         let mut f = Frame::new();
         f.background = Some(RgbImage::from_pixel(PANEL_WIDTH, PANEL_HEIGHT, image::Rgb([9, 90, 9])));
         f.keys[0] = Some(solid(96, 96, [200, 0, 0]));
-        let out = render(&f, &Layout::FIRMWARE);
+        let out = render(&mut f, &Layout::FIRMWARE);
         assert_eq!(out.get_pixel(38, 18).0, [9, 90, 9]);
         assert_eq!(out.get_pixel(38 + 55, 18).0, [200, 0, 0]);
         assert_eq!(out.get_pixel(38 + 55, 18 + 55).0, [200, 0, 0]);
@@ -462,13 +592,13 @@ mod tests {
     fn a_key_change_repaints_only_that_key() {
         let mut f = Frame::new();
         let l = Layout::FIRMWARE;
-        let before = render(&f, &l);
+        let before = render(&mut f, &l);
         f.keys[3] = Some(solid(96, 96, [200, 0, 0]));
-        let after = render(&f, &l);
+        let after = render(&mut f, &l);
         assert_eq!(regions(Some(&before), &after, &l), Some(vec![(539, 18, 110, 110)]));
         assert_eq!(regions(None, &after, &l), None);
         f.background = Some(RgbImage::from_pixel(PANEL_WIDTH, PANEL_HEIGHT, image::Rgb([5, 5, 5])));
-        assert_eq!(regions(Some(&after), &render(&f, &l), &l), None);
+        assert_eq!(regions(Some(&after), &render(&mut f, &l), &l), None);
     }
 
     #[test]
@@ -476,11 +606,11 @@ mod tests {
         let mut f = Frame::new();
         f.background = Some(RgbImage::from_pixel(PANEL_WIDTH, PANEL_HEIGHT, image::Rgb([9, 9, 9])));
         f.keys[7] = Some(solid(96, 96, [0, 255, 0]));
-        let out = render(&f, &Layout::FIRMWARE);
+        let out = render(&mut f, &Layout::FIRMWARE);
         assert_eq!(out.get_pixel(0, 0).0, [9, 9, 9]);
         assert_eq!(out.get_pixel(372 + 55, 185 + 55).0, [0, 255, 0]);
         f.keys[7] = None;
-        let out = render(&f, &Layout::FIRMWARE);
+        let out = render(&mut f, &Layout::FIRMWARE);
         assert_eq!(out.get_pixel(372 + 55, 185 + 55).0, [9, 9, 9]);
     }
 }

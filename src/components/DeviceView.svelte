@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { ActionInstance } from "$lib/ActionInstance";
 	import type { Context } from "$lib/Context";
-	import type { DeviceInfo, KeyStyle } from "$lib/DeviceInfo";
+	import type { AnimatedBackground, DeviceInfo, KeyStyle } from "$lib/DeviceInfo";
+	import { shaderCanvas } from "$lib/shaderPreview";
+	import { getWebserverUrl } from "$lib/ports";
 	import type { Profile } from "$lib/Profile";
 	import type { CopiedItem } from "$lib/propertyInspector";
 
@@ -96,6 +98,7 @@
 	// on a Stream Deck Plus. Drawing them underneath misrepresents the hardware.
 	let background: string | null = null;
 	let keyStyle: KeyStyle = { backdrop: true };
+	let animated: AnimatedBackground | null = null;
 
 	// Map the panel onto the rendered key grid by pitch and centre: the rendered
 	// grid is device.columns keys across, so its pitch is its width over the
@@ -226,7 +229,7 @@
 	>
 		{#if device.has_background}
 			<div class="mb-3 self-center">
-				<BackgroundManager {device} bind:background bind:keyStyle />
+				<BackgroundManager {device} bind:background bind:keyStyle bind:animated />
 			</div>
 		{/if}
 
@@ -234,7 +237,20 @@
 		{#if panelLayout}
 			<!-- The panel, at fixed scale, with the keys placed on it by geometry. -->
 			<div class="relative" style="width:{panelLayout.width}px;height:{panelLayout.height}px;">
-				{#if device.has_background && background}
+				{#if device.has_background && animated && device.panel}
+					<!-- The live background, drawn at the panel's own size and scaled to fit. -->
+					<div class="absolute inset-0 overflow-hidden rounded-xl pointer-events-none" aria-hidden="true">
+						{#if animated.kind == "shader"}
+							<canvas use:shaderCanvas={animated.source} width={device.panel.width} height={device.panel.height} class="w-full h-full"></canvas>
+						{:else}
+							<iframe
+								title=""
+								src={animated.url.startsWith("/") ? getWebserverUrl(animated.url.slice(1)) : animated.url}
+								style="width:{device.panel.width}px;height:{device.panel.height}px;transform:scale({panelLayout.scale});transform-origin:0 0;border:0;"
+							></iframe>
+						{/if}
+					</div>
+				{:else if device.has_background && background}
 					<img src={background} alt="" aria-hidden="true" class="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none" />
 				{/if}
 				<div role="rowgroup" class="contents">

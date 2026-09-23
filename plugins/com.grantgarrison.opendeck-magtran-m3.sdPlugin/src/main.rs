@@ -9,10 +9,12 @@ use watcher::watcher_task;
 #[cfg(not(target_os = "windows"))]
 use tokio::signal::unix::{SignalKind, signal};
 
+mod animation;
 mod background;
 mod device;
 mod inputs;
 mod mappings;
+mod shader;
 mod frame;
 mod layout;
 mod watcher;
@@ -66,6 +68,8 @@ impl openaction::GlobalEventHandler for GlobalEventHandler {
         let id = event.device.clone();
         let result = if event.controller == Some("Background".to_string()) {
             device::handle_set_background(&id, event).await
+        } else if event.controller == Some("AnimatedBackground".to_string()) {
+            device::handle_animated_background(&id, event).await
         } else if event.controller == Some("KeyStyle".to_string()) {
             device::handle_key_style(&id, event).await
         } else {
@@ -86,6 +90,7 @@ impl openaction::GlobalEventHandler for GlobalEventHandler {
         log::debug!("Asked to set brightness: {:#?}", event);
 
         let id = event.device.clone();
+        frame::set_paused(&id, event.brightness == 0).await;
 
         if let Some(device) = DEVICES.read().await.get(&event.device) {
             device

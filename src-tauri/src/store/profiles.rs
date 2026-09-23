@@ -200,6 +200,19 @@ pub struct DeviceConfig {
 	/// declare `has_background`.
 	#[serde(default)]
 	pub key_style: KeyStyle,
+	/// A live background that replaces the still one while set. Only
+	/// meaningful for devices that declare `has_background`.
+	#[serde(default)]
+	pub animated_background: Option<AnimatedBackground>,
+}
+
+/// A background rendered live: a web page (a URL, or the path of an HTML file
+/// kept in the configuration directory) or a Shadertoy-format shader.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum AnimatedBackground {
+	Web { name: String, url: String },
+	Shader { name: String, source: String },
 }
 
 /// Whether a key's image sits on its own black square or straight on the
@@ -250,12 +263,27 @@ impl DeviceStores {
 		Ok(())
 	}
 
+	pub fn get_animated_background(&mut self, device: &str) -> Result<Option<AnimatedBackground>, anyhow::Error> {
+		self.get_selected_profile(device)?;
+		Ok(self.stores.get(device).and_then(|s| s.value.animated_background.clone()))
+	}
+
+	pub fn set_animated_background(&mut self, device: &str, background: Option<AnimatedBackground>) -> Result<(), anyhow::Error> {
+		self.get_selected_profile(device)?;
+		if let Some(store) = self.stores.get_mut(device) {
+			store.value.animated_background = background;
+			store.save()?;
+		}
+		Ok(())
+	}
+
 	pub fn get_selected_profile(&mut self, device: &str) -> Result<String, anyhow::Error> {
 		if !self.stores.contains_key(device) {
 			let default = DeviceConfig {
 				selected_profile: "Default".to_owned(),
 				background: None,
 				key_style: KeyStyle::default(),
+				animated_background: None,
 			};
 
 			let store = Store::new(device, &config_dir().join("profiles"), default).context(format!("Failed to create store for device config {}", device))?;
@@ -275,7 +303,7 @@ impl DeviceStores {
 			store.value.selected_profile = id;
 			store.save()?;
 		} else {
-			let default = DeviceConfig { selected_profile: id, background: None, key_style: KeyStyle::default() };
+			let default = DeviceConfig { selected_profile: id, background: None, key_style: KeyStyle::default(), animated_background: None };
 
 			let store = Store::new(device, &config_dir().join("profiles"), default).context(format!("Failed to create store for device config {}", device))?;
 			store.save()?;
