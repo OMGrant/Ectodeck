@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArrowSquareOut from "phosphor-svelte/lib/ArrowSquareOut";
 	import DownloadSimple from "phosphor-svelte/lib/DownloadSimple";
-	import Popup from "./Popup.svelte";
+	import Check from "phosphor-svelte/lib/Check";
 
 	import { t } from "$lib/i18n.ts";
 	import "$lib/shims.ts";
@@ -19,7 +19,7 @@
 	let downloadCount = 0;
 
 	export let install: () => void;
-	export let close: () => void;
+	export let installed = false;
 
 	// @ts-expect-error
 	const fetch = window.fetchNative ?? window.fetch;
@@ -71,8 +71,7 @@
 	});
 </script>
 
-<Popup show label={$t("plugin_details.title", { name: details.name })} onClose={close}>
-	<div class="px-[18px] pb-6">
+	<div class="px-[18px] pb-6 min-w-0">
 	<div class="flex flex-row items-start gap-6">
 		<img src={"https://openactionapi.github.io/plugins/icons/" + id + ".png"} alt={details.name} class="size-28 rounded-2xl bg-neutral-900" />
 		<div class="flex flex-col justify-center min-h-28">
@@ -88,7 +87,11 @@
 				</button>
 			</div>
 			<div class="flex flex-row items-center gap-2 mt-4">
-				<button on:click={install} class="btn primary">{$t("plugin_details.install")}</button>
+				{#if installed}
+					<span class="btn pointer-events-none opacity-70"><Check size={14} />{$t("plugin_details.installed")}</span>
+				{:else}
+					<button on:click={install} class="btn primary">{$t("plugin_details.install")}</button>
+				{/if}
 				<button on:click={() => invoke("open_url", { url: details.download_url ?? details.repository + "/releases/latest" })} class="btn quiet">
 					<ArrowSquareOut size={14} />{$t("plugin_details.download_latest")}
 				</button>
@@ -101,7 +104,7 @@
 
 	<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
 	<div
-		class="mt-5 p-6 plugin-readme text-neutral-300 bg-neutral-900 border border-neutral-700 rounded-xl"
+		class="mt-5 p-6 max-w-full overflow-x-auto plugin-readme text-neutral-300 bg-neutral-900 border border-neutral-700 rounded-xl"
 		on:click={handleReadmeClick}
 		on:keyup={handleReadmeClick}
 		role="region"
@@ -109,4 +112,4 @@
 		{@html readme}
 	</div>
 	</div>
-</Popup>
+

@@ -268,5 +268,9 @@
 	"inspector.all_devices": "These apply to every connected device.",
 	"tray.show": "Show actions",
 	"parent_action_view.toggle_hint": "A toggle action does one thing on the first press and another on the second. Drag two actions here.",
-	"inspector.empty.hint_dial": "Drag an action from the tray onto this dial, or double-click an action to put it here."
+	"inspector.empty.hint_dial": "Drag an action from the tray onto this dial, or double-click an action to put it here.",
+	"navigation.close_to_deck": "Back to the deck",
+	"plugin_details.installed": "Installed",
+	"navigation.home": "Back to the deck",
+	"navigation.deck_settings": "Deck settings"
 }

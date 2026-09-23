@@ -9,9 +9,13 @@
 	import CopySimple from "phosphor-svelte/lib/CopySimple";
 	import X from "phosphor-svelte/lib/X";
 	import { getCurrentWindow } from "@tauri-apps/api/window";
+	import { goHome } from "$lib/navigation";
+	import { t } from "$lib/i18n";
 	import { onDestroy, onMount } from "svelte";
 
 	const appWindow = getCurrentWindow();
+	// while a window such as Profiles is open, only it and the window buttons respond
+	export let blocked = false;
 	let maximized = false;
 	let unlisten: (() => void) | undefined;
 
@@ -35,13 +39,13 @@
 
 <header class="relative flex flex-row items-center h-9 shrink-0 pl-3 gap-0.5 bg-neutral-800 border-b border-neutral-700 select-none" data-tauri-drag-region>
 	<!-- The title bar reads as a path: Ectodeck, then the device, then the profile. -->
-	<div class="flex flex-row items-center gap-[7px] pr-1.5 pointer-events-none">
+	<button class="flex flex-row items-center gap-[7px] h-[26px] px-1.5 -ml-1.5 rounded-md hover:bg-neutral-700 transition-colors" on:click={goHome} title={$t("navigation.home")} aria-label={$t("navigation.home")}>
 		<img src={mark} alt="" class="w-4 h-4" draggable="false" />
 		<span class="wordmark text-[13.5px] text-neutral-100">Ectodeck</span>
-	</div>
-	<slot name="path" />
+	</button>
+	<div class="flex flex-row items-center min-w-0" inert={blocked || undefined}><slot name="path" /></div>
 	<div class="ml-auto flex flex-row items-center h-full gap-1">
-		<slot name="actions" />
+		<div class="flex flex-row items-center gap-1" inert={blocked || undefined}><slot name="actions" /></div>
 		<div class="flex flex-row h-full ml-1.5">
 			<button class="{button} hover:bg-neutral-700" aria-label="Minimise" on:click={() => appWindow.minimize()}>
 				<Minus size="14" />

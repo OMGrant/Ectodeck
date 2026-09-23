@@ -24,6 +24,8 @@
 	import Check from "phosphor-svelte/lib/Check";
 	import { createEventDispatcher, tick } from "svelte";
 	import { portal } from "$lib/portal";
+	import { openLayer } from "$lib/navigation";
+	import { onDestroy } from "svelte";
 
 	export let label: string;
 	export let current: string;
@@ -39,6 +41,16 @@
 	// scrolling box or window can cut it off. It opens downwards, or upwards
 	// when the window has more room above.
 	let place = "";
+	let release: (() => void) | null = null;
+	$: if (open && !release) release = openLayer(() => {
+		open = false;
+		root?.querySelector<HTMLButtonElement>("button")?.focus();
+	});
+	$: if (!open && release) {
+		release();
+		release = null;
+	}
+	onDestroy(() => release?.());
 	function position() {
 		const r = root.getBoundingClientRect();
 		const below = innerHeight - r.bottom - 12;
@@ -68,10 +80,7 @@
 		if (!open) return;
 		const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>("button"));
 		const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-		if (event.key == "Escape") {
-			open = false;
-			root.querySelector<HTMLButtonElement>("button")?.focus();
-		} else if (event.key == "ArrowDown") {
+		if (event.key == "ArrowDown") {
 			buttons[(index + 1) % buttons.length]?.focus();
 		} else if (event.key == "ArrowUp") {
 			buttons[(index - 1 + buttons.length) % buttons.length]?.focus();

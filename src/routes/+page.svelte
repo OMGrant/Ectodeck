@@ -5,6 +5,7 @@
 	import { ensureLook } from "$lib/deviceLook";
 	import { initPortBase } from "$lib/ports";
 	import { t } from "$lib/i18n";
+	import { blockingLayers, place } from "$lib/navigation";
 	import { inspectedInstance, inspectedParentAction } from "$lib/propertyInspector";
 	import { actionList, deviceSelector, pluginManager, profileManager } from "$lib/singletons";
 
@@ -76,14 +77,26 @@
 <svelte:window on:dragover={(event) => event.preventDefault()} on:drop={(event) => event.preventDefault()} />
 
 <div class="app-window flex flex-col h-screen bg-neutral-800 text-neutral-300">
-	<TitleBar>
+	<TitleBar blocked={$blockingLayers > 0}>
 		<svelte:fragment slot="path">
+			{#if $place.name != "deck"}
+				<span class="text-neutral-600 text-[15px] px-[3px]" aria-hidden="true">/</span>
+				{#if $place.name == "plugins" && $place.plugin}
+					<button class="crumb-link" on:click={() => $place.name == "plugins" && ($place = { name: "plugins", tab: $place.tab })}>{$t("plugin_manager.title")}</button>
+					<span class="text-neutral-600 text-[15px] px-[3px]" aria-hidden="true">/</span>
+					<span class="crumb-here truncate max-w-60">{$place.title ?? ""}</span>
+				{:else}
+					<span class="crumb-here">{$place.name == "plugins" ? $t("plugin_manager.title") : $t("settings.button")}</span>
+				{/if}
+			{/if}
+			<div class="contents" class:hidden!={$place.name != "deck"}>
 			<DeviceSelector bind:devices bind:value={selectedDevice} bind:selectedProfiles bind:this={$deviceSelector} />
 			{#key selectedDevice}
 				{#if selectedDevice && devices[selectedDevice]}
 					<ProfileManager device={devices[selectedDevice]} bind:profile={selectedProfiles[selectedDevice]} bind:this={$profileManager} />
 				{/if}
 			{/key}
+			</div>
 		</svelte:fragment>
 		<svelte:fragment slot="actions">
 			<PluginManager bind:this={$pluginManager} />
@@ -92,9 +105,12 @@
 	</TitleBar>
 
 	<!-- Overlays (sheets, dialogs, menus) are moved here so they cover the app body. -->
-	<div id="overlay-host" class="relative flex flex-row flex-1 min-h-0">
+	<div class="relative flex flex-row flex-1 min-w-0 min-h-0">
+	<!-- Windows such as Profiles open here, above the places; while one is open, the rest is disabled. -->
+	<div id="dialog-host" class="absolute inset-0 z-40 pointer-events-none empty:hidden"></div>
+	<div id="overlay-host" class="relative flex flex-row flex-1 min-w-0 min-h-0" inert={$blockingLayers > 0 || undefined}>
 		{#if Object.keys(devices).length > 0 && selectedProfiles}
-			<div class="flex flex-col flex-1 min-w-0" use:measure>
+			<div class="flex flex-col flex-1 min-w-0" use:measure inert={$place.name != "deck" || undefined}>
 				<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 				<div
 					class="flex flex-row justify-center shrink-0 px-7 pt-5 pb-[18px] bg-stage"
@@ -130,10 +146,11 @@
 			</div>
 
 			{#if selectedProfiles[selectedDevice] && devices[selectedDevice]}
-				<Inspector device={devices[selectedDevice]} bind:profile={selectedProfiles[selectedDevice]} deviceCount={Object.keys(devices).length} />
+				<Inspector inert={$place.name != "deck" || undefined} device={devices[selectedDevice]} bind:profile={selectedProfiles[selectedDevice]} deviceCount={Object.keys(devices).length} />
 			{/if}
 		{:else}
 			<NoDevicesDetected />
 		{/if}
+	</div>
 	</div>
 </div>

@@ -10,10 +10,12 @@
 	import { PRODUCT_NAME } from "$lib/singletons";
 
 	import { invoke } from "@tauri-apps/api/core";
+	import { goHome, place } from "$lib/navigation";
 	import { listen } from "@tauri-apps/api/event";
 	import { message } from "@tauri-apps/plugin-dialog";
 
-	let showPopup: boolean;
+	// Settings is a place; it shows when you are there.
+	$: showPopup = $place.name == "settings";
 	let buildInfo: string;
 	(async () => (buildInfo = await invoke("get_build_info")))();
 
@@ -65,19 +67,15 @@
 <button
 	class="flex flex-row items-center gap-1.5 h-[26px] px-[9px] rounded-md text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors"
 	class:bg-neutral-700={showPopup}
-	on:click={() => (showPopup = true)}
+	on:click={() => (showPopup ? goHome() : place.set({ name: "settings" }))}
 >
 	<Gear size="15" class="text-neutral-400" />
 	{$t("settings.button")}
 </button>
 
-<svelte:window
-	on:keydown={(event) => {
-		if (event.key == "Escape") showPopup = false;
-	}}
-/>
 
-<Popup bind:show={showPopup} label={$t("settings.button")}>
+
+<Popup show={showPopup} label={$t("settings.button")} onClose={goHome}>
 	{#if $settings}
 		<div class="grid grid-cols-2 gap-x-11 px-7 pt-1 pb-4">
 			<div>

@@ -6,6 +6,7 @@
 	import { onDestroy, tick } from "svelte";
 	import { t } from "$lib/i18n";
 	import { portal } from "$lib/portal";
+	import { openLayer } from "$lib/navigation";
 
 	export let show = false;
 	export let title: string;
@@ -13,6 +14,13 @@
 	export let width = 580;
 
 	let box: HTMLDivElement;
+	let release: (() => void) | null = null;
+	$: if (show && !release) release = openLayer(() => (show = false), true);
+	$: if (!show && release) {
+		release();
+		release = null;
+	}
+	onDestroy(() => release?.());
 	let previousFocus: HTMLElement | null = null;
 	$: if (show) {
 		previousFocus = document.activeElement as HTMLElement | null;
@@ -26,14 +34,8 @@
 	onDestroy(() => previousFocus?.focus());
 </script>
 
-<svelte:window
-	on:keydown={(event) => {
-		if (show && event.key == "Escape") show = false;
-	}}
-/>
-
 {#if show}
-	<div use:portal class="absolute inset-0 z-40 flex items-center justify-center bg-black/50">
+	<div use:portal={"#dialog-host"} class="absolute inset-0 z-40 pointer-events-auto flex items-center justify-center bg-black/50">
 		<div
 			bind:this={box}
 			class="flex flex-col max-h-[calc(100%-2rem)] bg-neutral-800 border border-neutral-600 rounded-xl shadow-2xl shadow-black/60 outline-none overflow-hidden"

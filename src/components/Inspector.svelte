@@ -8,6 +8,7 @@
 	import type { DeviceInfo } from "$lib/DeviceInfo";
 	import type { Profile } from "$lib/Profile";
 
+	import CaretLeft from "phosphor-svelte/lib/CaretLeft";
 	import Clipboard from "phosphor-svelte/lib/Clipboard";
 	import Copy from "phosphor-svelte/lib/Copy";
 	import DotsThree from "phosphor-svelte/lib/DotsThree";
@@ -33,6 +34,8 @@
 	export let device: DeviceInfo;
 	export let profile: Profile;
 	export let deviceCount = 1;
+	// set while another place (Plugins, Settings) covers the deck
+	export let inert: boolean | undefined = undefined;
 
 	// Plugin names, for the line under an action's name.
 	let pluginNames: { [id: string]: string } = {};
@@ -131,7 +134,19 @@
 	const ROTATIONS = [0, 90, 180, 270];
 </script>
 
-<aside class="flex flex-col w-[300px] min-[960px]:w-[348px] shrink-0 min-h-0 bg-neutral-800 border-l border-neutral-700" aria-label={$t("inspector.label")}>
+<aside class="flex flex-col w-[300px] min-[960px]:w-[348px] shrink-0 min-h-0 bg-neutral-800 border-l border-neutral-700" aria-label={$t("inspector.label")} {inert}>
+	{#if selection.kind != "device"}
+		<!-- the way back from any selection to the deck's own settings -->
+		<button
+			class="flex flex-row items-center gap-1 self-start mx-4 mt-3 -mb-1 px-1.5 h-6 -ml-0.5 rounded-md text-xs text-neutral-400 hover:text-neutral-100 hover:bg-neutral-750 transition-colors"
+			on:click={() => {
+				$inspectedParentAction = null;
+				$inspectedInstance = null;
+			}}
+		>
+			<CaretLeft size="11" />{$t("navigation.deck_settings")}
+		</button>
+	{/if}
 	<div class="flex flex-row items-center gap-3 px-4 pt-4 pb-3">
 		{#if selection.kind == "device"}
 			<div class="flex items-center justify-center shrink-0 w-12 h-12 rounded-[9px] bg-neutral-950 ring-1 ring-inset ring-neutral-700 text-neutral-200"><SquaresFour size="24" /></div>
@@ -148,7 +163,8 @@
 				<div class="mt-0.5 text-xs text-neutral-400">{whereEmpty(selection.context)}</div>
 			</div>
 		{:else if instance}
-			<div class="relative shrink-0 w-12 h-12">
+			<!-- the key's picture, drawn at 132 px and scaled down; its frame is clipped so it cannot cover nearby controls -->
+			<div class="relative shrink-0 w-12 h-12 overflow-hidden rounded-[9px] pointer-events-none">
 				<div class="absolute" style="left: -42px; top: -42px; width: 132px; height: 132px;">
 					{#key JSON.stringify(instance.states[instance.current_state])}
 						<Key inslot={instance} context={null} active={false} size={144} scale={48 / 118} role="presentation" tabindex={-1} keyStyle={$deviceLooks[device.id]?.keyStyle ?? null} />

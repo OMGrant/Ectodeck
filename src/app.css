@@ -304,3 +304,9 @@ input[type="color"] {
 .chips::-webkit-scrollbar {
 	display: none;
 }
+.crumb-link {
+	@apply flex items-center h-[26px] px-[7px] rounded-md font-medium text-neutral-300 transition-colors hover:bg-neutral-700 hover:text-neutral-100;
+}
+.crumb-here {
+	@apply flex items-center h-[26px] px-[7px] font-medium text-neutral-100;
+}

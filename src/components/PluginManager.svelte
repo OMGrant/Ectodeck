@@ -23,13 +23,22 @@
 	import { actionList, deviceSelector, PRODUCT_NAME } from "$lib/singletons";
 
 	import { invoke } from "@tauri-apps/api/core";
+	import { goHome, place } from "$lib/navigation";
 	import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 	import { ask, message, open } from "@tauri-apps/plugin-dialog";
 
 	// @ts-expect-error
 	const fetch = window.fetchNative ?? window.fetch;
 
-	let showPopup: boolean;
+	// Plugins is a place: whether it shows, which tab, and which plugin's page
+	// all come from where you are.
+	$: showPopup = $place.name == "plugins";
+	$: tab = $place.name == "plugins" ? $place.tab : lastTab;
+	$: openDetailsView = $place.name == "plugins" ? ($place.plugin ?? null) : null;
+	let lastTab: "installed" | "store" = "store";
+	$: if ($place.name == "plugins") lastTab = $place.tab;
+	const showTab = (next: "installed" | "store") => place.set({ name: "plugins", tab: next });
+	const showPlugin = (id: string) => place.set({ name: "plugins", tab, plugin: id, title: plugins?.[id]?.name });
 	setInterval(async () => {
 		if (showPopup) installed = await invoke("list_plugins");
 	}, 1e3);
@@ -78,7 +87,6 @@
 		return assets[choice];
 	}
 
-	let openDetailsView: string | null = null;
 	type GitHubPlugin = {
 		name: string;
 		author: string;
@@ -203,10 +211,8 @@
 	(async () => (plugins = await (await fetch("https://openactionapi.github.io/plugins/catalogue.json")).json()))();
 
 	export function openStore() {
-		showPopup = true;
-		tab = "store";
+		place.set({ name: "plugins", tab: "store" });
 	}
-	let tab: "installed" | "store" = "store";
 
 	let showArchive: boolean = false;
 	let archivePlugins: any[] | null = null;
@@ -272,31 +278,35 @@
 <button
 	class="flex flex-row items-center gap-1.5 h-[26px] px-[9px] rounded-md text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors"
 	class:bg-neutral-700={showPopup}
-	on:click={() => (showPopup = true)}
+	on:click={() => (showPopup ? goHome() : place.set({ name: "plugins", tab: lastTab }))}
 >
 	<PuzzlePiece size="15" class="text-neutral-400" />
 	{$t("plugin_manager.button")}
 </button>
 
-<svelte:window
-	on:keydown={(event) => {
-		if (event.key == "Escape") {
-			if (choices) cancelChoice();
-			else if (openDetailsView) openDetailsView = null;
-			else showPopup = false;
-		}
-	}}
-/>
 
-<Popup bind:show={showPopup} label={$t("plugin_manager.title")}>
-	<div slot="header" class="flex flex-row gap-0.5 px-[18px] border-b border-neutral-700" role="tablist">
-		<button role="tab" aria-selected={tab == "installed"} class="tab" class:on={tab == "installed"} on:click={() => (tab = "installed")}>
+
+<Popup
+	show={showPopup}
+	label={openDetailsView && plugins?.[openDetailsView] ? plugins[openDetailsView].name : $t("plugin_manager.title")}
+	onClose={goHome}
+	back={openDetailsView ? { label: $t("plugin_manager.title"), go: () => showTab(tab) } : null}
+>
+	<div slot="header" class="flex flex-row gap-0.5 px-[18px] border-b border-neutral-700" class:hidden={openDetailsView} role="tablist">
+		<button role="tab" aria-selected={tab == "installed"} class="tab" class:on={tab == "installed"} on:click={() => showTab("installed")}>
 			{$t("plugin_manager.installed")}<span class="ml-1 text-neutral-500">{installed.length}</span>
 		</button>
-		<button role="tab" aria-selected={tab == "store"} class="tab" class:on={tab == "store"} on:click={() => (tab = "store")}>{$t("plugin_manager.store")}</button>
+		<button role="tab" aria-selected={tab == "store"} class="tab" class:on={tab == "store"} on:click={() => showTab("store")}>{$t("plugin_manager.store")}</button>
 	</div>
 
-	{#if tab == "installed"}
+	{#if openDetailsView && plugins?.[openDetailsView]}
+		<PluginDetails
+			id={openDetailsView}
+			details={plugins[openDetailsView]}
+			installed={installedSet.has(openDetailsView)}
+			install={() => openDetailsView && installPluginGitHub(openDetailsView, plugins[openDetailsView])}
+		/>
+	{:else if tab == "installed"}
 		<div class="px-[18px] pt-2.5 pb-6" role="list">
 			<!-- prettier-ignore -->
 			{#each installed.slice().sort((a, b) =>
@@ -313,7 +323,7 @@
 							{#if plugin.registered}<span class="text-green-400">●</span>{$t("plugin_manager.running")}{:else}<span class="text-amber-300">●</span>{$t("plugin_manager.not_running")}{/if}
 							{#if plugin.builtin}· {$t("plugin_manager.builtin")}{/if}
 							{#if availableUpdates[plugin.id]}
-								· <button class="text-amber-300 underline" on:click={() => (openDetailsView = plugin.id.endsWith(".sdPlugin") ? plugin.id.slice(0, -9) : plugin.id)}>
+								· <button class="text-amber-300 underline" on:click={() => showPlugin(plugin.id.endsWith(".sdPlugin") ? plugin.id.slice(0, -9) : plugin.id)}>
 									{$t("plugin_manager.update", { version: availableUpdates[plugin.id] })}
 								</button>
 							{/if}
@@ -357,7 +367,7 @@
 					<div class="grid grid-cols-3 gap-2">
 						{#each SUGGESTED.filter((id) => plugins[id]) as id}
 							{@const plugin = plugins[id]}
-							<button class="plugin-card" on:click={() => (openDetailsView = id)}>
+							<button class="plugin-card" on:click={() => showPlugin(id)}>
 								<img src="https://openactionapi.github.io/plugins/icons/{id}.png" alt=""  />
 								<div class="min-w-0">
 									<div class="nm">{plugin.name}</div>
@@ -375,7 +385,7 @@
 				</div>
 				<div class="grid grid-cols-3 gap-2">
 					{#each storeList as [id, plugin] (id)}
-						<button class="plugin-card" on:click={() => (openDetailsView = id)}>
+						<button class="plugin-card" on:click={() => showPlugin(id)}>
 							<img src="https://openactionapi.github.io/plugins/icons/{id}.png" alt="" loading="lazy" />
 							<div class="min-w-0">
 								<div class="nm">{plugin.name}</div>
@@ -430,17 +440,7 @@
 	{/if}
 </Popup>
 
-{#if openDetailsView && plugins?.[openDetailsView]}
-	<PluginDetails
-		id={openDetailsView}
-		details={plugins[openDetailsView]}
-		install={() => {
-			// @ts-expect-error
-			installPluginGitHub(openDetailsView, plugins[openDetailsView]);
-		}}
-		close={() => (openDetailsView = null)}
-	/>
-{/if}
+
 
 <Dialog show={!!choices} title={$t("plugin_manager.choose_asset")} width={440}>
 	<p class="mb-2 text-xs text-neutral-400">{$t("plugin_manager.choose_asset.hint")}</p>

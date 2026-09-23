@@ -85,7 +85,7 @@
 </script>
 
 {#if instance}
-<div class="flex flex-col pt-0.5" on:dragover={(event) => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"; }} on:drop={handleDrop}>
+<div class="flex flex-col pt-0.5" role="group" on:dragover={(event) => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"; }} on:drop={handleDrop}>
 	{#if instance.states.length > 1}
 		<div class="seg mb-2" role="radiogroup" aria-label={$t("instance_editor.state")}>
 			{#each instance.states as _, i}

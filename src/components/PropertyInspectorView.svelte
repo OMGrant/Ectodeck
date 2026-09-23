@@ -8,6 +8,7 @@
 	import { inspectedInstance } from "$lib/propertyInspector";
 
 	import { invoke } from "@tauri-apps/api/core";
+	import { openLayer } from "$lib/navigation";
 	import { listen } from "@tauri-apps/api/event";
 
 	let iframes: { [context: string]: HTMLIFrameElement } = {};
@@ -62,7 +63,11 @@
 		);
 	}
 
+	// a plugin's pop-out window is a layer: Escape closes it, and the rest waits
+	const popupLayers: { [context: string]: () => void } = {};
 	const closePopup = (context: string) => {
+		popupLayers[context]?.();
+		delete popupLayers[context];
 		const iframe = iframes[context];
 		if (iframe) {
 			iframe.style.position = "";
@@ -100,6 +105,9 @@
 
 			iframePopupsOpen.push(data.payload);
 			iframePopupsOpen = iframePopupsOpen;
+			const context = data.payload;
+			popupLayers[context]?.();
+			popupLayers[context] = openLayer(() => closePopup(context), true);
 
 			iframeContainer.style.position = "absolute";
 			iframeContainer.style.width = "100%";
@@ -184,13 +192,7 @@
 	});
 </script>
 
-<svelte:window
-	on:keydown={(event) => {
-		if (event.key == "Escape" && iframePopupsOpen.length > 0) {
-			closePopup(iframePopupsOpen[iframePopupsOpen.length - 1]);
-		}
-	}}
-/>
+
 
 <div class="flex-1 min-h-60 -mx-4 overflow-auto bg-neutral-800" class:hidden={!visible && iframePopupsOpen.length == 0} bind:this={iframeContainer}>
 	<button
