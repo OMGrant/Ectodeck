@@ -279,16 +279,32 @@
     // across it, like tapping a water balloon; see pokeHeight.
     '  vec4 clip = proj * vec4(q, 1.0);' +
     '  float aspect = proj[1][1] / proj[0][0];' +
-    // the dent sinks straight away from the viewer, along the line of sight,
-    // so each point stays where it was on screen and the dent is exactly as
-    // round as its footprint; the ripple moves along the normal, which is
-    // what lets it slosh the edge
+    // The dent sinks straight away from the viewer, along the line of sight,
+    // for depth. The shape changes in screen space, where it can be kept
+    // smooth: the skin under the key is drawn in toward the body's centre,
+    // so an outline near the key takes a round scoop, and the ripple moves
+    // the skin in and out in rings from the key. Both fields are gentle
+    // enough that neighbouring points never cross, which is what makes a
+    // pinch, so neither can pinch.
     '  vec2 at = clip.xy / clip.w;' +
     '  q += normalize(q) * -pokePart(at, aspect, 1.0) * scale;' +
-    // skin seen edge-on would fold into points if pushed, so the ripple fades
-    // out toward the outline and the outline only swells gently
-    '  float facing = smoothstep(0.05, 0.6, abs(dot(normalize(vN), normalize(-q))));' +
-    '  q += normalize(vN) * pokePart(at, aspect, 0.0) * scale * facing;' +
+    '  vec4 bodyClip = proj * vec4(offset, -4.2, 1.0);' +
+    '  vec2 body = bodyClip.xy / bodyClip.w;' +
+    '  vec2 shift = vec2(0.0);' +
+    '  for (int i = 0; i < 4; i++) {' +
+    '    if (pokes[i].w <= 0.0) continue;' +
+    '    float age = pokes[i].z;' +
+    '    vec2 d = (at - pokes[i].xy) * vec2(aspect, 1.0);' +
+    '    float r = length(d);' +
+    '    vec2 toBody = normalize((body - pokes[i].xy) * vec2(aspect, 1.0) + vec2(1e-4));' +
+    '    float scoop = 0.16 * exp(-r * r / 0.17) * smoothstep(0.0, 0.6, age) * exp(-age * 0.75);' +
+    '    float rr = r - age * 0.3;' +
+    '    float wave = 0.036 * sin(rr * 7.5) * exp(-rr * rr / 0.2) * exp(-age * 0.55) * smoothstep(0.0, 0.3, r)' +
+    '               * smoothstep(0.0, 0.5, age) * (1.0 - smoothstep(age * 0.3, age * 0.3 + 0.25, r));' +
+    '    shift += (toBody * scoop + d / max(r, 1e-3) * wave) * pokes[i].w;' +
+    '  }' +
+    // screen offset (NDC, aspect corrected) back to view space at this depth
+    '  q.xy += vec2(shift.x / aspect, shift.y) * (-q.z) / vec2(proj[0][0], proj[1][1]);' +
     '  vV = normalize(-q);' +
     '  vD = q.z;';
 
