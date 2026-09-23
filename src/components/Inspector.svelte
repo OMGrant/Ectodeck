@@ -149,7 +149,7 @@
 	{/if}
 	<div class="flex flex-row items-center gap-3 px-4 pt-4 pb-3">
 		{#if selection.kind == "device"}
-			<div class="flex items-center justify-center shrink-0 w-12 h-12 rounded-[9px] bg-neutral-950 ring-1 ring-inset ring-neutral-700 text-neutral-200"><SquaresFour size="24" /></div>
+			<div class="flex items-center justify-center shrink-0 w-12 h-12 rounded-[9px] bg-neutral-950 text-neutral-200"><SquaresFour size="24" /></div>
 			<div class="min-w-0">
 				<h3 class="truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] text-neutral-100">{device.name}</h3>
 				<div class="mt-0.5 text-xs text-neutral-400">

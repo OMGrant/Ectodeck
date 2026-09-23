@@ -38,10 +38,10 @@ KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="5548", ATTRS{idProduct
 	<div class="w-[520px] max-w-[calc(100%-2rem)]">
 		<div class="relative w-[220px] h-[124px] mx-auto mb-[22px] border-[1.5px] border-dashed border-neutral-600 rounded-xl" aria-hidden="true">
 			<div class="absolute top-3.5 bottom-3.5 left-3.5 right-[46px] grid grid-cols-5 gap-[7px]">
-				{#each { length: 15 } as _}<span class="rounded ring-[1.2px] ring-inset ring-neutral-700"></span>{/each}
+				{#each { length: 15 } as _}<span class="rounded border-[1.5px] border-neutral-700"></span>{/each}
 			</div>
 			<div class="absolute top-3.5 bottom-3.5 right-3.5 flex flex-col justify-between">
-				{#each { length: 3 } as _}<span class="w-[22px] h-[22px] rounded-full ring-[1.2px] ring-inset ring-neutral-700"></span>{/each}
+				{#each { length: 3 } as _}<span class="w-[22px] h-[22px] rounded-full border-[1.5px] border-neutral-700"></span>{/each}
 			</div>
 		</div>
 		<h2 class="mb-1.5 text-center text-lg font-semibold tracking-[-0.015em] text-neutral-100">{$t("no_devices_detected.title")}</h2>

@@ -276,7 +276,7 @@
 	<section class="insp-sect">
 		<h4>{$t("device_view.background")}</h4>
 		<div class="flex flex-row items-center gap-3">
-			<div class="relative shrink-0 w-32 aspect-[854/480] rounded-lg overflow-hidden bg-neutral-950 ring-1 ring-neutral-700">
+			<div class="relative shrink-0 w-32 aspect-[854/480] rounded-lg overflow-hidden bg-neutral-950">
 				{#if animated && $devicePreviews[device.id]}
 					<img src={$devicePreviews[device.id]} alt="" class="absolute inset-0 w-full h-full object-cover" />
 				{:else if !animated && background}

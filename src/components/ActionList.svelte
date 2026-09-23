@@ -92,7 +92,7 @@
 								else if (event.key == "Enter") place(action);
 							}}
 						>
-							<span class="flex items-center justify-center w-10 h-10 rounded-[9px] bg-neutral-950 ring-1 ring-inset ring-neutral-700 pointer-events-none">
+							<span class="flex items-center justify-center w-10 h-10 rounded-[9px] bg-neutral-950 pointer-events-none">
 								<img use:strippedIcon={iconUrl(action.icon)} alt="" class="w-7 h-7" />
 							</span>
 							<span class="line-clamp-1 min-[960px]:line-clamp-2">{nameOf(action)}</span>
