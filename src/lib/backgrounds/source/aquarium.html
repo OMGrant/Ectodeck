@@ -1,0 +1,407 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Aquarium</title>
+<!--
+  Ectodeck's built-in Aquarium: looking through the front glass into a deep
+  reef tank, lit from above, drawn with three.js (MIT). The backdrop, fish,
+  bubble and food are photographic images made for Ectodeck. A key press
+  drops food there and the fish come to eat; two quick presses tap the
+  glass and the fish nearby dart away. Its presets are the time of day.
+
+  Built by scripts/build_backgrounds.py, which inlines three.js and the
+  pictures in aquarium/; edit this source, not the built page.
+-->
+<script type="application/json" id="ectodeck-inputs">
+{
+  "DESCRIPTION": "Looking into a deep reef tank lit from above, with clownfish, tangs, an angelfish, Moorish idols and more. Press a key to feed the fish there; press it twice quickly to tap the glass. Its presets are the time of day, or Automatic to follow your clock.",
+  "INPUTS": [
+    { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 0, "VALUES": [-1, 0, 1, 2], "LABELS": ["Automatic", "Day", "Dusk", "Night"], "PRESET": true },
+    { "NAME": "fish", "TYPE": "float", "LABEL": "Fish", "DEFAULT": 1, "MIN": 0.3, "MAX": 2 },
+    { "NAME": "bubbles", "TYPE": "bool", "LABEL": "Bubbles", "DEFAULT": true }
+  ]
+}
+</script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #06243f; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script>/*THREE*/</script>
+<script>
+(function () {
+  // ---- settings, from the address or the declared defaults
+  var q = new URLSearchParams(location.search);
+  var declared = {};
+  JSON.parse(document.getElementById('ectodeck-inputs').textContent).INPUTS.forEach(function (i) { declared[i.NAME] = i.DEFAULT; });
+  var setting = function (k) { return q.has(k) ? parseFloat(q.get(k)) : Number(declared[k]); };
+  var bubbler = q.has('bubbles') ? q.get('bubbles') === '1' : declared.bubbles;
+  var fishScale = Math.min(2, Math.max(0.3, setting('fish')));
+  function sunHours(now) {
+    var y = now.getFullYear(), jan = new Date(y, 0, 1).getTimezoneOffset(), jul = new Date(y, 6, 1).getTimezoneOffset();
+    var lat = (jan < jul ? -35 : 35) * Math.PI / 180;
+    var noon = 12 + (now.getTimezoneOffset() < Math.max(jan, jul) ? 1 : 0);
+    var day = (now - new Date(y, 0, 0)) / 864e5;
+    var decl = -23.44 * Math.PI / 180 * Math.cos(2 * Math.PI / 365 * (day + 10));
+    var cosH = (Math.sin(-0.833 * Math.PI / 180) - Math.sin(lat) * Math.sin(decl)) / (Math.cos(lat) * Math.cos(decl));
+    var half = Math.acos(Math.max(-1, Math.min(1, cosH))) * 12 / Math.PI;
+    return { now: now.getHours() + now.getMinutes() / 60, rise: noon - half, noon: noon, set: noon + half };
+  }
+  function clockLight() {
+    var s = sunHours(new Date());
+    if (s.now < s.rise - 0.5 || s.now >= s.set + 0.75) return 2;
+    if (s.now < s.rise + 0.75 || s.now >= s.set - 1) return 1;
+    return 0;
+  }
+  // the chosen time of day, or -1 to follow the clock
+  var timeSetting = Math.round(setting('time'));
+  var light = timeSetting < 0 ? clockLight() : timeSetting % 3;   // 0 day, 1 dusk, 2 night
+  setInterval(function () { if (timeSetting < 0) light = clockLight(); }, 60000);
+  // the tank's light for each: its colour over everything, and how strong the rays are
+  var LIGHTS = [{ tint: [1, 1, 1], rays: 1 }, { tint: [0.86, 0.66, 0.56], rays: 0.55 }, { tint: [0.26, 0.34, 0.6], rays: 0.12 }];
+  var tint = new THREE.Vector3().fromArray(LIGHTS[light].tint), rayAmount = { value: LIGHTS[light].rays };
+
+  var W = innerWidth, H = innerHeight;
+  // The canvas keeps each frame until the next is drawn: without it the
+  // deck's headless Chrome now and then shows a frame with the backdrop
+  // missing, which flickers on the deck.
+  var renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  renderer.setSize(W, H);
+  document.body.appendChild(renderer.domElement);
+  var scene = new THREE.Scene();
+  // pixels, with y up from the bottom
+  var camera = new THREE.OrthographicCamera(0, W, H, 0, -1000, 1000);
+  var loader = new THREE.TextureLoader();
+  var clock = { t: 0 };
+  var rand = function (a, b) { return a + Math.random() * (b - a); };
+  // the tank's deep blue, which far and low fish sink into
+  var WATER = new THREE.Vector3(0.02, 0.09, 0.22);
+
+  // ---- the reef: the photograph, with light rippling over it and the surface moving
+  var reefMat = new THREE.ShaderMaterial({
+    uniforms: { map: { value: loader.load('ectodeck-asset:aquarium/reef.webp') }, t: { value: 0 }, tint: { value: tint } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: [
+      'uniform sampler2D map; uniform float t; uniform vec3 tint; varying vec2 vUv;',
+      'void main() {',
+      '  vec2 uv = vUv;',
+      // the surface, in the top quarter, moves: a slow wobble that fades out downward
+      '  float top = smoothstep(0.72, 0.95, uv.y);',
+      '  uv.x += top * 0.006 * sin(uv.y * 70.0 + t * 1.3) + top * 0.004 * sin(uv.x * 23.0 - t * 0.9);',
+      '  uv.y += top * 0.004 * sin(uv.x * 31.0 + t * 1.1);',
+      '  vec3 c = texture2D(map, uv).rgb;',
+      // caustics: bright wandering webs, strongest low down on the sand and coral
+      '  vec2 p = vUv * vec2(9.0, 5.0);',
+      '  float w = sin(p.x * 1.7 + t * 0.9 + sin(p.y * 1.3 + t * 0.7) * 1.6) * sin(p.y * 2.1 - t * 0.8 + sin(p.x * 1.1 - t * 0.5) * 1.4);',
+      '  float caust = pow(max(w, 0.0), 6.0) + 0.6 * pow(max(sin((p.x + p.y) * 2.3 + t * 1.2 + sin(p.x * 3.0) ), 0.0), 12.0);',
+      '  float low = 1.0 - smoothstep(0.35, 0.7, vUv.y);',
+      '  float lum = dot(c, vec3(0.3, 0.55, 0.15));',
+      '  c += caust * low * (0.10 + 0.25 * lum) * vec3(0.8, 0.95, 1.0);',
+      '  gl_FragColor = vec4(c * tint, 1.0);',
+      '}'
+    ].join('\n'),
+    depthTest: false, depthWrite: false
+  });
+  var reef = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), reefMat);
+  reef.scale.set(W, H, 1); reef.position.set(W / 2, H / 2, -500);
+  reef.renderOrder = 0;
+  scene.add(reef);
+
+  // ---- light rays from the surface, swaying slowly
+  var rayMat = new THREE.ShaderMaterial({
+    uniforms: { t: { value: 0 }, amount: rayAmount },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: [
+      'uniform float t; uniform float amount; varying vec2 vUv;',
+      'void main() {',
+      '  float x = vUv.x;',
+      '  float a = 0.0;',
+      '  for (int i = 0; i < 6; i++) {',
+      '    float fi = float(i);',
+      '    float cx = 0.12 + fi * 0.16 + 0.03 * sin(t * 0.21 + fi * 1.7) + (1.0 - vUv.y) * (0.08 * sin(fi * 2.3));',
+      '    float wdt = 0.018 + 0.012 * sin(fi * 3.1 + 1.0) + (1.0 - vUv.y) * 0.03;',
+      '    a += exp(-pow((x - cx) / wdt, 2.0)) * (0.55 + 0.45 * sin(t * 0.37 + fi * 2.1));',
+      '  }',
+      '  a *= smoothstep(0.1, 0.95, vUv.y) * 0.06 * amount;',
+      '  gl_FragColor = vec4(vec3(0.75, 0.92, 1.0) * a, 1.0);',
+      '}'
+    ].join('\n'),
+    blending: THREE.AdditiveBlending, transparent: true, depthTest: false, depthWrite: false
+  });
+  var rays = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), rayMat);
+  rays.scale.set(W, H, 1); rays.position.set(W / 2, H / 2, 0);
+  rays.renderOrder = 500;
+  scene.add(rays);
+
+  // ---- fish: a cut-out on a bendable strip; the tail beats and the body flexes,
+  // and a turn narrows the fish to its edge and flips it
+  // A turn is a bend, as a real fish turns: the head swings round first and the
+  // body follows it, so from the side the fish folds into a U rather than
+  // narrowing to nothing. turn runs from 0 (facing as the picture) to 1
+  // (turned round); each point along the body turns a little after the one
+  // ahead of it, and its place is the sum of the steps before it.
+  var fishVert = [
+    'uniform float phase; uniform float amp; uniform float turn; uniform float bend;',
+    'varying vec2 vUv; varying float vSide;',
+    'float along(float u) { return clamp(turn * 1.9 - u * 0.9, 0.0, 1.0); }',
+    'float reach(float u) {',
+    '  float x = 0.0;',
+    '  for (int k = 0; k < 10; k++) x += cos(3.14159 * along((float(k) + 0.5) / 10.0 * u));',
+    '  return x * u / 10.0;',
+    '}',
+    'void main() {',
+    '  vUv = uv;',
+    '  vec3 p = position;',                              // x from -0.5 (head) to 0.5 (tail)
+    '  float u = p.x + 0.5;',
+    '  float tail = smoothstep(0.45, 1.0, u);',
+    '  float body = u;',
+    // swimming: the tail sweeps toward and away from the viewer (it foreshortens
+    // and lifts a little); the body carries a softer wave
+    '  float sweep = tail * tail * amp;',
+    '  p.x = reach(u) - reach(0.5) - sweep * 0.09 * (0.5 - 0.5 * cos(phase * 2.0));',
+    '  p.y += (tail * tail * 0.05 + body * 0.012) * amp * sin(phase - u * 3.0);',
+    // mid-turn the body arcs a little, and the side facing away is shaded
+    '  float t = along(u);',
+    '  p.y += sin(3.14159 * turn) * 0.05 * sin(3.14159 * u) + bend * body * body * 0.08;',
+    '  vSide = abs(cos(3.14159 * t));',
+    '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+    '}'
+  ].join('\n');
+  var fishFrag = [
+    'uniform sampler2D map; uniform float haze; uniform vec3 water; uniform float light; uniform vec3 tint;',
+    'varying vec2 vUv; varying float vSide;',
+    'void main() {',
+    '  vec4 c = texture2D(map, vUv);',
+    '  if (c.a < 0.03) discard;',
+    '  vec3 col = c.rgb * (0.7 + 0.3 * vSide) * light;',   // a part seen edge-on in a turn: a little darker
+    '  col = mix(col, water, haze) * tint;',
+    '  gl_FragColor = vec4(col, c.a);',
+    '}'
+  ].join('\n');
+
+  var SPECIES = [
+    { file: 'ectodeck-asset:aquarium/clownfish.webp', len: 105, speed: 38, beat: 9, count: 2, band: [0.2, 0.6] },
+    { file: 'ectodeck-asset:aquarium/idol.webp', len: 150, speed: 34, beat: 6, count: 2, band: [0.35, 0.82] },
+    { file: 'ectodeck-asset:aquarium/regal.webp', len: 160, speed: 50, beat: 7, count: 2, band: [0.3, 0.85] },
+    { file: 'ectodeck-asset:aquarium/yellowtang.webp', len: 140, speed: 46, beat: 7, count: 2, band: [0.3, 0.85] },
+    { file: 'ectodeck-asset:aquarium/angel.webp', len: 185, speed: 30, beat: 5, count: 1, band: [0.3, 0.75] },
+    { file: 'ectodeck-asset:aquarium/copperband.webp', len: 130, speed: 28, beat: 6, count: 1, band: [0.25, 0.65] },
+    { file: 'ectodeck-asset:aquarium/anthias.webp', len: 95, speed: 56, beat: 10, count: 3, band: [0.4, 0.9] },
+  ];
+  var fish = [];
+  SPECIES.forEach(function (sp) {
+    var tex = loader.load(sp.file, function (t) {
+      sp.aspect = t.image.height / t.image.width;
+      fish.forEach(function (f) { if (f.sp === sp) f.mesh.scale.set(f.len * Math.sign(f.mesh.scale.x || 1), f.len * sp.aspect, 1); });
+    });
+    tex.anisotropy = 4;
+    var count = Math.max(sp.count > 1 ? 1 : 0, Math.round(sp.count * fishScale));
+    for (var n = 0; n < count; n++) {
+      var depth = Math.sqrt(Math.random());                // 0 far, 1 near; most fish near the glass
+      var mat = new THREE.ShaderMaterial({
+        uniforms: { map: { value: tex }, phase: { value: 0 }, amp: { value: 1 }, turn: { value: 0 }, bend: { value: 0 },
+                    haze: { value: 0.42 * (1 - depth) }, water: { value: WATER }, light: { value: 1 }, tint: { value: tint } },
+        vertexShader: fishVert, fragmentShader: fishFrag, transparent: true, depthTest: false, depthWrite: false,
+        // both faces: mid-turn the body folds over, and a folded part faces away
+        side: THREE.DoubleSide
+      });
+      var mesh = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1, 32, 1), mat);
+      var len = sp.len * (0.5 + 0.5 * depth);
+      mesh.scale.set(len, len * 0.5, 1);
+      mesh.renderOrder = 100 + Math.round(depth * 300);
+      scene.add(mesh);
+      var dir = Math.random() < 0.5 ? -1 : 1;             // -1 swims left (the picture's own way), 1 right
+      var f = {
+        sp: sp, mesh: mesh, len: len, depth: depth,
+        x: rand(0.1, 0.9) * W, y: rand(sp.band[0], sp.band[1]) * H, ty: 0,
+        dir: dir, from: dir, turnT: 1, sinceTurn: rand(0, 3), speed: sp.speed * (0.7 + 0.5 * depth) * rand(0.85, 1.15),
+        phase: rand(0, 6.28), rush: 0, target: null, retarget: 0
+      };
+      f.ty = f.y;
+      fish.push(f);
+    }
+  });
+
+  // ---- bubbles from a bubbler on the right, and food
+  function spriteMat(frag, size) {
+    return new THREE.ShaderMaterial({
+      uniforms: { size: { value: size } },
+      vertexShader: 'attribute float scale; uniform float size; void main() { gl_PointSize = size * scale; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: frag, transparent: true, depthTest: false, depthWrite: false
+    });
+  }
+  var MAXB = 90, bubbles = [];
+  var bGeo = new THREE.BufferGeometry();
+  bGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXB * 3), 3));
+  bGeo.setAttribute('scale', new THREE.BufferAttribute(new Float32Array(MAXB), 1));
+  var bubbleTex = loader.load('ectodeck-asset:aquarium/bubble.webp');
+  var bPts = new THREE.Points(bGeo, new THREE.ShaderMaterial({
+    uniforms: { size: { value: 1 }, map: { value: bubbleTex }, tint: { value: tint } },
+    vertexShader: 'attribute float scale; uniform float size; void main() { gl_PointSize = size * scale; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'uniform sampler2D map; uniform vec3 tint; void main() { vec3 c = texture2D(map, vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y)).rgb; gl_FragColor = vec4(c * 1.15 * tint, 1.0); }',
+    blending: THREE.AdditiveBlending, transparent: true, depthTest: false, depthWrite: false
+  }));
+  bPts.renderOrder = 450; bPts.frustumCulled = false; scene.add(bPts);   // its bounds change every frame
+
+  var MAXF = 80, food = [];
+  var fGeo = new THREE.BufferGeometry();
+  fGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXF * 3), 3));
+  fGeo.setAttribute('scale', new THREE.BufferAttribute(new Float32Array(MAXF), 1));
+  fGeo.setAttribute('turn', new THREE.BufferAttribute(new Float32Array(MAXF * 3), 3));   // spin, tilt, which flake
+  var fPts = new THREE.Points(fGeo, new THREE.ShaderMaterial({
+    uniforms: { size: { value: 1 }, map: { value: loader.load('ectodeck-asset:aquarium/food.webp') }, tint: { value: tint } },
+    vertexShader: [
+      'attribute float scale; attribute vec3 turn; uniform float size; varying vec3 vTurn; varying float vLight;',
+      'void main() { vTurn = turn; vLight = 0.6 + 0.5 * clamp(position.y / ' + H.toFixed(1) + ', 0.0, 1.0); gl_PointSize = size * scale; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }'
+    ].join('\n'),
+    fragmentShader: [
+      'uniform sampler2D map; uniform vec3 tint; varying vec3 vTurn; varying float vLight;',
+      'void main() {',
+      '  vec2 p = gl_PointCoord - 0.5;',
+      '  float c = cos(vTurn.x), s = sin(vTurn.x);',
+      '  p = mat2(c, -s, s, c) * p;',
+      '  p.x /= max(abs(vTurn.y), 0.15);',                // tilting edge-on as it flutters
+      '  if (abs(p.x) > 0.5 || abs(p.y) > 0.5) discard;',
+      '  float k = vTurn.z;',
+      '  vec2 cell = vec2(mod(k, 2.0), floor(k / 2.0)) * 0.5;',
+      '  vec4 t = texture2D(map, cell + vec2(p.x + 0.5, 0.5 - p.y) * 0.5);',
+      '  if (t.a < 0.1) discard;',
+      '  gl_FragColor = vec4(t.rgb * vLight * tint * (0.7 + 0.3 * abs(vTurn.y)), t.a);',
+      '}'
+    ].join('\n'),
+    transparent: true, depthTest: false, depthWrite: false
+  }));
+  fPts.renderOrder = 420; fPts.frustumCulled = false; scene.add(fPts);
+
+  // ---- presses: food at the key; two quick presses tap the glass
+  var lastPress = { t: -9, x: 0, y: 0 };
+  function press(x, y) {                                  // x, y from 0 to 1, from the top left
+    var px = x * W, py = (1 - y) * H;
+    if (clock.t - lastPress.t < 0.35 && Math.hypot(px - lastPress.x, py - lastPress.y) < 60) {
+      fish.forEach(function (f) {
+        var d = Math.hypot(f.x - px, f.y - py);
+        if (d < 260) { f.dir = f.x < px ? -1 : 1; f.rush = 1.2; f.target = null; }
+      });
+      lastPress.t = -9; return;
+    }
+    lastPress = { t: clock.t, x: px, y: py };
+    for (var i = 0; i < 9; i++) food.push({ x: px + rand(-28, 28), y: py + rand(-10, 10), vx: rand(-16, 16), vy: rand(-18, -8), s: rand(9, 14), spin: rand(0, 6), rot: rand(0, 6.28), spinRate: rand(-2, 2), flutter: rand(2, 4), kind: Math.floor(rand(0, 4)) });
+  }
+  window.addEventListener('ectodeck:press', function (e) { if (e.detail.down) press(e.detail.x, e.detail.y); });
+
+  // ---- the tank's life
+  function step(dt) {
+    clock.t += dt;
+    // the tank's light eases toward the time of day's
+    var goal = LIGHTS[light], ease = Math.min(1, dt * 0.8);
+    tint.x += (goal.tint[0] - tint.x) * ease; tint.y += (goal.tint[1] - tint.y) * ease; tint.z += (goal.tint[2] - tint.z) * ease;
+    rayAmount.value += (goal.rays - rayAmount.value) * ease;
+    reefMat.uniforms.t.value = clock.t; rayMat.uniforms.t.value = clock.t;
+
+    // food sinks and drifts, and is eaten
+    // flakes sink slowly, sliding side to side as they flutter
+    food.forEach(function (p) { p.vx *= Math.pow(0.4, dt); p.x += p.vx * dt + Math.sin(clock.t * p.flutter + p.spin) * 14 * dt; p.y += p.vy * dt; p.vy = Math.max(p.vy - 1.5 * dt, -16); p.rot += p.spinRate * dt; });
+    food = food.filter(function (p) { return p.y > H * 0.12 && !p.eaten; }).slice(-MAXF);
+
+    fish.forEach(function (f) {
+      // find food
+      if (!f.target || f.target.eaten || f.target.y < H * 0.12) {
+        f.target = null;
+        var best = 300;
+        food.forEach(function (p) { var d = Math.hypot(p.x - f.x, p.y - f.y); if (d < best) { best = d; f.target = p; } });
+      }
+      var want = f.dir, rushing = f.rush > 0;
+      var head = f.x + f.dir * f.len * 0.45;
+      if (f.target) {
+        // turn for food only when it is clearly behind the head
+        if ((f.target.x - head) * f.dir < -f.len * 0.5) want = -f.dir;
+        f.ty = f.target.y;
+        if (Math.hypot(f.target.x - head, f.target.y - f.y) < 12) { f.target.eaten = true; f.target = null; }
+      } else {
+        // wander: a new depth every few seconds; turn well before the glass
+        f.retarget -= dt;
+        if (f.retarget < 0) { f.ty = rand(f.sp.band[0], f.sp.band[1]) * H; f.retarget = rand(3, 8); }
+        var margin = f.len * 0.9;
+        if (f.x < margin && f.dir < 0) want = 1;
+        else if (f.x > W - margin && f.dir > 0) want = -1;
+        else if (Math.random() < dt * 0.03) want = -f.dir;
+      }
+      // a turn takes most of a second, and a fish doesn't turn again soon after
+      f.sinceTurn += dt;
+      if (want !== f.dir && f.turnT >= 1 && (f.sinceTurn > 2.5 || rushing || f.x < f.len * 0.4 || f.x > W - f.len * 0.4)) {
+        f.from = f.dir; f.dir = want; f.turnT = 0; f.sinceTurn = 0;
+      }
+      if (f.turnT < 1) f.turnT = Math.min(1, f.turnT + dt / (rushing ? 0.45 : 0.9));
+      f.rush = Math.max(0, f.rush - dt);
+      var turning = f.turnT < 1 ? Math.sin(Math.PI * f.turnT) : 0;
+      var speed = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (1 - 0.7 * turning);
+      // while turning the fish keeps drifting the old way, then goes the new one
+      var heading = f.turnT < 1 ? (f.turnT < 0.5 ? f.from : f.dir) : f.dir;
+      f.x += heading * speed * dt;
+      f.x = Math.max(f.len * 0.3, Math.min(W - f.len * 0.3, f.x));
+      f.y += (f.ty - f.y) * Math.min(1, dt * (f.target ? 1.6 : 0.35));
+      f.y = Math.max(H * 0.12, Math.min(H * 0.93, f.y));
+      f.phase += dt * f.sp.beat * (0.6 + speed / f.speed * 0.5 + turning * 0.8);
+      var u = f.mesh.material.uniforms;
+      // the picture faces left; a fish going right is drawn mirrored, and a
+      // turn runs from the old side to the new
+      u.turn.value = f.turnT < 1 ? f.turnT : 0;
+      var base = f.turnT < 1 ? f.from : f.dir;
+      f.mesh.scale.x = Math.abs(f.mesh.scale.x) * (base < 0 ? 1 : -1);
+      u.phase.value = f.phase; u.amp.value = 0.6 + 0.4 * Math.min(2, speed / f.speed);
+      u.bend.value = Math.max(-1, Math.min(1, (f.ty - f.y) / 60)) * 0.6;
+      // lit from above: a fish high in the tank is bright, one down by the sand dimmer
+      u.light.value = 0.62 + 0.5 * (f.y / H);
+      u.haze.value = 0.38 * (1 - f.depth) + 0.12 * (1 - f.y / H);
+      f.mesh.position.set(f.x, f.y, 0);
+    });
+
+    // bubbles: a steady stream from the bubbler, wobbling up and growing a little
+    // a few bubbles drifting up from the reef: mostly small, now and then a larger one
+    if (bubbler && Math.random() < dt * 2.2) {
+      var big = Math.random() < 0.18;
+      bubbles.push({ x: rand(0.04, 0.96) * W, y: H * rand(0.12, 0.35), v: big ? rand(45, 60) : rand(28, 45), s: big ? rand(16, 26) : rand(5, 11), w: rand(0, 6), a: rand(1.5, 3) });
+    }
+    bubbles.forEach(function (b) { b.v = Math.min(b.v + dt * 8, 90); b.y += b.v * dt; b.x += Math.sin(clock.t * b.a + b.w) * 9 * dt; b.s += dt * 0.25; });
+    bubbles = bubbles.filter(function (b) { return b.y < H * 0.97; }).slice(-MAXB);
+
+    var bp = bGeo.attributes.position.array, bs = bGeo.attributes.scale.array;
+    for (var i = 0; i < MAXB; i++) { var b = bubbles[i]; bp[i * 3] = b ? b.x : -99; bp[i * 3 + 1] = b ? b.y : -99; bs[i] = b ? b.s : 0; }
+    bGeo.attributes.position.needsUpdate = true; bGeo.attributes.scale.needsUpdate = true;
+    var fp = fGeo.attributes.position.array, fs = fGeo.attributes.scale.array;
+    var ft = fGeo.attributes.turn.array;
+    for (i = 0; i < MAXF; i++) { var p = food[i]; fp[i * 3] = p ? p.x : -99; fp[i * 3 + 1] = p ? p.y : -99; fs[i] = p ? p.s : 0; if (p) { ft[i * 3] = p.rot; ft[i * 3 + 1] = Math.cos(clock.t * p.flutter + p.spin); ft[i * 3 + 2] = p.kind; } }
+    fGeo.attributes.turn.needsUpdate = true;
+    fGeo.attributes.position.needsUpdate = true; fGeo.attributes.scale.needsUpdate = true;
+  }
+
+  // a new time of day or bubbles setting arrives in place, so the fish keep
+  // swimming; any other setting starts the page again with the new address
+  var startQuery = location.search;
+  window.addEventListener('ectodeck:params', function (e) {
+    var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
+    var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
+    for (var i = 0; i < keys.length; i++) if (['time', 'bubbles'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
+    if (p.time !== undefined) { timeSetting = Math.round(p.time); light = timeSetting < 0 ? clockLight() : timeSetting % 3; }
+    if (p.bubbles !== undefined) bubbler = !!p.bubbles && p.bubbles !== '0';
+  });
+  addEventListener('resize', function () { location.reload(); });
+
+  // ?record: time only moves when asked, one frame at a time, for a smooth recording
+  if (/record/.test(location.search)) {
+    window.advance = function (seconds) { step(seconds); renderer.render(scene, camera); };
+    return;
+  }
+  var last = performance.now();
+  (function frame(now) {
+    step(Math.min(0.05, (now - last) / 1000)); last = now;
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  })(last);
+})();
+</script>
+</body>
+</html>

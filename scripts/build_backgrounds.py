@@ -4,10 +4,13 @@
 Each source page in src/lib/backgrounds/source/ marks where a library goes
 with a /*NAME*/ comment inside an empty <script>. This fills those in from
 third_party/ and writes the self-contained page to src/lib/backgrounds/,
-since the renderer opens a background as a single file.
+since the renderer opens a background as a single file. A page's own
+pictures, named as ectodeck-asset:folder/file.webp, are inlined the same way
+from beside it.
 """
 
 import base64
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +37,16 @@ def fluid(script: str) -> str:
 	return "var ga = function () {};\n" + script
 
 
-PATCHES = {"FLUID": fluid}
+def clouds(script: str) -> str:
+	"""Vanta's clouds, keeping each frame until the next is drawn: without it
+	the deck's headless Chrome now and then shows a frame with nothing drawn,
+	which flickers on the deck."""
+	renderer = "new o.WebGLRenderer({alpha:!0,antialias:!0})"
+	assert renderer in script, "Vanta's renderer call has changed"
+	return script.replace(renderer, "new o.WebGLRenderer({alpha:!0,antialias:!0,preserveDrawingBuffer:!0})", 1)
+
+
+PATCHES = {"FLUID": fluid, "VANTA_CLOUDS": clouds}
 
 for source in sorted((ROOT / "src/lib/backgrounds/source").glob("*.html")):
 	page = source.read_text()
@@ -44,6 +56,11 @@ for source in sorted((ROOT / "src/lib/backgrounds/source").glob("*.html")):
 			library = (ROOT / path).read_text()
 			library = PATCHES.get(name, lambda x: x)(library).replace("</script", "<\\/script")
 			page = page.replace(marker, f"<script>\n{library}\n</script>")
+	def inline(match: re.Match) -> str:
+		asset = source.parent / match.group(1)
+		kind = {".webp": "image/webp", ".png": "image/png", ".jpg": "image/jpeg"}[asset.suffix]
+		return f"data:{kind};base64,{base64.b64encode(asset.read_bytes()).decode()}"
+	page = re.sub(r"ectodeck-asset:([\w./-]+)", inline, page)
 	out = ROOT / "src/lib/backgrounds" / source.name
 	out.write_text(page)
 	print(f"{out.relative_to(ROOT)}: {len(page) // 1024} KB")
