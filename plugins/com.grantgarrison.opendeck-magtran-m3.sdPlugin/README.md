@@ -27,16 +27,16 @@ A background can be a web page or a Shadertoy-style fragment shader. Either can 
 A **shader** gets Shadertoy's usual uniforms, plus:
 
 - `iKeyPresses[8]`: the eight most recent presses, newest first. `xy` is the key's centre in pixels from the bottom left, `z` the seconds since the press, `w` the key's number (−1 for an empty slot).
-- `iDials`: each dial's total turns, in clicks.
+- `iLook`: the look chosen with the **Background look** action, in steps from the start (negative after stepping back). The deck's dials never reach a background by themselves; people put the Background look action on a dial or key when they want that.
 - `iAudioBands[32]` and `iAudioLevel`: what the computer is playing, from 40 Hz to 11 kHz and overall, each 0 to 1. Naming either one is what turns on listening.
 
 A **web page** receives window events:
 
 - `ectodeck:press` with `{ key, down, x, y }`, where `x` and `y` run from 0 to 1 from the top left. The page also gets a real click at the key.
-- `ectodeck:dial` with `{ dial, ticks }`.
+- `ectodeck:look` with `{ steps }`, from the Background look action: move that many looks forward (or back, if negative).
 - `ectodeck:audio` with `{ bands, level, wave }` every frame, if the page's source mentions `ectodeck:audio`. `wave` holds the last 1024 samples as bytes centred on 128.
 
-Sound is read from the default output's monitor with `parec`, only while a background that asks for it is showing. Adjustable settings are declared as ISF `INPUTS`, in a JSON comment at the top of a shader or in `<script type="application/json" id="ectodeck-inputs">` in a page. To preview a shader offline as the deck will draw it, run `cargo run --release --example render -- <shader> <out-dir> [seconds] [key@seconds,…] [dials] [music]`.
+Sound is read from the default output's monitor with `parec`, only while a background that asks for it is showing. Adjustable settings are declared as ISF `INPUTS`, in a JSON comment at the top of a shader or in `<script type="application/json" id="ectodeck-inputs">` in a page. To preview a shader offline as the deck will draw it, run `cargo run --release --example render -- <shader> <out-dir> [seconds] [key@seconds,…] [look] [music]`.
 
 ## Linux permissions
 

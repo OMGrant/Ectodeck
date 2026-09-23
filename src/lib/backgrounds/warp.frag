@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace from it: the stars stretch into streaks racing out from the key, you ride the blue tunnel for a moment, then drop back out among the stars. The first dial sets the cruising speed.",
+  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace from it: the stars stretch into streaks racing out from the key, you ride the blue tunnel for a moment, then drop back out among the stars. The Background look action changes the colour of hyperspace.",
   "INPUTS": [
     { "NAME": "speed", "TYPE": "float", "LABEL": "Cruising speed", "DEFAULT": 1.0, "MIN": 0.1, "MAX": 4.0 },
     { "NAME": "tunnel", "TYPE": "color", "LABEL": "Hyperspace", "DEFAULT": [0.35, 0.55, 1.0, 1] },
@@ -19,6 +19,9 @@ const float STRETCH = 0.7;   // seconds for the stars to pull into streaks
 const float DROP = 3.0;      // when the jump ends
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    // the Background look action: your colour, then red, green and gold
+    int n = int(mod(floor(iLook + 0.5), 4.0));
+    vec3 hyper = n == 0 ? tunnel.rgb : n == 1 ? vec3(1.0, 0.3, 0.25) : n == 2 ? vec3(0.35, 1.0, 0.45) : vec3(1.0, 0.8, 0.35);
     vec2 centre = 0.5 * iResolution.xy;
     vec4 p = iKeyPresses[0];
     bool jumping = p.w >= 0.0 && p.z < DROP + 0.6;
@@ -34,7 +37,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float a = atan(d.y, d.x) / 6.2831853 + 0.5;
 
     // how far we have travelled: cruising, plus the distance of every jump
-    float travel = iTime * 0.04 * speed * max(0.2, 1.0 + iDials.x * 0.12);
+    float travel = iTime * 0.04 * speed;
     for (int i = 0; i < 8; i++) {
         vec4 k = iKeyPresses[i];
         if (k.w < 0.0) continue;
@@ -43,7 +46,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     vec3 col = vec3(0.0, 0.004, 0.012);
     // a faint nebula far behind, only when cruising
-    col += tunnel.rgb * 0.06 * noise(fragCoord / 140.0 + iTime * 0.01) * (1.0 - inTunnel);
+    col += hyper * 0.06 * noise(fragCoord / 140.0 + iTime * 0.01) * (1.0 - inTunnel);
 
     // stars in three layers of radial sectors; each sector holds at most one
     // star, moving outward, drawn as a streak whose length is the jump's stretch
@@ -65,14 +68,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         float streak = step(0.0, along) * step(along, 1.0) * mix(1.0, 1.0 - along, stretch * 0.7);
         float head = exp(-pow((r - rad) * iResolution.y / thick, 2.0));
         float bright = (streak * (0.55 + 0.45 * stretch) + head) * body * smoothstep(0.0, mix(0.35, 0.08, stretch), rad);
-        vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), tunnel.rgb, 0.55), inTunnel);
+        vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), hyper, 0.55), inTunnel);
         col += tint * bright * (0.6 + 0.4 * seed);
     }
 
-    // inside the tunnel: a blue glow and slow swirling light around you
+    // inside the hyper: a blue glow and slow swirling light around you
     if (inTunnel > 0.0) {
         float swirl = noise(vec2(a * 40.0 + z * 0.8, log(r + 0.02) * 3.0 - z * 4.0));
-        col += tunnel.rgb * inTunnel * (0.12 + 0.35 * swirl * smoothstep(0.02, 0.4, r));
+        col += hyper * inTunnel * (0.12 + 0.35 * swirl * smoothstep(0.02, 0.4, r));
         col += vec3(0.9, 0.95, 1.0) * inTunnel * 0.25 * exp(-r * 12.0);
     }
     // the flash of entering and leaving

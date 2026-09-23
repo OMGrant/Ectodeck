@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Spectrum: glowing bars that dance to whatever your computer is playing, bass on the left and treble on the right, with the beat pulsing through the background. A key press flashes the bars under it.",
+  "DESCRIPTION": "Spectrum: glowing bars that dance to whatever your computer is playing, bass on the left and treble on the right, with the beat pulsing through the background. A key press flashes the bars under it. The Background look action turns its colours round the colour wheel.",
   "INPUTS": [
     { "NAME": "low", "TYPE": "color", "LABEL": "Bass", "DEFAULT": [1.0, 0.25, 0.55, 1] },
     { "NAME": "high", "TYPE": "color", "LABEL": "Treble", "DEFAULT": [0.25, 0.8, 1.0, 1] },
@@ -7,6 +7,16 @@
     { "NAME": "gain", "TYPE": "float", "LABEL": "Height", "DEFAULT": 1.0, "MIN": 0.4, "MAX": 2.0 }
   ]
 }*/
+
+// the Background look action turns the colours a quarter of the way round
+// the colour wheel per step, keeping their brightness
+vec3 lookTurn(vec3 c) {
+    float a = iLook * 1.5707963;
+    const vec3 k = vec3(0.57735);
+    float cosA = cos(a);
+    return c * cosA + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cosA);
+}
+
 
 const int BARS = 32;
 
@@ -46,5 +56,5 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     col += tint * 0.25 * gap * exp(-max(y - h, 0.0) * 14.0) * step(h, y);
     // on the floor style, a dim reflection
     if (style == 0) col += tint * 0.12 * gap * step(uv.y, 0.02 + h * 0.08) * (0.6 - uv.y * 10.0);
-    fragColor = vec4(col, 1.0);
+    fragColor = vec4(max(lookTurn(col), 0.0), 1.0);
 }

@@ -7,12 +7,12 @@
   Ectodeck's built-in Birds: a murmuration of starlings over a treeline at
   dusk, drawn with the 2D canvas. A key press startles the birds at that
   key: they burst away from it, the shock runs through the flock as a wave,
-  and the whole flock veers from the key before gathering again. The first
-  dial moves the light from late afternoon to night.
+  and the whole flock veers from the key before gathering again. The
+  Background look action moves the light from late afternoon to night.
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "A murmuration of starlings wheeling over a treeline at dusk. Press a key and the birds there burst away from it; the shock runs through the whole flock. The first dial moves the light from afternoon to night.",
+  "DESCRIPTION": "A murmuration of starlings wheeling over a treeline at dusk. Press a key and the birds there burst away from it; the shock runs through the whole flock. The Background look action moves the light from afternoon to night.",
   "INPUTS": [
     { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 1, "VALUES": [0, 1, 2], "LABELS": ["Afternoon", "Dusk", "Night"] },
     { "NAME": "birds", "TYPE": "float", "LABEL": "Birds", "DEFAULT": 1, "MIN": 0.3, "MAX": 2 }
@@ -85,9 +85,7 @@
       if (d < 0.14) b.fear = 1;
     });
   });
-  window.addEventListener('ectodeck:dial', function (e) {
-    if (e.detail.dial === 0) light = Math.max(0, Math.min(2, light + (e.detail.ticks > 0 ? 1 : -1)));
-  });
+  window.addEventListener('ectodeck:look', function (e) { light = ((light + e.detail.steps) % 3 + 3) % 3; });
 
   // a grid of cells, so each bird only looks at its neighbours
   var CELL = 0.05, grid = new Map();

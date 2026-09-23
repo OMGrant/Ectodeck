@@ -6,12 +6,12 @@
 <!--
   Ectodeck's built-in Aquarium: a planted tank drawn with the 2D canvas.
   A key press sprinkles food at that key and the fish nearby come to eat;
-  two quick presses on one key tap the glass and scatter them. The first
-  dial turns the time of day, the second adds or removes fish.
+  two quick presses on one key tap the glass and scatter them. The
+  Background look action steps through the time of day.
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "A planted tank with clownfish, a blue tang, angelfish and a school of neon tetras. Press a key to feed the fish there; press it twice quickly to tap the glass. The first dial turns the time of day, the second adds or removes fish.",
+  "DESCRIPTION": "A planted tank with clownfish, a blue tang, angelfish and a school of neon tetras. Press a key to feed the fish there; press it twice quickly to tap the glass. The Background look action steps through the time of day.",
   "INPUTS": [
     { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 0, "VALUES": [0, 1, 2], "LABELS": ["Day", "Dusk", "Night"] },
     { "NAME": "fish", "TYPE": "float", "LABEL": "Fish", "DEFAULT": 1, "MIN": 0.3, "MAX": 2 },
@@ -142,16 +142,8 @@
     if (lastPress.key === d.key && now - lastPress.at < 380) { tap(x, y); lastPress.key = -1; }
     else { feed(x, y); lastPress = { key: d.key, at: now }; }
   });
-  window.addEventListener('ectodeck:dial', function (e) {
-    var d = e.detail;
-    if (d.dial === 0) light = (light + (d.ticks > 0 ? 1 : 2)) % 3;
-    else if (d.dial === 1) {
-      fishScale = clamp(fishScale + d.ticks * 0.1, 0.3, 2);
-      var want = Math.round(16 * fishScale);
-      while (fish.length < want) addFish(['tetra', 'tetra', 'clown', 'angel', 'tang'][fish.length % 5], rand(0, 1) < 0.5 ? -30 : W + 30);
-      while (fish.length > want) fish.pop();
-    }
-  });
+  // the Background look action steps through the time of day
+  window.addEventListener('ectodeck:look', function (e) { light = ((light + e.detail.steps) % 3 + 3) % 3; });
 
   // ---- movement
   function steer(f, dt, t) {

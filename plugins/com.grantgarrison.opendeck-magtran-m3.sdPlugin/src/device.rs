@@ -207,7 +207,6 @@ async fn device_events_task(candidate: &CandidateDevice) -> Result<(), MirajazzE
             match update {
                 DeviceStateUpdate::ButtonDown(key) => crate::frame::input(&id, crate::animation::Input::Key { index: key, down: true, x: 0.0, y: 0.0 }).await,
                 DeviceStateUpdate::ButtonUp(key) => crate::frame::input(&id, crate::animation::Input::Key { index: key, down: false, x: 0.0, y: 0.0 }).await,
-                DeviceStateUpdate::EncoderTwist(dial, ticks) => crate::frame::input(&id, crate::animation::Input::Dial { index: dial, ticks: ticks as i16 }).await,
                 _ => {}
             }
 

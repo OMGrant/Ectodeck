@@ -126,8 +126,36 @@ impl openaction::GlobalEventHandler for GlobalEventHandler {
     }
 }
 
+/// The plugin's one action, "Background look": on a key, a press moves the
+/// animated background to its next look; on a dial, turning steps through
+/// looks both ways and pressing moves to the next. What a look is belongs to
+/// each background (Milkdrop's presets, the aquarium's time of day, colours).
+const LOOK_ACTION: &str = "com.grantgarrison.opendeck-magtran-m3.look";
+
 struct ActionEventHandler {}
-impl openaction::ActionEventHandler for ActionEventHandler {}
+impl openaction::ActionEventHandler for ActionEventHandler {
+    async fn key_down(&self, event: KeyEvent, _outbound: &mut openaction::OutboundEventManager) -> EventHandlerResult {
+        if event.action == LOOK_ACTION {
+            log::info!("Background look: next, on {}", event.device);
+            crate::frame::input(&event.device, crate::animation::Input::Look { steps: 1 }).await;
+        }
+        Ok(())
+    }
+
+    async fn dial_rotate(&self, event: DialRotateEvent, _outbound: &mut openaction::OutboundEventManager) -> EventHandlerResult {
+        if event.action == LOOK_ACTION {
+            crate::frame::input(&event.device, crate::animation::Input::Look { steps: event.payload.ticks }).await;
+        }
+        Ok(())
+    }
+
+    async fn dial_down(&self, event: DialPressEvent, _outbound: &mut openaction::OutboundEventManager) -> EventHandlerResult {
+        if event.action == LOOK_ACTION {
+            crate::frame::input(&event.device, crate::animation::Input::Look { steps: 1 }).await;
+        }
+        Ok(())
+    }
+}
 
 async fn shutdown() {
     let tokens = TOKENS.write().await;

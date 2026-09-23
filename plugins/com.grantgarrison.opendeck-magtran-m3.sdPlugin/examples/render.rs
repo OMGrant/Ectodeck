@@ -1,10 +1,10 @@
 //! Renders a background shader offline through the plugin's own renderer,
 //! so a new effect can be looked at exactly as the deck will draw it.
 //!
-//! cargo run --release --example render -- <shader> <out-dir> [times] [presses] [dials]
+//! cargo run --release --example render -- <shader> <out-dir> [times] [presses] [look]
 //!   times:   seconds to capture, e.g. 1,3,6          (default 1,3,6)
 //!   presses: key@seconds, e.g. 7@2.0,12@4.5          (keys 0-14, row by row)
-//!   dials:   turns per dial at every frame, e.g. 0,4,-2
+//!   look:    the look step, as the "Background look" action sets it, e.g. 2
 //!   music:   "music" plays a synthetic 120 bpm beat into iAudioBands and iAudioLevel
 #[path = "../src/shader.rs"]
 #[allow(dead_code)]
@@ -30,7 +30,7 @@ fn main() {
 		.filter(|s| !s.is_empty())
 		.map(|s| s.split(',').map(|p| { let (k, t) = p.split_once('@').unwrap(); (k.parse().unwrap(), t.parse().unwrap()) }).collect())
 		.unwrap_or_default();
-	let dials: [f32; 3] = args.get(5).map(|s| { let v: Vec<f32> = s.split(',').map(|d| d.parse().unwrap()).collect(); [v[0], v[1], v[2]] }).unwrap_or([0.0; 3]);
+	let look: f32 = args.get(5).and_then(|s| s.split(',').next()?.parse().ok()).unwrap_or(0.0);
 	let (_, defaults) = shader::parse_inputs(&source);
 	let mut renderer = ShaderRenderer::new(&source, 854, 480).expect("compile");
 	// step through time at the deck's 30 frames a second, so simulations and
@@ -47,7 +47,7 @@ fn main() {
 		recent.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
 		recent.truncate(8);
 		let mouse = recent.first().map(|p| [p.0, p.1, p.0, p.1]).unwrap_or([0.0; 4]);
-		let mut controls = Interaction { mouse, presses: recent, dials, ..Default::default() };
+		let mut controls = Interaction { mouse, presses: recent, look, ..Default::default() };
 		if args.get(6).map(|a| a == "music").unwrap_or(false) {
 			let kick = (-((t * 2.0) % 1.0) * 9.0).exp();
 			let hat = (-((t * 8.0) % 1.0) * 14.0).exp() * 0.4;

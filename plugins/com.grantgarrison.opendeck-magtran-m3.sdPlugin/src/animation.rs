@@ -104,8 +104,10 @@ fn encode(s: &str) -> String {
 pub enum Input {
     /// A key pressed or released; centre in panel pixels, top-left origin.
     Key { index: u8, down: bool, x: f32, y: f32 },
-    /// A dial turned by some detents.
-    Dial { index: u8, ticks: i16 },
+    /// The "Background look" action: steps to the next look (positive) or
+    /// the previous one. Dials reach a background only through this action,
+    /// never by themselves.
+    Look { steps: i16 },
 }
 
 /// The deck's controls as the shader thread reads them.
@@ -113,7 +115,7 @@ pub enum Input {
 struct Interaction {
     mouse: [f32; 4],
     pressed_at: Vec<(f32, f32, Instant, f32)>,
-    dials: [f32; 3],
+    look: f32,
 }
 
 impl Interaction {
@@ -121,7 +123,7 @@ impl Interaction {
         crate::shader::Interaction {
             mouse: self.mouse,
             presses: self.pressed_at.iter().map(|&(x, y, at, key)| (x, y, at.elapsed().as_secs_f32(), key)).collect(),
-            dials: self.dials,
+            look: self.look,
             ..Default::default()
         }
     }
@@ -239,11 +241,7 @@ impl Animation {
                         ia.mouse[3] = -ia.mouse[3].abs();
                     }
                 }
-                Input::Dial { index, ticks } => {
-                    if let Some(d) = ia.dials.get_mut(index as usize) {
-                        *d += ticks as f32;
-                    }
-                }
+                Input::Look { steps } => ia.look += steps as f32,
             }
         }
         if let Ok(mut chrome) = self.chrome.lock() {
@@ -399,8 +397,8 @@ impl ChromeHandle {
                     y / PANEL_HEIGHT as f32
                 )
             }
-            Input::Dial { index, ticks } => {
-                format!("window.dispatchEvent(new CustomEvent('ectodeck:dial', {{ detail: {{ dial: {index}, ticks: {ticks} }} }}))")
+            Input::Look { steps } => {
+                format!("window.dispatchEvent(new CustomEvent('ectodeck:look', {{ detail: {{ steps: {steps} }} }}))")
             }
         };
         self.send("Runtime.evaluate", serde_json::json!({ "expression": script }), true)?;

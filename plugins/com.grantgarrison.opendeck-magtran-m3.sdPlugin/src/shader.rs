@@ -20,7 +20,10 @@
 //! - `iKeyPresses[8]`: the eight most recent presses, newest first: xy the
 //!   key's centre, z seconds since the press, w the key's index; unused slots
 //!   have w = -1.
-//! - `iDials`: each dial's accumulated turns, in detents.
+//! - `iLook`: the look chosen with the "Background look" action, counted in
+//!   steps from the start (negative after stepping back). The deck's dials
+//!   reach a shader only through that action; `iDials` is kept, always zero,
+//!   for older shaders.
 //!
 //! Multi-pass shaders follow ISF's PASSES: the header lists passes, each
 //! drawing into a named TARGET buffer (PERSISTENT to keep its contents from
@@ -58,6 +61,7 @@ uniform vec4 iMouse;
 uniform vec4 iDate;
 uniform vec4 iKeyPresses[8];
 uniform vec3 iDials;
+uniform float iLook;
 uniform float iAudioBands[32];
 uniform float iAudioLevel;
 out vec4 ectodeckFragColor;
@@ -129,7 +133,7 @@ pub struct Interaction {
     pub mouse: [f32; 4],
     /// Newest first: key centre (bottom-left origin), seconds since, index.
     pub presses: Vec<(f32, f32, f32, f32)>,
-    pub dials: [f32; 3],
+    pub look: f32,
     /// What is playing: 32 bands and the overall level, each 0 to 1.
     pub audio_bands: [f32; 32],
     pub audio_level: f32,
@@ -350,8 +354,8 @@ impl ShaderRenderer {
                 presses[i * 4..i * 4 + 4].copy_from_slice(&[x, y, age, key]);
             }
             gl.uniform_4_f32_slice(u("iKeyPresses").as_ref(), &presses);
-            let d = interaction.dials;
-            gl.uniform_3_f32(u("iDials").as_ref(), d[0], d[1], d[2]);
+            gl.uniform_3_f32(u("iDials").as_ref(), 0.0, 0.0, 0.0);
+            gl.uniform_1_f32(u("iLook").as_ref(), interaction.look);
             gl.uniform_1_f32_slice(u("iAudioBands").as_ref(), &interaction.audio_bands);
             gl.uniform_1_f32(u("iAudioLevel").as_ref(), interaction.audio_level);
             for input in &self.inputs {

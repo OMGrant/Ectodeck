@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press sends a surge along the curtain and a ray up to the key.",
+  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press sends a surge along the curtain and a ray up to the key. The Background look action turns its colours round the colour wheel.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -61,6 +61,16 @@
     }
   ]
 }*/
+
+// the Background look action turns the colours a quarter of the way round
+// the colour wheel per step, keeping their brightness
+vec3 lookTurn(vec3 c) {
+    float a = iLook * 1.5707963;
+    const vec3 k = vec3(0.57735);
+    float cosA = cos(a);
+    return c * cosA + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cosA);
+}
+
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
@@ -123,5 +133,5 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     }
     if (react) col += mix(colour1.rgb, colour2.rgb, smoothstep(height, height + 0.4, uv.y)) * ray(uv) * 0.8 * brightness;
     if (stars) col += pow(hash(floor(fragCoord)), 900.0) * 0.6 * uv.y;
-    fragColor = vec4(col, 1.0);
+    fragColor = vec4(max(lookTurn(col), 0.0), 1.0);
 }
