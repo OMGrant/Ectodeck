@@ -48,7 +48,7 @@
 	"instance_editor.image.scale.increase": "Increase image scale",
 	"instance_editor.outline": "Outline",
 	"instance_editor.show": "Show on key",
-	"instance_editor.solid_colour": "Colour as picture…",
+	"instance_editor.solid_colour": "Use a plain colour as the picture…",
 	"instance_editor.state": "State",
 	"instance_editor.state.n": "State {{n}}",
 	"instance_editor.stroke": "Outline colour",
@@ -272,5 +272,14 @@
 	"navigation.close_to_deck": "Back to the deck",
 	"plugin_details.installed": "Installed",
 	"navigation.home": "Back to the deck",
-	"navigation.deck_settings": "Deck settings"
+	"navigation.deck_settings": "Deck settings",
+	"instance_editor.tile": "Tile",
+	"instance_editor.tile.behind": "Behind the key",
+	"instance_editor.tile.deck": "Deck setting",
+	"instance_editor.tile.black": "Black",
+	"instance_editor.tile.colour": "Colour",
+	"instance_editor.tile.deck_shown": "Follows the deck's Key tiles, which are shown: a dark tile behind this key.",
+	"instance_editor.tile.deck_hidden": "Follows the deck's Key tiles, which are hidden: the background shows through this key.",
+	"instance_editor.tile.own": "This key keeps its own coloured tile whatever the deck's Key tiles setting says.",
+	"instance_editor.tile.black_hint": "This deck has no screen behind its keys, so keys sit on black unless you pick a colour."
 }

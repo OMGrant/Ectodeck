@@ -13,6 +13,19 @@
 	import ImageIcon from "phosphor-svelte/lib/Image";
 
 	export let instance: ActionInstance | null;
+	// The deck's own Key tiles setting (shown or hidden), or null on a deck
+	// with no screen behind its keys, where every key sits on black anyway.
+	export let deckTiles: boolean | null = null;
+
+	// A key's tile follows the deck unless it has a colour of its own. Black is
+	// how the saved data says "follow the deck", so a black tile of your own is
+	// kept as the nearest colour that is not quite black.
+	const FOLLOW = "#000000";
+	$: ownTile = instance ? !instance.states[state].background_colour.toLowerCase().startsWith(FOLLOW) : false;
+	function setTile(colour: string | null) {
+		if (!instance) return;
+		instance.states[state].background_colour = colour == null ? FOLLOW : colour.toLowerCase().startsWith(FOLLOW) ? "#010101" : colour;
+	}
 
 	let state: number = 0;
 	let bold: boolean;
@@ -149,11 +162,35 @@
 			<span class="w-10 text-right tabular-nums text-neutral-200">{instance.states[state].image_scale || 100}%</span>
 		</div>
 		<div class="insp-row">
-			<span class="lb">{$t("instance_editor.background")}</span>
-			<label class="swatch" style="background: {instance.states[state].background_colour}" title={$t("instance_editor.background")}><input type="color" bind:value={instance.states[state].background_colour} /></label>
-			<label class="btn quiet relative">{$t("instance_editor.solid_colour")}<input type="color" class="absolute inset-0 opacity-0 cursor-pointer" value="#FFFFFE" on:change={solidColour} /></label>
+			<span class="lb"></span>
+			<label class="btn quiet relative -ml-2.5">{$t("instance_editor.solid_colour")}<input type="color" class="absolute inset-0 opacity-0 cursor-pointer" value="#FFFFFE" on:change={solidColour} /></label>
 		</div>
 		<p class="mt-1 text-xs text-neutral-500">{$t("instance_editor.image.hint")}</p>
+	</section>
+
+	<section class="insp-sect">
+		<h4>{$t("instance_editor.tile")}</h4>
+		<div class="insp-row">
+			<span class="lb">{$t("instance_editor.tile.behind")}</span>
+			<div class="mini" role="radiogroup" aria-label={$t("instance_editor.tile")}>
+				<button role="radio" aria-checked={!ownTile} class:on={!ownTile} on:click={() => setTile(null)}>{deckTiles == null ? $t("instance_editor.tile.black") : $t("instance_editor.tile.deck")}</button>
+				<button role="radio" aria-checked={ownTile} class:on={ownTile} on:click={() => !ownTile && setTile("#3b82f6")}>{$t("instance_editor.tile.colour")}</button>
+			</div>
+			{#if ownTile}
+				<label class="swatch" style="background: {instance.states[state].background_colour}" title={$t("instance_editor.tile.colour")}>
+					<input type="color" value={instance.states[state].background_colour} on:input={(e) => setTile(e.currentTarget.value)} />
+				</label>
+			{/if}
+		</div>
+		<p class="mt-1 text-xs text-neutral-500">
+			{#if ownTile}
+				{$t("instance_editor.tile.own")}
+			{:else if deckTiles == null}
+				{$t("instance_editor.tile.black_hint")}
+			{:else}
+				{deckTiles ? $t("instance_editor.tile.deck_shown") : $t("instance_editor.tile.deck_hidden")}
+			{/if}
+		</p>
 	</section>
 
 	<input

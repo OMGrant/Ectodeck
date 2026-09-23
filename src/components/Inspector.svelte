@@ -249,13 +249,13 @@
 
 		{#if selection.kind == "instance" && $inspectorTab == "appearance" && instance}
 			{#key instance.context}
-				<InstanceEditor bind:instance={profile[selection.array][selection.position]} />
+				<InstanceEditor bind:instance={profile[selection.array][selection.position]} deckTiles={device.has_background ? ($deviceLooks[device.id]?.keyStyle.backdrop ?? true) : null} />
 			{/key}
 		{/if}
 
 		{#if selection.kind == "parent" && $inspectorTab == "appearance" && instance}
 			{#key instance.context}
-				<InstanceEditor bind:instance={profile.keys[selection.position]} />
+				<InstanceEditor bind:instance={profile.keys[selection.position]} deckTiles={device.has_background ? ($deviceLooks[device.id]?.keyStyle.backdrop ?? true) : null} />
 			{/key}
 		{/if}
 
