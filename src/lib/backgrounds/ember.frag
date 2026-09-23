@@ -73,7 +73,10 @@ float fbm(vec2 p) {
 // A press lifts a few sparks off the key. Each drifts upward with its own
 // speed and sway, flickers, and dims as it rises.
 float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
-vec3 sparks(vec2 frag, vec3 warm, vec3 hot) {
+vec3 sparks(vec2 frag, vec3 under) {
+    // the colour of the flow here, brought up to full brightness
+    vec3 warm = under / max(max(under.r, max(under.g, under.b)), 0.04);
+    vec3 hot = mix(warm, vec3(1.0), 0.45);
     vec3 light = vec3(0.0);
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
@@ -90,7 +93,7 @@ vec3 sparks(vec2 frag, vec3 warm, vec3 hot) {
             float r = length(frag - at);
             float flicker = 0.75 + 0.25 * sin(age * 40.0 + seed * 5.0);
             float fade = (1.0 - k) * (1.0 - k) * smoothstep(0.0, 0.08, age);
-            light += mix(warm, hot, 0.6) * exp(-r * r / 11.0) * fade * flicker * 1.3;
+            light += hot * exp(-r * r / 11.0) * fade * flicker * 1.3;
             light += warm * exp(-r * r / 110.0) * fade * 0.22;
         }
     }
@@ -109,6 +112,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     col = mix(col, c, smoothstep(0.58, 0.8, h + (0.5 - uv.y) * 0.2));
     float glow = smoothstep(0.2, 0.75, g);
     col *= (0.1 + 0.75 * glow * glow) * brightness;
-    if (react) col += sparks(fragCoord, a, vec3(1.0, 0.9, 0.7));
+    if (react) col += sparks(fragCoord, col);
     fragColor = vec4(col, 1.0);
 }

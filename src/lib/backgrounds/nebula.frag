@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other. A key press stirs them into an eddy.",
+  "DESCRIPTION": "Nebula: clouds of colour drifting slowly through each other. A key press sends a soft front outward from the key, pushing them aside.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -79,26 +79,30 @@ float fbm(vec2 p) {
     return v;
 }
 
-// A press stirs the gas: the clouds near the key turn in a slow eddy that
-// winds up, then unwinds as the disturbance dies away.
-vec2 stir(vec2 uv) {
+// A press sends a soft front outward from the key: as it passes, the clouds
+// are pushed out ahead of it, and its edge carries a faint trace of the glow.
+vec2 push(vec2 uv, out float edge) {
+    edge = 0.0;
+    vec2 at = uv;
     for (int i = 0; i < 8; i++) {
         vec4 p = iKeyPresses[i];
-        if (p.w < 0.0 || p.z > 4.0) continue;
+        if (p.w < 0.0 || p.z > 3.0) continue;
         vec2 c = (p.xy - 0.5 * iResolution.xy) / iResolution.y;
         vec2 d = uv - c;
-        float age = p.z;
-        float turn = 1.1 * exp(-dot(d, d) / 0.035) * (1.0 - exp(-age * 2.5)) * exp(-age * 0.7);
-        float cs = cos(turn), sn = sin(turn);
-        uv = c + mat2(cs, sn, -sn, cs) * d;
+        float r = length(d);
+        float front = p.z * 0.42;
+        float band = exp(-pow((r - front) / 0.09, 2.0)) * exp(-p.z * 1.2);
+        at -= d / max(r, 1e-3) * band * 0.15;
+        edge += band;
     }
-    return uv;
+    return at;
 }
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
     float t = iTime * 0.03 * speed;
-    if (react) uv = stir(uv);
+    float edge = 0.0;
+    if (react) uv = push(uv, edge);
     vec2 q = vec2(fbm(uv * zoom + t), fbm(uv * zoom - t + 4.7));
     vec2 r = vec2(fbm(uv * zoom + 3.0 * q + vec2(1.7, 9.2) + t * 1.5), fbm(uv * zoom + 3.0 * q + vec2(8.3, 2.8) - t));
     float f = fbm(uv * zoom + 3.5 * r);
@@ -106,5 +110,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     col = mix(col, colour2.rgb, 0.75 * smoothstep(0.45, 0.85, length(q) * f * 1.6));
     col = mix(col, colour3.rgb, smoothstep(0.55, 0.9, r.x * f * 1.5) * 0.6);
     col *= (0.25 + 0.65 * smoothstep(0.25, 0.8, f)) * brightness;
+    col += colour2.rgb * edge * 0.2 * brightness;
     fragColor = vec4(pow(col, vec3(1.1)), 1.0);
 }

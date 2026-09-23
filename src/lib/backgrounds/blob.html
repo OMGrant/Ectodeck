@@ -6,12 +6,12 @@
 <!--
   Ectodeck's built-in Blob: the orb from ectonomic.com. orb.js is included
   with small changes, each marked below: its colours, speed and the other
-  settings come from the page address, and a key press on the deck pokes
-  the body, which wobbles back.
+  settings come from the page address, and a key press on the deck swells
+  the body out under the key.
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "The Ectonomic blob, a living body lit from inside. A key press pokes it, and it wobbles back.",
+  "DESCRIPTION": "The Ectonomic blob, a living body lit from inside. A key press swells it out under the key, and it settles back.",
   "INPUTS": [
     {
       "NAME": "mode",
@@ -230,17 +230,15 @@
     'uniform vec2 offset;' +
     // Ectodeck: up to four pokes from key presses, each a direction on the
     // body (xyz) and how far it is pressed in right now (w)
-    'uniform vec4 pokes[4];' +
+    'uniform highp vec4 pokes[4];' +
     'varying vec3 vN;' +
     'varying vec3 vV;' +
     'varying vec3 vP;' +
     'varying vec3 vO;' +
     'varying float vD;' +
     'float bump(vec3 o){' +
-    '  float poke = 0.0;' +
-    '  for (int i = 0; i < 4; i++) poke += pokes[i].w * exp((dot(o, pokes[i].xyz) - 1.0) * 5.0);' +
     '  return (sin(o.x*2.1+t*0.6)*cos(o.y*1.8+t*0.5)*sin(o.z*2.4+t*0.7)*0.09' +
-    '        + sin(o.x*4.3+o.y*3.7+t*0.4)*0.035) * amp - poke;' +
+    '        + sin(o.x*4.3+o.y*3.7+t*0.4)*0.035) * amp;' +
     '}' +
     'vec3 surf(vec3 o){ return o * (1.0 + bump(o)); }' +
     'void main(){' +
@@ -260,6 +258,19 @@
     '  vP = q;' +
     '  q.z -= 4.2;' +
     '  vN = rot * n;' +
+    // Ectodeck: key-press swells, placed on the screen so each rises exactly
+    // under its key. pokes[i] = (key x, key y in NDC, unused, strength);
+    // the skin within about half a key of that point pushes out along its
+    // normal, toward the viewer where it faces them.
+    '  vec4 clip = proj * vec4(q, 1.0);' +
+    '  vec2 ndc = clip.xy / clip.w;' +
+    '  float aspect = proj[1][1] / proj[0][0];' +
+    '  float swell = 0.0;' +
+    '  for (int i = 0; i < 4; i++) {' +
+    '    vec2 d = (ndc - pokes[i].xy) * vec2(aspect, 1.0);' +
+    '    swell += pokes[i].w * exp(-dot(d, d) / 0.045);' +
+    '  }' +
+    '  q += normalize(vN) * swell * scale;' +
     '  vV = normalize(-q);' +
     '  vD = q.z;';
 
@@ -356,6 +367,8 @@
     'uniform float glowAmp; uniform float glowSize;' +
     // shared with the vertex stage, so highp to match
     'uniform highp float amp; uniform highp mat3 rot;' +
+    // Ectodeck: the key-press swells, as in the vertex stage, in screen space
+    'uniform highp vec4 pokes[4];' +
     // The same displacement the vertex shader applies, evaluated per pixel
     // from the interpolated body direction, so the shading normal is exact
     // everywhere instead of being the vertex normal smeared across a
@@ -386,6 +399,16 @@
     '}' +
     'void main(){' +
     '  vec3 n = normalize(rot * skinNormal(normalize(vO)));' +
+    // the swell's slopes face away from its centre, so its edges catch the rim
+    '  vec2 fndc = gl_FragCoord.xy / res * 2.0 - 1.0;' +
+    '  float faspect = res.x / res.y;' +
+    '  float rise = 0.0;' +
+    '  for (int i = 0; i < 4; i++) {' +
+    '    vec2 d = (fndc - pokes[i].xy) * vec2(faspect, 1.0);' +
+    '    float w = pokes[i].w * exp(-dot(d, d) / 0.045);' +
+    '    rise += w;' +
+    '    n = normalize(n + vec3(d, 0.0) * (w / 0.045) * 2.2);' +
+    '  }' +
     '  vec3 v = normalize(vV);' +
     '  vec3 L = normalize(lightDir);' +
     '  float fres = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 3.2);' +
@@ -402,7 +425,9 @@
     '         + DEEP * diff * 0.09' +
     '         + LIME * fres * 0.62' +
     '         + LIME * glow * glowAmp' +
-    '         + mix(vec3(1.0), LIME, 0.45) * spec * 0.55;' +
+    '         + mix(vec3(1.0), LIME, 0.45) * spec * 0.55' +
+    // the swelling skin takes on a little of the lime as it rises
+    '         + LIME * clamp(rise / 0.1, 0.0, 1.2) * (0.13 + fres * 0.45);' +
     // dissolve the far side into the black behind it
     '  float fog = clamp((vD + 7.6) / 4.2, 0.0, 1.0);' +
     '  c *= fog * fog;' +
@@ -679,20 +704,23 @@
     })();
   }
 
-  // Ectodeck: a key press pokes the body. The point of the skin facing the
-  // key dents in a little and springs back with a damped wobble. The dent is
-  // fixed to the body, in object space, so it turns with it.
+  // Ectodeck: a key press swells the body out under the key, and it settles
+  // back with a soft wobble. The swell is placed on the screen, at the key.
+  // A key that is not over the body swells the nearest part of its edge:
+  // the target slides from the key toward the body until it meets it.
   var pokeList = [], pokeData = new Float32Array(16);
+  function bodyScreenCentre() {
+    var f = 1 / Math.tan(0.42), asp = canvas.clientWidth / canvas.clientHeight;
+    return [plan.offset[0] * f / asp / 4.2, plan.offset[1] * f / 4.2];
+  }
   window.addEventListener('ectodeck:press', function (e) {
     if (!ECTODECK.react || !e.detail.down) return;
-    var v = skinAt(e.detail.x * 2 - 1, 1 - e.detail.y * 2);
-    if (!v) return;
-    // view space to object space: rot is orthonormal, so its transpose
-    var o = [rot[0] * v[0] + rot[3] * v[1] + rot[6] * v[2],
-             rot[1] * v[0] + rot[4] * v[1] + rot[7] * v[2],
-             rot[2] * v[0] + rot[5] * v[1] + rot[8] * v[2]];
-    var len = Math.hypot(o[0], o[1], o[2]) || 1;
-    pokeList.unshift({ dir: [o[0] / len, o[1] / len, o[2] / len], t: performance.now() / 1000 });
+    var x = e.detail.x * 2 - 1, y = 1 - e.detail.y * 2;
+    var c = bodyScreenCentre();
+    for (var i = 0; i < 40 && !skinAt(x, y); i++) {
+      x += (c[0] - x) * 0.06; y += (c[1] - y) * 0.06;
+    }
+    pokeList.unshift({ at: [x, y], t: performance.now() / 1000 });
     pokeList.length = Math.min(pokeList.length, 4);
   });
   function pokeFrame(real) {
@@ -700,9 +728,9 @@
     pokeList = pokeList.filter(function (k) { return real - k.t < 3; });
     pokeList.forEach(function (k, i) {
       var age = real - k.t;
-      // in, then a few shrinking wobbles back out
-      var depth = 0.075 * Math.exp(-age * 2.2) * Math.cos(age * 9.0) * Math.min(1, age * 12);
-      pokeData.set([k.dir[0], k.dir[1], k.dir[2], depth], i * 4);
+      // out quickly, then back with a soft overshoot
+      var swell = Math.min(1, age * 9) * Math.exp(-age * 2.4) * (1 + 0.35 * Math.sin(age * 8.0));
+      pokeData.set([k.at[0], k.at[1], 0, 0.1 * swell], i * 4);
     });
   }
 

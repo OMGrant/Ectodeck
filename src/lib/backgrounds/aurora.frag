@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press sends a surge along the curtain.",
+  "DESCRIPTION": "Aurora: slow ribbons of light over a night sky. A key press draws the curtain to the key and sends a surge along it.",
   "INPUTS": [
     {
       "NAME": "colour1",
@@ -89,6 +89,20 @@ float surge(vec2 uv) {
     return s;
 }
 
+// A press also draws the curtain toward the key's height at the key, so the
+// surge happens where the key is, then lets it relax back into its band.
+float bendToward(float x, float wave) {
+    float shift = 0.0;
+    for (int i = 0; i < 8; i++) {
+        vec4 p = iKeyPresses[i];
+        if (p.w < 0.0 || p.z > 3.0) continue;
+        float dx = x - p.x / iResolution.x;
+        float pull = exp(-dx * dx / 0.014) * smoothstep(0.0, 0.3, p.z) * exp(-p.z * 1.1);
+        shift += (p.y / iResolution.y - wave) * pull;
+    }
+    return shift;
+}
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
     float t = iTime * 0.05 * speed;
@@ -97,6 +111,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     for (int i = 0; i < 3; i++) {
         float fi = float(i);
         float wave = height + 0.13 * fi + 0.18 * (fbm(vec2(uv.x * 2.0 + t * (1.0 + fi * 0.4), fi * 3.1 + t)) - 0.5);
+        if (react) wave += bendToward(uv.x, wave);
         float band = exp(-pow((uv.y - wave) * (9.0 - fi * 2.0), 2.0));
         float curtain = fbm(vec2(uv.x * 12.0 + fi * 5.0, uv.y * 2.0 - t * 4.0));
         vec3 hue = mix(colour1.rgb, colour2.rgb, fi / 2.0);
