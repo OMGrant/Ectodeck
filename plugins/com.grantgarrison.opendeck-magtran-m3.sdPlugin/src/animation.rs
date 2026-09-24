@@ -128,7 +128,7 @@ pub struct Animation {
     pub fps: Arc<AtomicU32>,
     params: Arc<Mutex<Params>>,
     interaction: Arc<Mutex<Interaction>>,
-    latest: Arc<Mutex<Option<RgbImage>>>,
+    latest: Arc<Mutex<FrameSlot>>,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     chrome: Arc<Mutex<Option<ChromeHandle>>>,
@@ -140,7 +140,7 @@ impl Animation {
         let fps = Arc::new(AtomicU32::new(fps_of(source.params())));
         let params = Arc::new(Mutex::new(source.params().clone()));
         let interaction = Arc::new(Mutex::new(Interaction::default()));
-        let latest = Arc::new(Mutex::new(None));
+        let latest = Arc::new(Mutex::new(FrameSlot::default()));
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
         let chrome = Arc::new(Mutex::new(None));
@@ -258,9 +258,9 @@ impl Animation {
     }
 
     /// The newest frame, if one has been rendered yet.
-    pub fn latest(&self) -> Option<RgbImage> {
-        self.latest.lock().ok().and_then(|f| f.clone())
-    }
+    	pub fn latest(&self) -> Option<RgbImage> {
+		self.latest.lock().ok().and_then(|mut f| f.get())
+	}
 
     /// Stop rendering while the deck is asleep, and resume after.
     pub fn set_paused(&self, paused: bool) {
@@ -294,7 +294,7 @@ fn run_shader(
     code: &str,
     params: &Mutex<Params>,
     interaction: &Mutex<Interaction>,
-    latest: &Mutex<Option<RgbImage>>,
+    latest: &Mutex<FrameSlot>,
     stop: &AtomicBool,
     paused: &AtomicBool,
     fps: &AtomicU32,
@@ -322,7 +322,7 @@ fn run_shader(
         }
         let frame = renderer.render(clock, &values, &controls);
         if let Ok(mut l) = latest.lock() {
-            *l = Some(frame);
+            l.set_now(frame);
         }
         let period = Duration::from_secs_f64(1.0 / fps.load(Ordering::SeqCst) as f64);
         let spent = now.elapsed();
@@ -449,7 +449,7 @@ fn pipe() -> std::io::Result<(RawFd, RawFd)> {
 
 fn run_web(
     url: &str,
-    latest: &Mutex<Option<RgbImage>>,
+    latest: &Mutex<FrameSlot>,
     stop: &AtomicBool,
     paused: &AtomicBool,
     slot: &Mutex<Option<ChromeHandle>>,
@@ -612,14 +612,89 @@ fn run_web(
             if flat_run <= 2 {
                 continue;
             }
-        } else {
-            flat_run = 0;
-        }
-        if let Ok(mut l) = latest.lock() {
-            *l = Some(frame);
-        }
+        		} else {
+			flat_run = 0;
+		}
+		if let Ok(mut l) = latest.lock() {
+			l.offer(frame);
+		}
     }
     Ok(())
+}
+
+/// The picture the deck shows, with a web page's newest frames held back a
+/// moment. Headless Chrome now and then hands over a broken frame between
+/// good ones: a backdrop not drawn (the Aquarium), a blank canvas (Sky). Such
+/// a frame breaks sharply away from the picture showing while one of the two
+/// frames after it comes straight back to it; holding frames until the next
+/// two arrive lets those be dropped. A real change (a cut, a jump) keeps
+/// going, so it passes. A held frame is shown anyway once it is a little old,
+/// so a page that stops changing still shows its last picture.
+#[derive(Default)]
+pub struct FrameSlot {
+	shown: Option<RgbImage>,
+	shown_look: Option<Vec<f32>>,
+	held: std::collections::VecDeque<(RgbImage, Vec<f32>, Instant)>,
+}
+
+/// how long a frame may wait for the ones after it
+const HOLD: Duration = Duration::from_millis(80);
+/// how far apart two frames' brightness must be, on average out of 255, to
+/// count as a break
+const BREAK: f32 = 16.0;
+
+impl FrameSlot {
+	/// A frame to show as it is, as a shader renders it.
+	pub fn set_now(&mut self, frame: RgbImage) {
+		self.shown = Some(frame);
+		self.shown_look = None;
+		self.held.clear();
+	}
+
+	/// A web page's frame, which waits for the next two before it is shown.
+	pub fn offer(&mut self, frame: RgbImage) {
+		let look = look_of(&frame);
+		self.held.push_back((frame, look, Instant::now()));
+		while self.held.len() > 2 {
+			let (frame, look, _) = self.held.pop_front().unwrap();
+			let broken = self.shown_look.as_ref().is_some_and(|shown| {
+				difference(shown, &look) > BREAK && self.held.iter().any(|(_, later, _)| difference(shown, later) < BREAK / 3.0)
+			});
+			if broken {
+				log::debug!("Dropped a broken frame from the page");
+			} else {
+				self.shown = Some(frame);
+				self.shown_look = Some(look);
+			}
+		}
+	}
+
+	/// The picture to show now.
+	pub fn get(&mut self) -> Option<RgbImage> {
+		while self.held.front().is_some_and(|(_, _, at)| at.elapsed() > HOLD) {
+			let (frame, look, _) = self.held.pop_front().unwrap();
+			self.shown = Some(frame);
+			self.shown_look = Some(look);
+		}
+		self.shown.clone()
+	}
+}
+
+/// A frame's brightness on a coarse grid, enough to tell a break from motion.
+fn look_of(frame: &RgbImage) -> Vec<f32> {
+	let (w, h) = frame.dimensions();
+	let mut look = Vec::with_capacity(32 * 18);
+	for j in 0..18u32 {
+		for i in 0..32u32 {
+			let p = frame.get_pixel(i * (w - 1) / 31, j * (h - 1) / 17).0;
+			look.push(0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32);
+		}
+	}
+	look
+}
+
+fn difference(a: &[f32], b: &[f32]) -> f32 {
+	a.iter().zip(b).map(|(x, y)| (x - y).abs()).sum::<f32>() / a.len() as f32
 }
 
 /// Whether a frame is a single colour all over, judged on a grid of samples.
@@ -638,8 +713,52 @@ fn is_flat(frame: &image::RgbImage) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_flat_frame_is_told_from_a_picture() {
+    	fn scene(shade: u8, x: u32) -> image::RgbImage {
+		// a picture: a gradient, with a bright block that moves
+		let mut img = image::RgbImage::from_fn(PANEL_WIDTH, PANEL_HEIGHT, |px, py| image::Rgb([(px / 4) as u8, (py / 2) as u8, shade]));
+		for py in 100..200 {
+			for px in x..(x + 80).min(PANEL_WIDTH) {
+				img.put_pixel(px, py, image::Rgb([255, 255, 255]));
+			}
+		}
+		img
+	}
+
+	#[test]
+	fn a_broken_frame_between_good_ones_is_dropped() {
+		let mut slot = FrameSlot::default();
+		let dark = image::RgbImage::from_fn(PANEL_WIDTH, PANEL_HEIGHT, |px, _| image::Rgb([0, 0, (px % 3) as u8]));
+		for (k, frame) in [scene(120, 100), scene(120, 104), dark.clone(), scene(120, 112), scene(120, 116), scene(120, 120)].into_iter().enumerate() {
+			slot.offer(frame);
+			let shown = slot.get().map(|f| f.get_pixel(5, 5).0);
+			assert_ne!(shown, Some([0, 0, 0]), "the broken frame was shown after frame {k}");
+		}
+		// and two broken frames in a row are dropped too
+		for frame in [dark.clone(), dark, scene(120, 124), scene(120, 128), scene(120, 132)] {
+			slot.offer(frame);
+			assert_ne!(slot.get().map(|f| f.get_pixel(5, 5).0), Some([0, 0, 0]));
+		}
+	}
+
+	#[test]
+	fn a_real_change_is_shown() {
+		let mut slot = FrameSlot::default();
+		for frame in [scene(20, 100), scene(20, 104), scene(250, 108), scene(250, 112), scene(250, 116)] {
+			slot.offer(frame);
+		}
+		assert_eq!(slot.get().map(|f| f.get_pixel(5, 5).0[2]), Some(250), "a cut that stays was dropped");
+	}
+
+	#[test]
+	fn a_page_that_stops_still_shows_its_last_frame() {
+		let mut slot = FrameSlot::default();
+		slot.offer(scene(60, 100));
+		std::thread::sleep(HOLD + Duration::from_millis(20));
+		assert!(slot.get().is_some());
+	}
+
+	#[test]
+	fn a_flat_frame_is_told_from_a_picture() {
         let flat = image::RgbImage::from_pixel(PANEL_WIDTH, PANEL_HEIGHT, image::Rgb([255, 255, 255]));
         assert!(is_flat(&flat));
         let mut sky = flat.clone();

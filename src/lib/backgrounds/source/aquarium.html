@@ -183,13 +183,13 @@
   ].join('\n');
 
   var SPECIES = [
-    { file: 'ectodeck-asset:aquarium/clownfish.webp', len: 105, speed: 38, beat: 9, count: 2, band: [0.2, 0.6] },
-    { file: 'ectodeck-asset:aquarium/idol.webp', len: 150, speed: 34, beat: 6, count: 2, band: [0.35, 0.82] },
-    { file: 'ectodeck-asset:aquarium/regal.webp', len: 160, speed: 50, beat: 7, count: 2, band: [0.3, 0.85] },
-    { file: 'ectodeck-asset:aquarium/yellowtang.webp', len: 140, speed: 46, beat: 7, count: 2, band: [0.3, 0.85] },
-    { file: 'ectodeck-asset:aquarium/angel.webp', len: 185, speed: 30, beat: 5, count: 1, band: [0.3, 0.75] },
-    { file: 'ectodeck-asset:aquarium/copperband.webp', len: 130, speed: 28, beat: 6, count: 1, band: [0.25, 0.65] },
-    { file: 'ectodeck-asset:aquarium/anthias.webp', len: 95, speed: 56, beat: 10, count: 3, band: [0.4, 0.9] },
+    { file: 'ectodeck-asset:aquarium/clownfish.webp', len: 90, speed: 38, beat: 9, count: 2, band: [0.2, 0.6] },
+    { file: 'ectodeck-asset:aquarium/idol.webp', len: 128, speed: 34, beat: 6, count: 1, band: [0.35, 0.82] },
+    { file: 'ectodeck-asset:aquarium/regal.webp', len: 136, speed: 50, beat: 7, count: 2, band: [0.3, 0.85] },
+    { file: 'ectodeck-asset:aquarium/yellowtang.webp', len: 120, speed: 46, beat: 7, count: 2, band: [0.3, 0.85] },
+    { file: 'ectodeck-asset:aquarium/angel.webp', len: 158, speed: 30, beat: 5, count: 1, band: [0.3, 0.75] },
+    { file: 'ectodeck-asset:aquarium/copperband.webp', len: 112, speed: 28, beat: 6, count: 1, band: [0.25, 0.65] },
+    { file: 'ectodeck-asset:aquarium/anthias.webp', len: 82, speed: 56, beat: 10, count: 2, band: [0.4, 0.9] },
   ];
   var fish = [];
   SPECIES.forEach(function (sp) {
@@ -292,6 +292,37 @@
   }
   window.addEventListener('ectodeck:press', function (e) { if (e.detail.down) press(e.detail.x, e.detail.y); });
 
+    // ---- keeping the fish from piling up: fish at a similar depth are in each
+  // other's way; one at a different depth may pass in front
+  var near = function (a, b) { return Math.abs(a.depth - b.depth) < 0.35; };
+  var heightOf = function (f) { return Math.abs(f.mesh.scale.y) || f.len * 0.5; };
+  // of a few heights in the fish's band, the one furthest from the fish around it
+  function roomiestHeight(f) {
+    var best = f.y, room = -1;
+    for (var k = 0; k < 6; k++) {
+      var y = rand(f.sp.band[0], f.sp.band[1]) * H, gap = 1e9;
+      fish.forEach(function (o) {
+        if (o !== f && near(f, o) && Math.abs(o.x - f.x) < (o.len + f.len)) gap = Math.min(gap, Math.abs(o.y - y));
+      });
+      if (gap > room) { room = gap; best = y; }
+    }
+    return best;
+  }
+  // two that overlap steer apart: the higher one up, the lower one down
+  function spread(dt) {
+    for (var i = 0; i < fish.length; i++) for (var j = i + 1; j < fish.length; j++) {
+      var a = fish[i], b = fish[j];
+      if (!near(a, b)) continue;
+      var ox = (a.len + b.len) * 0.45 - Math.abs(a.x - b.x);
+      var oy = (heightOf(a) + heightOf(b)) * 0.5 - Math.abs(a.y - b.y);
+      if (ox <= 0 || oy <= 0) continue;
+      var up = a.y >= b.y ? a : b, down = up === a ? b : a;
+      var push = Math.min(oy, 40) * dt * 2.5;
+      up.y += push; down.y -= push;
+      up.ty = Math.max(up.ty, up.y + oy * 0.5); down.ty = Math.min(down.ty, down.y - oy * 0.5);
+    }
+  }
+
   // ---- the tank's life
   function step(dt) {
     clock.t += dt;
@@ -323,7 +354,7 @@
       } else {
         // wander: a new depth every few seconds; turn well before the glass
         f.retarget -= dt;
-        if (f.retarget < 0) { f.ty = rand(f.sp.band[0], f.sp.band[1]) * H; f.retarget = rand(3, 8); }
+            if (f.retarget < 0) { f.ty = roomiestHeight(f); f.retarget = rand(3, 8); }
         var margin = f.len * 0.9;
         if (f.x < margin && f.dir < 0) want = 1;
         else if (f.x > W - margin && f.dir > 0) want = -1;
@@ -358,6 +389,8 @@
       u.haze.value = 0.38 * (1 - f.depth) + 0.12 * (1 - f.y / H);
       f.mesh.position.set(f.x, f.y, 0);
     });
+
+    spread(dt);
 
     // bubbles: a steady stream from the bubbler, wobbling up and growing a little
     // a few bubbles drifting up from the reef: mostly small, now and then a larger one
