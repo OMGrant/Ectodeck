@@ -13,6 +13,17 @@ use crate::mappings::{ENCODER_COUNT, KEY_COUNT};
 /// uses 0x34. Taken from the vendor SDK's `StreamDockM3` decoder.
 pub fn process_input(input: u8, state: u8) -> Result<DeviceInput, MirajazzError> {
     log::info!("Processing input: {:#04x}, {}", input, state);
+    // how long each key was held, for telling a finger from a switch glitch
+    if (0x01..=0x0F).contains(&input) {
+        static DOWN: std::sync::Mutex<[Option<std::time::Instant>; 16]> = std::sync::Mutex::new([None; 16]);
+        if let Ok(mut down) = DOWN.lock() {
+            if state == 1 {
+                down[input as usize] = Some(std::time::Instant::now());
+            } else if let Some(at) = down[input as usize].take() {
+                log::info!("Key {:#04x} held {} ms", input, at.elapsed().as_millis());
+            }
+        }
+    }
 
     match input {
         0x00..=0x0F => read_button_press(input, state),
