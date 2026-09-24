@@ -85,8 +85,8 @@ float noise(vec2 p) {
 }
 
 // the jump, from the newest press: the stars stretch into streaks, it enters the hyperspace tunnel, then drops back out
-const float STRETCH = 0.9;   // seconds for the stars to pull into streaks
-const float ENTER = 1.05;    // when the tunnel takes over
+const float STRETCH = 1.0;   // seconds for the stars to pull into full-length streaks
+const float ENTER = 1.45;    // when the tunnel takes over, after the streaks have held at full length
 const float DROP = 3.4;      // when the jump ends
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
@@ -98,7 +98,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // the stretch builds slowly and then races, as a jump to lightspeed does
     float build = smoothstep(0.0, STRETCH, z);
     float stretch = build * build * (1.0 - smoothstep(DROP - 0.05, DROP + 0.25, z));
-    float inTunnel = smoothstep(ENTER - 0.2, ENTER + 0.25, z) * (1.0 - smoothstep(DROP - 0.35, DROP, z));
+    float inTunnel = smoothstep(ENTER - 0.1, ENTER + 0.25, z) * (1.0 - smoothstep(DROP - 0.35, DROP, z));
     float flash = z > DROP ? exp(-(z - DROP) * 6.0) * 0.6 : smoothstep(ENTER - 0.25, ENTER, z) * exp(-max(z - ENTER, 0.0) * 5.0) * 0.25;
 
     // straight ahead, always toward the middle of the picture
@@ -126,7 +126,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // was a moment before.
     vec2 uv = d / iResolution.y;
     float starsShown = 1.0 - 0.85 * inTunnel;
-    float trailBack = stretch * 0.22;             // how far back in its path the streak reaches
+    float trailBack = stretch * 0.5;               // at full stretch the streaks reach well back toward the middle             // how far back in its path the streak reaches
     const int STARS = 480;
     for (int i = 0; i < STARS; i++) {
         float fi = float(i);
