@@ -314,11 +314,13 @@
   var music = { level: 0, bassAvg: 0, levelAvg: 0, lastBeat: -9, beatGaps: [], period: 0.5, playing: 0, drop: 0, nextDrop: 0 };
   // the parts of the music, as ranges of Ectodeck's 32 bands (40 Hz to 11 kHz)
   var PARTS = [
-    // a hit: the part's loudness jumping clearly above its own recent level,
-    // so quiet music and loud music both dance
-    { name: 'bass', from: 0, to: 3, rise: 0.04, gap: 0.2, turnEvery: 4 },
-    { name: 'mid', from: 6, to: 13, rise: 0.025, gap: 0.16, turnEvery: 2 },
-    { name: 'high', from: 20, to: 31, rise: 0.015, gap: 0.12, turnEvery: 4 },
+    // a hit: the part's loudness jumping by this much above its own recent
+    // level. The bands are on a decibel scale (-70 to -10 dB as 0 to 1), so a
+    // kick lifts the bass from about 0.65 to 0.85, not to double; the amounts
+    // were tuned on real music to catch each kick, snare and hi-hat
+    { name: 'bass', from: 0, to: 3, rise: 0.07, gap: 0.2, turnEvery: 4 },
+    { name: 'mid', from: 6, to: 13, rise: 0.05, gap: 0.16, turnEvery: 2 },
+    { name: 'high', from: 20, to: 31, rise: 0.03, gap: 0.12, turnEvery: 4 },
   ].map(function (p) { return Object.assign(p, { avg: 0, last: -9, hits: 0, dir: Math.random() < 0.5 ? -1 : 1 }); });
   var partOf = function (name) { return PARTS.find(function (p) { return p.name === name; }); };
   window.addEventListener('ectodeck:audio', function (e) {
@@ -329,7 +331,7 @@
     // music counts as playing after a moment of sound, and stops after a second of quiet
     music.playing = level > 0.04 ? Math.min(1, music.playing + 0.05) : Math.max(0, music.playing - 0.03);
     // the bass sets the tempo
-    if (bass > music.bassAvg * 1.4 && bass - music.bassAvg > 0.04 && clock.t - music.lastBeat > 0.2) {
+    if (bass - music.bassAvg > 0.07 && clock.t - music.lastBeat > 0.2) {
       var gap = clock.t - music.lastBeat;
       if (gap < 1.5) { music.beatGaps.push(gap); if (music.beatGaps.length > 8) music.beatGaps.shift(); }
       var sorted = music.beatGaps.slice().sort(function (a, b) { return a - b; }); if (sorted.length) music.period = sorted[sorted.length >> 1];
@@ -338,7 +340,7 @@
     // each part of the music, and the kinds of fish that dance to it
     PARTS.forEach(function (part) {
       var e = 0; for (var k = part.from; k <= part.to; k++) e += b[k] || 0; e /= part.to - part.from + 1;
-      if (e > part.avg * 1.4 && e - part.avg > part.rise && clock.t - part.last > part.gap) {
+      if (e - part.avg > part.rise && clock.t - part.last > part.gap) {
         part.last = clock.t; part.hits++;
         if (dancing && music.playing > 0.5) {
           // every fourth hit the whole kind turns together, to face one way
@@ -484,7 +486,10 @@
       var turning = f.turnT < 1 ? Math.sin(Math.PI * f.turnT) : 0;
       // dancing: a burst of speed on each beat, easing to a slow glide before the next
       f.surge = Math.max(0, (f.surge || 0) - dt / (f.sp.part === 'bass' ? Math.max(0.25, music.period * 0.7) : f.sp.part === 'mid' ? 0.3 : 0.22));
-      var groove = dancing ? music.playing : 0;
+      // the dance holds while the fish's own part keeps hitting; a part gone
+      // quiet lets its fish swim as usual
+      var myPart = partOf(f.sp.part);
+      var groove = dancing && myPart && clock.t - myPart.last < 1.2 ? music.playing : 0;
       // a dash of about half a body length on each hit, then almost still
       var dashSpeed = f.len * 2.6 / f.speed;               // as a multiple of cruising speed
       var pulse = 1 + groove * ((0.3 + dashSpeed * f.surge * f.surge) - 1);
