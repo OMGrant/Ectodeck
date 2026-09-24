@@ -8,18 +8,21 @@
   reef tank, lit from above, drawn with three.js (MIT). The backdrop, fish,
   bubble and food are photographic images made for Ectodeck. A key press
   drops food there and the fish come to eat; two quick presses tap the
-  glass and the fish nearby dart away. Its presets are the time of day.
+  glass and the fish nearby dart away. With music playing the fish dance:
+  a flick on every beat, bobbing in time, and on a big drop the school
+  gathers and swirls. Its presets are the time of day.
 
   Built by scripts/build_backgrounds.py, which inlines three.js and the
   pictures in aquarium/; edit this source, not the built page.
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "Looking into a deep reef tank lit from above, with clownfish, tangs, an angelfish, Moorish idols and more. Press a key to feed the fish there; press it twice quickly to tap the glass. Its presets are the time of day, or Automatic to follow your clock.",
+  "DESCRIPTION": "Looking into a deep reef tank lit from above, with clownfish, tangs, an angelfish, Moorish idols and more. Press a key to feed the fish there; press it twice quickly to tap the glass. Play music and the fish dance to it. Its presets are the time of day, or Automatic to follow your clock.",
   "INPUTS": [
     { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 0, "VALUES": [-1, 0, 1, 2], "LABELS": ["Automatic", "Day", "Dusk", "Night"], "PRESET": true },
     { "NAME": "fish", "TYPE": "float", "LABEL": "Fish", "DEFAULT": 1, "MIN": 0.3, "MAX": 2 },
-    { "NAME": "bubbles", "TYPE": "bool", "LABEL": "Bubbles", "DEFAULT": true }
+    { "NAME": "bubbles", "TYPE": "bool", "LABEL": "Bubbles", "DEFAULT": true },
+    { "NAME": "dance", "TYPE": "bool", "LABEL": "Dance to music", "DEFAULT": true }
   ]
 }
 </script>
@@ -38,6 +41,7 @@
   JSON.parse(document.getElementById('ectodeck-inputs').textContent).INPUTS.forEach(function (i) { declared[i.NAME] = i.DEFAULT; });
   var setting = function (k) { return q.has(k) ? parseFloat(q.get(k)) : Number(declared[k]); };
   var bubbler = q.has('bubbles') ? q.get('bubbles') === '1' : declared.bubbles;
+  var dancing = q.has('dance') ? q.get('dance') === '1' : declared.dance;
   var fishScale = Math.min(2, Math.max(0.3, setting('fish')));
   function sunHours(now) {
     var y = now.getFullYear(), jan = new Date(y, 0, 1).getTimezoneOffset(), jul = new Date(y, 6, 1).getTimezoneOffset();
@@ -218,7 +222,7 @@
         sp: sp, mesh: mesh, len: len, depth: depth,
         x: rand(0.1, 0.9) * W, y: rand(sp.band[0], sp.band[1]) * H, ty: 0,
         dir: dir, from: dir, turnT: 1, sinceTurn: rand(0, 3), speed: sp.speed * (0.7 + 0.5 * depth) * rand(0.85, 1.15),
-        phase: rand(0, 6.28), rush: 0, target: null, retarget: 0
+        phase: rand(0, 6.28), rush: 0, target: null, retarget: 0, seed: rand(0, 6.28), flick: 0, hop: 0, orbit: 0
       };
       f.ty = f.y;
       fish.push(f);
@@ -292,7 +296,39 @@
   }
   window.addEventListener('ectodeck:press', function (e) { if (e.detail.down) press(e.detail.x, e.detail.y); });
 
-    // ---- keeping the fish from piling up: fish at a similar depth are in each
+    // ---- the music, from Ectodeck's ectodeck:audio events (whatever the computer
+  // is playing): a beat is the bass jumping above its recent average; the
+  // tempo comes from the gaps between beats; a drop is the loudness jumping
+  // well above its recent level
+  var music = { level: 0, bassAvg: 0, levelAvg: 0, lastBeat: -9, beatGaps: [], period: 0.5, playing: 0, drop: 0, nextDrop: 0 };
+  window.addEventListener('ectodeck:audio', function (e) {
+    var b = e.detail.bands || [], level = Number(e.detail.level) || 0;
+    var bass = ((b[0] || 0) + (b[1] || 0) + (b[2] || 0) + (b[3] || 0)) / 4;
+    music.level += (level - music.level) * 0.3;
+    music.levelAvg += (level - music.levelAvg) * 0.01;
+    // music counts as playing after a moment of sound, and stops after a second of quiet
+    music.playing = level > 0.04 ? Math.min(1, music.playing + 0.05) : Math.max(0, music.playing - 0.03);
+    if (bass > 0.22 && bass > music.bassAvg * 1.35 && clock.t - music.lastBeat > 0.2) {
+      var gap = clock.t - music.lastBeat;
+      if (gap < 1.5) { music.beatGaps.push(gap); if (music.beatGaps.length > 8) music.beatGaps.shift(); }
+      var sorted = music.beatGaps.slice().sort(function (a, b) { return a - b; }); if (sorted.length) music.period = sorted[sorted.length >> 1];
+      music.lastBeat = clock.t;
+      if (dancing && music.playing > 0.5) fish.forEach(function (f) { f.flick = 1; f.hop = 0.6 + 0.4 * Math.random(); });
+    }
+    music.bassAvg += (bass - music.bassAvg) * 0.08;
+    // a drop: the music as a whole (not one kick) well above its recent level,
+    // and not again for a while after a swirl
+    if (dancing && music.playing > 0.8 && music.level > 0.5 && music.level > music.levelAvg * 1.7 && clock.t > music.nextDrop) {
+      music.drop = 4;                     // seconds of swirl
+      music.nextDrop = clock.t + 25;
+      fish.forEach(function (f, i) { f.orbit = (i / fish.length) * Math.PI * 2; });
+    }
+  });
+
+  // ?debug: the music and the fish, for checking by hand
+  if (/debug/.test(location.search)) window.__aquarium = { music: music, fish: fish, clock: clock };
+
+  // ---- keeping the fish from piling up: fish at a similar depth are in each
   // other's way; one at a different depth may pass in front
   var near = function (a, b) { return Math.abs(a.depth - b.depth) < 0.35; };
   var heightOf = function (f) { return Math.abs(f.mesh.scale.y) || f.len * 0.5; };
@@ -326,6 +362,7 @@
   // ---- the tank's life
   function step(dt) {
     clock.t += dt;
+    music.drop = Math.max(0, music.drop - dt);
     // the tank's light eases toward the time of day's
     var goal = LIGHTS[light], ease = Math.min(1, dt * 0.8);
     tint.x += (goal.tint[0] - tint.x) * ease; tint.y += (goal.tint[1] - tint.y) * ease; tint.z += (goal.tint[2] - tint.z) * ease;
@@ -345,13 +382,20 @@
         food.forEach(function (p) { var d = Math.hypot(p.x - f.x, p.y - f.y); if (d < best) { best = d; f.target = p; } });
       }
       var want = f.dir, rushing = f.rush > 0;
+      var swirling = dancing && music.drop > 0 && !f.target;
+      if (swirling) {
+        var ang = f.orbit + clock.t * 1.4, rx = W * 0.26, ry = H * 0.2;
+        var sx = W * 0.5 + Math.cos(ang) * rx, sy = H * 0.55 + Math.sin(ang) * ry;
+        if ((sx - f.x) * f.dir < -f.len * 0.3) want = -f.dir;
+        f.ty = sy;
+      }
       var head = f.x + f.dir * f.len * 0.45;
       if (f.target) {
         // turn for food only when it is clearly behind the head
         if ((f.target.x - head) * f.dir < -f.len * 0.5) want = -f.dir;
         f.ty = f.target.y;
         if (Math.hypot(f.target.x - head, f.target.y - f.y) < 12) { f.target.eaten = true; f.target = null; }
-      } else {
+      } else if (!swirling) {
         // wander: a new depth every few seconds; turn well before the glass
         f.retarget -= dt;
             if (f.retarget < 0) { f.ty = roomiestHeight(f); f.retarget = rand(3, 8); }
@@ -362,32 +406,42 @@
       }
       // a turn takes most of a second, and a fish doesn't turn again soon after
       f.sinceTurn += dt;
-      if (want !== f.dir && f.turnT >= 1 && (f.sinceTurn > 2.5 || rushing || f.x < f.len * 0.4 || f.x > W - f.len * 0.4)) {
+      if (want !== f.dir && f.turnT >= 1 && (f.sinceTurn > (swirling ? 0.8 : 2.5) || rushing || f.x < f.len * 0.4 || f.x > W - f.len * 0.4)) {
         f.from = f.dir; f.dir = want; f.turnT = 0; f.sinceTurn = 0;
       }
       if (f.turnT < 1) f.turnT = Math.min(1, f.turnT + dt / (rushing ? 0.45 : 0.9));
       f.rush = Math.max(0, f.rush - dt);
       var turning = f.turnT < 1 ? Math.sin(Math.PI * f.turnT) : 0;
-      var speed = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (1 - 0.7 * turning);
+      var speed = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * (1 - 0.7 * turning);
       // while turning the fish keeps drifting the old way, then goes the new one
       var heading = f.turnT < 1 ? (f.turnT < 0.5 ? f.from : f.dir) : f.dir;
       f.x += heading * speed * dt;
       f.x = Math.max(f.len * 0.3, Math.min(W - f.len * 0.3, f.x));
-      f.y += (f.ty - f.y) * Math.min(1, dt * (f.target ? 1.6 : 0.35));
+      f.y += (f.ty - f.y) * Math.min(1, dt * (f.target ? 1.6 : swirling ? 1.2 : 0.35));
       f.y = Math.max(H * 0.12, Math.min(H * 0.93, f.y));
-      f.phase += dt * f.sp.beat * (0.6 + speed / f.speed * 0.5 + turning * 0.8);
+      // dancing: on a beat a sharp flick of the tail and a hop; while music
+      // plays the tail keeps time and the fish bob with the beat
+      f.flick = Math.max(0, (f.flick || 0) - dt * 4);
+      f.hop = Math.max(0, (f.hop || 0) - dt * 3);
+      var groove = dancing ? music.playing : 0;
+      var beatRate = Math.PI * 2 / Math.max(0.25, music.period);
+      f.phase += dt * (f.sp.beat * (0.6 + speed / f.speed * 0.5 + turning * 0.8) * (1 - 0.5 * groove) + groove * beatRate * 1.5 + f.flick * 18);
       var u = f.mesh.material.uniforms;
       // the picture faces left; a fish going right is drawn mirrored, and a
       // turn runs from the old side to the new
       u.turn.value = f.turnT < 1 ? f.turnT : 0;
       var base = f.turnT < 1 ? f.from : f.dir;
       f.mesh.scale.x = Math.abs(f.mesh.scale.x) * (base < 0 ? 1 : -1);
-      u.phase.value = f.phase; u.amp.value = 0.6 + 0.4 * Math.min(2, speed / f.speed);
+      u.phase.value = f.phase; u.amp.value = 0.6 + 0.4 * Math.min(2, speed / f.speed) + f.flick * 0.9 + groove * music.level * 0.5;
       u.bend.value = Math.max(-1, Math.min(1, (f.ty - f.y) / 60)) * 0.6;
       // lit from above: a fish high in the tank is bright, one down by the sand dimmer
       u.light.value = 0.62 + 0.5 * (f.y / H);
       u.haze.value = 0.38 * (1 - f.depth) + 0.12 * (1 - f.y / H);
-      f.mesh.position.set(f.x, f.y, 0);
+      // the hop and the bob move the fish as drawn, not where it swims
+      var sinceBeat = clock.t - music.lastBeat;
+      var bob = groove * Math.sin(sinceBeat / Math.max(0.25, music.period) * Math.PI * 2 + (f.seed || 0)) * (3 + 7 * music.level);
+      var hop = Math.sin(Math.PI * (1 - f.hop)) * f.hop * f.len * 0.12;
+      f.mesh.position.set(f.x, f.y + bob + hop, 0);
     });
 
     spread(dt);
@@ -411,15 +465,16 @@
     fGeo.attributes.position.needsUpdate = true; fGeo.attributes.scale.needsUpdate = true;
   }
 
-  // a new time of day or bubbles setting arrives in place, so the fish keep
+  // a new time of day, bubbles or dance setting arrives in place, so the fish keep
   // swimming; any other setting starts the page again with the new address
   var startQuery = location.search;
   window.addEventListener('ectodeck:params', function (e) {
     var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
     var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
-    for (var i = 0; i < keys.length; i++) if (['time', 'bubbles'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
+    for (var i = 0; i < keys.length; i++) if (['time', 'bubbles', 'dance'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
     if (p.time !== undefined) { timeSetting = Math.round(p.time); light = timeSetting < 0 ? clockLight() : timeSetting % 3; }
     if (p.bubbles !== undefined) bubbler = !!p.bubbles && p.bubbles !== '0';
+    if (p.dance !== undefined) dancing = !!p.dance && p.dance !== '0';
   });
   addEventListener('resize', function () { location.reload(); });
 
