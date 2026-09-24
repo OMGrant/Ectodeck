@@ -8,8 +8,11 @@
   reef tank, lit from above, drawn with three.js (MIT). The backdrop, fish,
   bubble and food are photographic images made for Ectodeck. A key press
   drops food there and the fish come to eat; two quick presses tap the
-  glass and the fish nearby dart away. With music playing the fish dance:
-  a flick on every beat, bobbing in time, and on a big drop the school
+  glass and the fish nearby dart away. With music playing the fish dance,
+  each kind to its own part of the music: the big fish to the bass, the
+  striped fish to the middle, the small fish to the highs. A kind surges
+  forward together on each hit of its part and glides between, and every
+  fourth hit the whole kind turns together. On a big drop the school
   gathers and swirls. Its presets are the time of day.
 
   Built by scripts/build_backgrounds.py, which inlines three.js and the
@@ -187,13 +190,13 @@
   ].join('\n');
 
   var SPECIES = [
-    { file: 'ectodeck-asset:aquarium/clownfish.webp', len: 90, speed: 38, beat: 9, count: 2, band: [0.2, 0.6] },
-    { file: 'ectodeck-asset:aquarium/idol.webp', len: 128, speed: 34, beat: 6, count: 1, band: [0.35, 0.82] },
-    { file: 'ectodeck-asset:aquarium/regal.webp', len: 136, speed: 50, beat: 7, count: 2, band: [0.3, 0.85] },
-    { file: 'ectodeck-asset:aquarium/yellowtang.webp', len: 120, speed: 46, beat: 7, count: 2, band: [0.3, 0.85] },
-    { file: 'ectodeck-asset:aquarium/angel.webp', len: 158, speed: 30, beat: 5, count: 1, band: [0.3, 0.75] },
-    { file: 'ectodeck-asset:aquarium/copperband.webp', len: 112, speed: 28, beat: 6, count: 1, band: [0.25, 0.65] },
-    { file: 'ectodeck-asset:aquarium/anthias.webp', len: 82, speed: 56, beat: 10, count: 2, band: [0.4, 0.9] },
+    { file: 'ectodeck-asset:aquarium/clownfish.webp', len: 90, speed: 38, beat: 9, count: 2, band: [0.2, 0.6], part: 'high' },
+    { file: 'ectodeck-asset:aquarium/idol.webp', len: 128, speed: 34, beat: 6, count: 1, band: [0.35, 0.82], part: 'mid' },
+    { file: 'ectodeck-asset:aquarium/regal.webp', len: 136, speed: 50, beat: 7, count: 2, band: [0.3, 0.85], part: 'bass' },
+    { file: 'ectodeck-asset:aquarium/yellowtang.webp', len: 120, speed: 46, beat: 7, count: 2, band: [0.3, 0.85], part: 'bass' },
+    { file: 'ectodeck-asset:aquarium/angel.webp', len: 158, speed: 30, beat: 5, count: 1, band: [0.3, 0.75], part: 'bass' },
+    { file: 'ectodeck-asset:aquarium/copperband.webp', len: 112, speed: 28, beat: 6, count: 1, band: [0.25, 0.65], part: 'mid' },
+    { file: 'ectodeck-asset:aquarium/anthias.webp', len: 82, speed: 56, beat: 10, count: 2, band: [0.4, 0.9], part: 'high' },
   ];
   var fish = [];
   SPECIES.forEach(function (sp) {
@@ -222,7 +225,7 @@
         sp: sp, mesh: mesh, len: len, depth: depth,
         x: rand(0.1, 0.9) * W, y: rand(sp.band[0], sp.band[1]) * H, ty: 0,
         dir: dir, from: dir, turnT: 1, sinceTurn: rand(0, 3), speed: sp.speed * (0.7 + 0.5 * depth) * rand(0.85, 1.15),
-        phase: rand(0, 6.28), rush: 0, target: null, retarget: 0, seed: rand(0, 6.28), flick: 0, hop: 0, orbit: 0
+        phase: rand(0, 6.28), rush: 0, target: null, retarget: 0, orbit: 0, surge: 0, pendingTurn: false, beatTurn: false, turnTime: 0.9
       };
       f.ty = f.y;
       fish.push(f);
@@ -301,6 +304,13 @@
   // tempo comes from the gaps between beats; a drop is the loudness jumping
   // well above its recent level
   var music = { level: 0, bassAvg: 0, levelAvg: 0, lastBeat: -9, beatGaps: [], period: 0.5, playing: 0, drop: 0, nextDrop: 0 };
+  // the parts of the music, as ranges of Ectodeck's 32 bands (40 Hz to 11 kHz)
+  var PARTS = [
+    { name: 'bass', from: 0, to: 3, floor: 0.22, gap: 0.2 },
+    { name: 'mid', from: 6, to: 13, floor: 0.12, gap: 0.16 },
+    { name: 'high', from: 20, to: 31, floor: 0.06, gap: 0.12 },
+  ].map(function (p) { return Object.assign(p, { avg: 0, last: -9, hits: 0, dir: Math.random() < 0.5 ? -1 : 1 }); });
+  var partOf = function (name) { return PARTS.find(function (p) { return p.name === name; }); };
   window.addEventListener('ectodeck:audio', function (e) {
     var b = e.detail.bands || [], level = Number(e.detail.level) || 0;
     var bass = ((b[0] || 0) + (b[1] || 0) + (b[2] || 0) + (b[3] || 0)) / 4;
@@ -308,13 +318,32 @@
     music.levelAvg += (level - music.levelAvg) * 0.01;
     // music counts as playing after a moment of sound, and stops after a second of quiet
     music.playing = level > 0.04 ? Math.min(1, music.playing + 0.05) : Math.max(0, music.playing - 0.03);
+    // the bass sets the tempo
     if (bass > 0.22 && bass > music.bassAvg * 1.35 && clock.t - music.lastBeat > 0.2) {
       var gap = clock.t - music.lastBeat;
       if (gap < 1.5) { music.beatGaps.push(gap); if (music.beatGaps.length > 8) music.beatGaps.shift(); }
       var sorted = music.beatGaps.slice().sort(function (a, b) { return a - b; }); if (sorted.length) music.period = sorted[sorted.length >> 1];
       music.lastBeat = clock.t;
-      if (dancing && music.playing > 0.5) fish.forEach(function (f) { f.flick = 1; f.hop = 0.6 + 0.4 * Math.random(); });
     }
+    // each part of the music, and the kinds of fish that dance to it
+    PARTS.forEach(function (part) {
+      var e = 0; for (var k = part.from; k <= part.to; k++) e += b[k] || 0; e /= part.to - part.from + 1;
+      if (e > part.floor && e > part.avg * 1.35 && clock.t - part.last > part.gap) {
+        part.last = clock.t; part.hits++;
+        if (dancing && music.playing > 0.5) {
+          // every fourth hit the whole kind turns together, to face one way
+          var turnNow = part.hits % 4 == 0;
+          if (turnNow) part.dir = -part.dir;
+          fish.forEach(function (f) {
+            if (f.sp.part !== part.name) return;
+            f.surge = 1;
+            if (turnNow || f.pendingTurn) f.beatTurn = true;
+            f.pendingTurn = false;
+          });
+        }
+      }
+      part.avg += (e - part.avg) * 0.08;
+    });
     music.bassAvg += (bass - music.bassAvg) * 0.08;
     // a drop: the music as a whole (not one kick) well above its recent level,
     // and not again for a while after a swirl
@@ -326,7 +355,7 @@
   });
 
   // ?debug: the music and the fish, for checking by hand
-  if (/debug/.test(location.search)) window.__aquarium = { music: music, fish: fish, clock: clock };
+  if (/debug/.test(location.search)) window.__aquarium = { music: music, fish: fish, clock: clock, parts: PARTS };
 
   // ---- keeping the fish from piling up: fish at a similar depth are in each
   // other's way; one at a different depth may pass in front
@@ -402,46 +431,49 @@
         var margin = f.len * 0.9;
         if (f.x < margin && f.dir < 0) want = 1;
         else if (f.x > W - margin && f.dir > 0) want = -1;
-        else if (Math.random() < dt * 0.03) want = -f.dir;
+        else if (Math.random() < dt * 0.03 && !(dancing && music.playing > 0.5)) want = -f.dir;   // dancing, turns come from the music
       }
-      // a turn takes most of a second, and a fish doesn't turn again soon after
+      // a turn takes most of a second, and a fish doesn't turn again soon after;
+      // dancing, a turn waits for the next beat and takes less than a beat
       f.sinceTurn += dt;
-      if (want !== f.dir && f.turnT >= 1 && (f.sinceTurn > (swirling ? 0.8 : 2.5) || rushing || f.x < f.len * 0.4 || f.x > W - f.len * 0.4)) {
-        f.from = f.dir; f.dir = want; f.turnT = 0; f.sinceTurn = 0;
+      var onBeat = dancing && music.playing > 0.5 && !rushing && !swirling;
+      var atGlass = f.x < f.len * 0.4 || f.x > W - f.len * 0.4;
+      if (onBeat && f.beatTurn && f.turnT >= 1) { var kind = partOf(f.sp.part); if (kind && kind.dir !== f.dir && !atGlass) want = kind.dir; else if (want === f.dir) want = f.dir; }
+      if (want !== f.dir && f.turnT >= 1) {
+        if (onBeat && !f.beatTurn && !atGlass) f.pendingTurn = true;
+        else if (onBeat || f.sinceTurn > (swirling ? 0.8 : 2.5) || rushing || atGlass) {
+          f.from = f.dir; f.dir = want; f.turnT = 0; f.sinceTurn = 0;
+          f.turnTime = rushing ? 0.45 : onBeat ? Math.max(0.3, Math.min(0.9, music.period * 0.85)) : 0.9;
+        }
       }
-      if (f.turnT < 1) f.turnT = Math.min(1, f.turnT + dt / (rushing ? 0.45 : 0.9));
+      f.beatTurn = false;
+      if (f.turnT < 1) f.turnT = Math.min(1, f.turnT + dt / (f.turnTime || 0.9));
       f.rush = Math.max(0, f.rush - dt);
       var turning = f.turnT < 1 ? Math.sin(Math.PI * f.turnT) : 0;
-      var speed = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * (1 - 0.7 * turning);
+      // dancing: a burst of speed on each beat, easing to a slow glide before the next
+      f.surge = Math.max(0, (f.surge || 0) - dt / (f.sp.part === 'bass' ? Math.max(0.2, music.period * 0.8) : f.sp.part === 'mid' ? 0.3 : 0.2));
+      var groove = dancing ? music.playing : 0;
+      var pulse = 1 + groove * (2.4 * f.surge * f.surge - 0.45);
+      var speed = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * pulse * (1 - 0.7 * turning);
       // while turning the fish keeps drifting the old way, then goes the new one
       var heading = f.turnT < 1 ? (f.turnT < 0.5 ? f.from : f.dir) : f.dir;
       f.x += heading * speed * dt;
       f.x = Math.max(f.len * 0.3, Math.min(W - f.len * 0.3, f.x));
       f.y += (f.ty - f.y) * Math.min(1, dt * (f.target ? 1.6 : swirling ? 1.2 : 0.35));
       f.y = Math.max(H * 0.12, Math.min(H * 0.93, f.y));
-      // dancing: on a beat a sharp flick of the tail and a hop; while music
-      // plays the tail keeps time and the fish bob with the beat
-      f.flick = Math.max(0, (f.flick || 0) - dt * 4);
-      f.hop = Math.max(0, (f.hop || 0) - dt * 3);
-      var groove = dancing ? music.playing : 0;
-      var beatRate = Math.PI * 2 / Math.max(0.25, music.period);
-      f.phase += dt * (f.sp.beat * (0.6 + speed / f.speed * 0.5 + turning * 0.8) * (1 - 0.5 * groove) + groove * beatRate * 1.5 + f.flick * 18);
+      f.phase += dt * f.sp.beat * (0.6 + speed / f.speed * 0.5 + turning * 0.8);
       var u = f.mesh.material.uniforms;
       // the picture faces left; a fish going right is drawn mirrored, and a
       // turn runs from the old side to the new
       u.turn.value = f.turnT < 1 ? f.turnT : 0;
       var base = f.turnT < 1 ? f.from : f.dir;
       f.mesh.scale.x = Math.abs(f.mesh.scale.x) * (base < 0 ? 1 : -1);
-      u.phase.value = f.phase; u.amp.value = 0.6 + 0.4 * Math.min(2, speed / f.speed) + f.flick * 0.9 + groove * music.level * 0.5;
+      u.phase.value = f.phase; u.amp.value = 0.6 + 0.4 * Math.min(2, speed / f.speed);
       u.bend.value = Math.max(-1, Math.min(1, (f.ty - f.y) / 60)) * 0.6;
       // lit from above: a fish high in the tank is bright, one down by the sand dimmer
       u.light.value = 0.62 + 0.5 * (f.y / H);
       u.haze.value = 0.38 * (1 - f.depth) + 0.12 * (1 - f.y / H);
-      // the hop and the bob move the fish as drawn, not where it swims
-      var sinceBeat = clock.t - music.lastBeat;
-      var bob = groove * Math.sin(sinceBeat / Math.max(0.25, music.period) * Math.PI * 2 + (f.seed || 0)) * (3 + 7 * music.level);
-      var hop = Math.sin(Math.PI * (1 - f.hop)) * f.hop * f.len * 0.12;
-      f.mesh.position.set(f.x, f.y + bob + hop, 0);
+      f.mesh.position.set(f.x, f.y, 0);
     });
 
     spread(dt);
