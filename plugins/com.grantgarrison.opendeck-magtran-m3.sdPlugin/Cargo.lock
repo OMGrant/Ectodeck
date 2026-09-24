@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "opendeck-magtran-m3"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "base64",
  "data-url",

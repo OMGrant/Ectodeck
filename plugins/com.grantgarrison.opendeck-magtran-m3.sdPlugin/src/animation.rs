@@ -342,10 +342,11 @@ fn feed_page_audio(stop: &AtomicBool, paused: &AtomicBool, chrome: &Mutex<Option
         if !paused.load(Ordering::SeqCst) {
             let sound = tap.frame();
             let script = format!(
-                "window.dispatchEvent(new CustomEvent('ectodeck:audio', {{ detail: {{ bands: {:?}, level: {}, wave: {:?} }} }}))",
+                "window.dispatchEvent(new CustomEvent('ectodeck:audio', {{ detail: {{ bands: {:?}, level: {}, wave: {:?}, hits: {:?} }} }}))",
                 sound.bands.map(|b| (b * 1000.0).round() / 1000.0),
                 (sound.level * 1000.0).round() / 1000.0,
-                sound.wave
+                sound.wave,
+                sound.hits
             );
             if let Ok(mut c) = chrome.lock() {
                 if let Some(c) = c.as_mut() {

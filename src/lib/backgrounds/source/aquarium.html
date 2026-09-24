@@ -657,9 +657,19 @@
     music.levelAvg += (level - music.levelAvg) * 0.01;
     // music counts as playing after a moment of sound, and stops after a second of quiet
     music.playing = level > 0.04 ? Math.min(1, music.playing + 0.05) : Math.max(0, music.playing - 0.03);
-    // each part: its onset strength against the song's recent spread
+    // each part: the drum hits Ectodeck heard since the last frame (found every
+    // 10 ms, far finer than frames), or, from an older Ectodeck without them,
+    // this frame's onset strength against the song's recent spread
     var hitNow = {};
-    PARTS.forEach(function (part) {
+    var heard = Array.isArray(e.detail.hits) ? e.detail.hits : null;
+    PARTS.forEach(function (part, idx) {
+      if (heard) {
+        if (heard[idx] > 0) {
+          part.last = clock.t; part.hits += heard[idx]; hitNow[part.name] = true;
+          if (dancing && music.playing > 0.5) fish.forEach(function (f) { if (f.sp.part === part.name) f.kick = 1; });
+        }
+        return;
+      }
       var flux = 0;
       if (prevBands) for (var k = part.from; k <= part.to; k++) flux += Math.max(0, (b[k] || 0) - (prevBands[k] || 0));
       flux /= part.to - part.from + 1;
