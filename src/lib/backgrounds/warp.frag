@@ -116,7 +116,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         vec4 k = iKeyPresses[i];
         if (k.w < 0.0) continue;
         float kb = clamp(k.z / STRETCH, 0.0, 1.0);
-        travel += 0.12 * kb * kb * kb * STRETCH + 0.5 * clamp(k.z - STRETCH, 0.0, DROP - STRETCH);
+        travel += 0.015 * kb * STRETCH + 0.5 * clamp(k.z - ENTER, 0.0, DROP - ENTER);
     }
 
     vec3 col = vec3(0.0, 0.004, 0.012);
@@ -130,7 +130,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // was a moment before.
     vec2 uv = d / iResolution.y;
     float starsShown = 1.0 - 0.85 * inTunnel;
-    float trailBack = stretch * 0.5;               // at full stretch the streaks reach well back toward the middle             // how far back in its path the streak reaches
+    // The jump as the film did it, with exposure: the stars hold still and the
+    // camera's shutter smears each one's path outward, the streaks lengthening
+    // faster and faster as the ship accelerates, the tips shooting off the edge
+    float surge = stretch * stretch * stretch;             // accelerating
+    float ahead = surge * 0.97;                            // how far along its path, toward you, the streak reaches             // how far back in its path the streak reaches
     const int STARS = 480;
     for (int i = 0; i < STARS; i++) {
         float fi = float(i);
@@ -142,21 +146,24 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         vec2 pos = (vec2(h1, h2) - 0.5) * vec2(1.78, 1.0) * 12.0 * (0.12 + 0.88 * h4);
         float prog = fract(h3 * 7.1 + travel * (0.8 + 0.4 * h1));
         float zNow = mix(6.0, 0.12, prog);                // distance from you
-        float zThen = zNow + trailBack * (6.0 - 0.12);
-        vec2 now = pos / zNow * 0.5, then = pos / zThen * 0.5;
+        // from the star, outward along its path to where it will be
+        float zAhead = max(zNow * (1.0 - ahead), 0.04);
+        vec2 then = pos / zNow * 0.5, now = pos / zAhead * 0.5;
         // distance from this pixel to the streak between then and now
         vec2 seg = now - then + vec2(1e-6), rel = uv - then;
         float t = clamp(dot(rel, seg) / max(dot(seg, seg), 1e-7), 0.0, 1.0);
         float dist = length(rel - seg * t) * iResolution.y;
         // pixels: nearer is bigger, but a streak stays a fine line
-        float size = mix(0.45 + 1.3 / zNow, min(0.55 + 0.25 / zNow, 1.1), stretch);
+        float size = mix(0.45 + 1.3 / zNow, min(0.6 + 0.25 / zNow, 1.1), smoothstep(0.0, 0.3, stretch));
         float glow = exp(-dist * dist / (size * size));
         // brighter as it nears; the streak fades toward its tail
         // fading in from the distance and out as it passes, never popping
-        float bright = smoothstep(0.0, 0.25, prog) * (1.0 - smoothstep(0.82, 1.0, prog)) * (0.35 + 0.65 * smoothstep(0.2, 1.0, prog)) * mix(1.0, 0.25 + 0.75 * t, stretch);
+        // the star end brightest, the smear fading toward its tip
+        float bright = smoothstep(0.0, 0.25, prog) * (1.0 - smoothstep(0.82, 1.0, prog)) * (0.35 + 0.65 * smoothstep(0.2, 1.0, prog)) * mix(1.0, 1.0 - 0.6 * t, smoothstep(0.0, 0.3, stretch));
         vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), hyper, 0.4), stretch);
         // the streaks shine brighter as they stretch
-        col += tint * glow * bright * starsShown * (1.0 + 1.3 * stretch);
+        // brighter with the exposure: the longer the smear, the more light
+        col += tint * glow * bright * starsShown * (1.0 + 1.6 * surge);
     }
 
     // the tunnel: a tube of light rushing past, seen down its length. Depth
