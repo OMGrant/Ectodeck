@@ -236,7 +236,17 @@
       '  detail = max(detail, detailAt(vUv, o));',
       '  float solid = max(smoothstep(0.02, 0.06, detail), smoothstep(0.45, 0.65, dot(texture2D(reef, vUv).rgb, vec3(0.3, 0.55, 0.15))));',
       '  vec3 sparkle = discoSparkle(px) * solid;',
-      '  gl_FragColor = vec4(min(b.rgb * (0.2 + 0.22 * b.a), vec3(0.45)) + discoPools(px) * 0.5 + sparkle, 1.0);',
+      // the light above the water, where the sparkles come from: a glow
+      // through the top middle of the surface, shimmering with its ripples,
+      // and faint rays fanning down from it, turning slowly
+      '  vec2 src = vec2(size.x * 0.5, size.y * 1.06);',
+      '  vec2 q = (px - src) / size.y;',
+      '  float ripple = 0.75 + 0.25 * sin(px.x * 0.045 + t * 1.7) * sin(px.x * 0.021 - t * 1.1 + px.y * 0.03);',
+      '  float glow = exp(-dot(q * vec2(0.9, 1.6), q * vec2(0.9, 1.6)) * 7.0) * ripple;',
+      '  float ang2 = atan(q.x, -q.y);',
+      '  float rays = pow(max(0.0, sin(ang2 * 11.0 + t * 0.35)), 6.0) * exp(-length(q) * 2.6) * smoothstep(0.02, 0.2, length(q));',
+      '  vec3 above = mix(vec3(0.9, 0.9, 1.0), palette(hue + 0.12), 0.35) * (glow * 0.55 + rays * 0.28) * amount * (0.7 + 0.45 * pulse);',
+      '  gl_FragColor = vec4(min(b.rgb * (0.2 + 0.22 * b.a), vec3(0.45)) + discoPools(px) * 0.5 + sparkle + above, 1.0);',
       '}'
     ].join('\n'),
     blending: THREE.AdditiveBlending, transparent: true, depthTest: false, depthWrite: false
