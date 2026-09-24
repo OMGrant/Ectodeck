@@ -321,10 +321,17 @@
     var claw = crabPart(side < 0 ? 'ectodeck-asset:aquarium/crab-claw-left.webp' : 'ectodeck-asset:aquarium/crab-claw-right.webp', 71);
     claw.position.set(-joint.position.x, -shoulderY, 0);
     joint.add(claw);
+    // the pincer's movable finger, hinged at 184, 128 (mirrored on the right)
+    var hx = (side < 0 ? 184 - 240 : 240 - 184) / 480 * crab.w, hy = (84 - 128) / 480 * crab.w;
+    var hinge = new THREE.Group();
+    hinge.position.set(hx - joint.position.x, hy - shoulderY, 0);
+    var finger = crabPart(side < 0 ? 'ectodeck-asset:aquarium/crab-finger-left.webp' : 'ectodeck-asset:aquarium/crab-finger-right.webp', 72);
+    finger.position.set(-hx, -hy, 0);
+    hinge.add(finger); joint.add(hinge);
     crab.mesh.add(joint);
-    return { joint: joint, claw: claw, side: side, raise: 0, rest: joint.position.clone() };
+    return { joint: joint, claw: claw, finger: finger, hinge: hinge, side: side, raise: 0, pinch: 0, rest: joint.position.clone() };
   });
-  crab.parts = [crab.body].concat(crab.claws.map(function (c) { return c.claw; }));
+  crab.parts = [crab.body].concat(crab.claws.map(function (c) { return c.claw; }), crab.claws.map(function (c) { return c.finger; }));
   scene.add(crab.mesh);
   // a soft shadow on the sand under it, smaller as it hops
   crab.shadow = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), new THREE.ShaderMaterial({
@@ -351,6 +358,15 @@
       // the arm lifts and reaches out as the claw swings up, as a crab rears
       c.joint.rotation.z = -c.side * 2.5 * c.raise;
       c.joint.position.set(c.rest.x + c.side * crab.w * 0.1 * c.raise, c.rest.y + crab.w * 0.2 * c.raise, 0);
+      // the pincer: dancing it opens between beats and snaps shut on each;
+      // reaching for food it opens, and shuts on the flake; otherwise now and then a snap
+      var open = 0;
+      if (crab.eating && c.side === crab.eatSide) open = crab.eating > 0.35 ? 1 : 0;
+      else if (crab.dance > 0.1) open = crab.dance * Math.min(1, waveIn * 1.8) * (waveIn < 0.92 ? 1 : 0);
+      else if (crab.food && c.side === (crab.food.x < crab.x ? -1 : 1)) open = 0.6;
+      else if (Math.sin(clock.t * 0.7 + c.side * 2.1) > 0.985) open = 1;
+      c.pinch += (open - c.pinch) * Math.min(1, dt * (open < c.pinch ? 28 : 9));   // shut fast, open slower
+      c.hinge.rotation.z = -c.side * 0.44 * c.pinch;
     });
     var drawn = function () {
       // the shadow follows the crab on the sand, shrinking and fading as it lifts
