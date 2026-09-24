@@ -9,7 +9,8 @@
   bubble and food are photographic images made for Ectodeck. A key press
   drops food there and the fish come to eat; two quick presses tap the
   glass and the fish nearby dart away (a pufferfish puffs up). A crab
-  scuttles about the sand and scurries off from a press; a sea anemone
+  scuttles about the sand, comes to eat the food that settles there, and
+  scurries off from a tap on the glass; a sea anemone
   sways at the foot of the rocks and draws in when touched. With music the
   crab side-steps and hops to the beat, the anemone's tentacles swing in
   time, and the pufferfish swells on each beat. The fish swim as in water: a tail
@@ -345,6 +346,7 @@
     var beatNow = beatPosition(), waveIn = beatNow - Math.floor(beatNow), upSide = Math.floor(beatNow) % 2 ? 1 : -1;
     crab.claws.forEach(function (c) {
       var want = (crab.dance || 0) * (0.72 + 0.28 * (c.side === upSide ? Math.sin(Math.PI * Math.min(1, waveIn * 1.4)) : 0));
+      if (crab.eating && c.side === crab.eatSide) want = Math.max(want, 0.55 * Math.sin(Math.PI * (1 - crab.eating / 0.7)));
       c.raise += (want - c.raise) * Math.min(1, dt * 7);
       // the arm lifts and reaches out as the claw swings up, as a crab rears
       c.joint.rotation.z = -c.side * 2.5 * c.raise;
@@ -373,7 +375,39 @@
     var lo = W * 0.38, hi = W * 0.8;
     // with music the crab dances where it stands: a side-step left on one beat
     // and right on the next, a hop on each, rocking side to side
-    crab.dance = (crab.dance || 0) + ((grooveNow && crab.flee <= 0 ? 1 : 0) - (crab.dance || 0)) * Math.min(1, dt * 3);
+    // food: the crab goes for the flake it can reach soonest, sinking or settled,
+    // scuttles under it, and when it lies on the sand picks it up with a claw
+    // and lifts it to its mouth
+    if (crab.flee <= 0 && (!crab.food || crab.food.eaten || !food.includes(crab.food))) {
+      crab.food = null; var bestFood = 1e9;
+      food.forEach(function (p) {
+        if (p.x < lo - 30 || p.x > hi + 30 || (!p.landed && p.y > H * 0.5)) return;
+        var d = Math.abs(p.x - crab.x) + (p.landed ? 0 : (p.y - p.floor) * 0.6);
+        if (d < bestFood) { bestFood = d; crab.food = p; }
+      });
+    }
+    crab.eating = Math.max(0, (crab.eating || 0) - dt);
+    if (crab.bite && crab.eating < 0.35) { crab.bite.eaten = true; crab.bite = null; crab.ate = (crab.ate || 0) + 1; }
+    crab.dance = (crab.dance || 0) + ((grooveNow && crab.flee <= 0 && !crab.food && !crab.eating ? 1 : 0) - (crab.dance || 0)) * Math.min(1, dt * 3);
+    if (crab.food && crab.flee <= 0 && crab.dance < 0.5) {
+      var target = Math.max(lo, Math.min(hi, crab.food.x)), gap = target - crab.x;
+      if (Math.abs(gap) > 6 && !crab.eating) {
+        crab.dir = gap > 0 ? 1 : -1;
+        crab.x += crab.dir * Math.min(Math.abs(gap), 80 * dt); crab.step += dt * 22;
+      } else if ((crab.food.landed || crab.food.y - crab.food.floor < crab.w * 0.3) && !crab.eating) {   // on the sand, or low enough to reach up for
+        crab.eating = 0.7; crab.eatSide = crab.food.x < crab.x ? -1 : 1; crab.bite = crab.food;
+      }
+      // one flake a bite: the one it reached for, taken halfway through the bite
+      if (crab.bite && crab.eating < 0.35) { crab.bite.eaten = true; crab.bite = null; crab.ate = (crab.ate || 0) + 1; }
+      crab.pause = 0.8; crab.walk = 0;
+      var walking = Math.abs(gap) > 6 && !crab.eating;
+      var bobF = walking ? Math.abs(Math.sin(crab.step)) * 2.5 : 0;
+      crab.mesh.position.set(crab.x, crab.y + crab.w * 0.175 + bobF, 0);
+      crab.mesh.scale.x = walking ? 1 + 0.035 * Math.sin(crab.step * 2) : 1;
+      crab.mesh.rotation.z = walking ? 0.04 * Math.sin(crab.step) : 0;
+      drawn();
+      return;
+    }
     if (crab.dance > 0.02) {
       var bp = beatPosition(), inBeat = bp - Math.floor(bp);
       var side = Math.floor(bp) % 2 ? 1 : -1;
@@ -466,12 +500,13 @@
         if (d < 260) { f.dir = f.x < px ? -1 : 1; f.rush = 1.2; f.target = null; }
         if (f.puffMesh && d < 320) f.puffUntil = clock.t + 4;
       });
+      // a tap on the glass near the crab sends it scurrying off
+      if (Math.abs(px - crab.x) < 150 && py < H * 0.4) { crab.flee = 1.1; crab.dir = crab.x < px ? -1 : 1; crab.pause = 0; crab.walk = 0; crab.food = null; }
       lastPress.t = -9; return;
     }
     lastPress = { t: clock.t, x: px, y: py };
-    if (Math.abs(px - crab.x) < 130 && py < H * 0.35) { crab.flee = 1.1; crab.dir = crab.x < px ? -1 : 1; crab.pause = 0; crab.walk = 0; }
     if (Math.hypot(px - anemone.x, py - (anemone.base + anemone.w * 0.44)) < 140) anemone.draw = 1;
-    for (var i = 0; i < 9; i++) food.push({ x: px + rand(-28, 28), y: py + rand(-10, 10), vx: rand(-16, 16), vy: rand(-18, -8), s: rand(9, 14), spin: rand(0, 6), rot: rand(0, 6.28), spinRate: rand(-2, 2), flutter: rand(2, 4), kind: Math.floor(rand(0, 4)) });
+    for (var i = 0; i < 9; i++) food.push({ x: px + rand(-28, 28), y: py + rand(-10, 10), vx: rand(-16, 16), vy: rand(-18, -8), s: rand(9, 14), spin: rand(0, 6), rot: rand(0, 6.28), spinRate: rand(-2, 2), flutter: rand(2, 4), kind: Math.floor(rand(0, 4)), floor: H * rand(0.085, 0.115) });
   }
   window.addEventListener('ectodeck:press', function (e) { if (e.detail.down) press(e.detail.x, e.detail.y); });
 
@@ -538,7 +573,7 @@
   });
 
   // ?debug: the music and the fish, for checking by hand
-  if (/debug/.test(location.search)) window.__aquarium = { music: music, fish: fish, clock: clock, parts: PARTS, crab: crab };
+  if (/debug/.test(location.search)) window.__aquarium = { music: music, fish: fish, clock: clock, parts: PARTS, crab: crab, foodLeft: function () { return food.length; } };
 
   // ---- keeping the fish from piling up: fish at a similar depth are in each
   // other's way; one at a different depth may pass in front
@@ -637,8 +672,13 @@
 
     // food sinks and drifts, and is eaten
     // flakes sink slowly, sliding side to side as they flutter
-    food.forEach(function (p) { p.vx *= Math.pow(0.4, dt); p.x += p.vx * dt + Math.sin(clock.t * p.flutter + p.spin) * 14 * dt; p.y += p.vy * dt; p.vy = Math.max(p.vy - 1.5 * dt, -16); p.rot += p.spinRate * dt; });
-    food = food.filter(function (p) { return p.y > H * 0.12 && !p.eaten; }).slice(-MAXF);
+    // and those that reach the bottom settle on the sand and lie there a while
+    food.forEach(function (p) {
+      if (p.landed) return;
+      p.vx *= Math.pow(0.4, dt); p.x += p.vx * dt + Math.sin(clock.t * p.flutter + p.spin) * 14 * dt; p.y += p.vy * dt; p.vy = Math.max(p.vy - 1.5 * dt, -16); p.rot += p.spinRate * dt;
+      if (p.y <= p.floor) { p.y = p.floor; p.landed = true; p.restUntil = clock.t + 14; p.flutter = 0; p.spin = 0; }
+    });
+    food = food.filter(function (p) { return !p.eaten && (!p.landed || clock.t < p.restUntil); }).slice(-MAXF);
 
     // the music starting: everyone to a place; stopping: back to swimming about
     var dancingNow = dancing && music.playing > 0.5 && clock.t - music.lastBeat < 1.5 && music.drop <= 0;
@@ -647,10 +687,10 @@
 
     fish.forEach(function (f) {
       // find food
-      if (!f.target || f.target.eaten || f.target.y < H * 0.12) {
+      if (!f.target || f.target.eaten || f.target.landed) {
         f.target = null;
         var best = 300;
-        food.forEach(function (p) { var d = Math.hypot(p.x - f.x, p.y - f.y); if (d < best) { best = d; f.target = p; } });
+        food.forEach(function (p) { if (p.landed) return; var d = Math.hypot(p.x - f.x, p.y - f.y); if (d < best) { best = d; f.target = p; } });
       }
       var want = f.dir, rushing = f.rush > 0;
       var swirling = dancing && music.drop > 0 && !f.target;
