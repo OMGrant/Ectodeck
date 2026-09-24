@@ -155,24 +155,37 @@
   // ---- the disco: at night, with music, a mirror ball under the surface and
   // coloured spots sweeping the tank, pulsing on the beat, the colours
   // changing each phrase; it fades back to moonlight when the music stops
+  // one set of values for everything the disco lights, and the light itself:
+  // the coloured spots at a point on the screen, for the overlay and for each
+  // fish, the crab and the anemone to light their own colours with
+  var discoU = { dT: { value: 0 }, dAmount: { value: 0 }, dPulse: { value: 0 }, dHue: { value: 0 }, dSize: { value: new THREE.Vector2(W, H) } };
+  var DISCO_GLSL = [
+    'uniform float dT; uniform float dAmount; uniform float dPulse; uniform float dHue; uniform vec2 dSize;',
+    'vec3 discoPalette(float k) { k = fract(k); return k < 0.25 ? vec3(1.0, 0.25, 0.7) : k < 0.5 ? vec3(0.2, 0.9, 1.0) : k < 0.75 ? vec3(0.65, 0.35, 1.0) : vec3(1.0, 0.8, 0.25); }',
+    'vec3 discoSpots(vec2 px) {',
+    '  vec3 col = vec3(0.0);',
+    '  for (int i = 0; i < 5; i++) {',
+    '    float fi = float(i);',
+    '    vec2 c = vec2(dSize.x * (0.5 + 0.42 * sin(dT * (0.31 + fi * 0.07) + fi * 1.9)), dSize.y * (0.42 + 0.36 * sin(dT * (0.23 + fi * 0.05) + fi * 2.7)));',
+    '    float r = dSize.y * (0.2 + 0.05 * sin(fi * 3.1));',
+    '    float d = length((px - c) / vec2(1.25, 1.0)) / r;',
+    '    col += discoPalette(dHue + fi * 0.25) * smoothstep(1.0, 0.15, d);',
+    '  }',
+    '  return col * dAmount * (0.55 + 0.6 * dPulse);',
+    '}'
+  ].join('\n');
   var discoMat = new THREE.ShaderMaterial({
-    uniforms: { t: { value: 0 }, amount: { value: 0 }, pulse: { value: 0 }, hue: { value: 0 }, size: { value: new THREE.Vector2(W, H) } },
+    uniforms: discoU,
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: [
-      'uniform float t; uniform float amount; uniform float pulse; uniform float hue; uniform vec2 size; varying vec2 vUv;',
-      'vec3 palette(float k) { k = fract(k); return k < 0.25 ? vec3(1.0, 0.25, 0.7) : k < 0.5 ? vec3(0.2, 0.9, 1.0) : k < 0.75 ? vec3(0.65, 0.35, 1.0) : vec3(1.0, 0.8, 0.25); }',
+      DISCO_GLSL,
+      '#define t dT', '#define amount dAmount', '#define pulse dPulse', '#define hue dHue', '#define size dSize', '#define palette discoPalette',
+      'varying vec2 vUv;',
       'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
       'void main() {',
       '  vec2 px = vUv * size;',
-      '  vec3 col = vec3(0.0);',
-      // the spots: soft pools of coloured light sweeping about
-      '  for (int i = 0; i < 5; i++) {',
-      '    float fi = float(i);',
-      '    vec2 c = vec2(size.x * (0.5 + 0.42 * sin(t * (0.31 + fi * 0.07) + fi * 1.9)), size.y * (0.42 + 0.36 * sin(t * (0.23 + fi * 0.05) + fi * 2.7)));',
-      '    float r = size.y * (0.2 + 0.05 * sin(fi * 3.1));',
-      '    float d = length((px - c) / vec2(1.25, 1.0)) / r;',
-      '    col += palette(hue + fi * 0.25) * smoothstep(1.0, 0.15, d) * 0.62;',
-      '  }',
+      // the spots on the water and rocks (the creatures light themselves)
+      '  vec3 col = discoSpots(px) * 0.55 / max(amount * (0.55 + 0.6 * pulse), 1e-3);',
       // sparkles from the ball: small bright flecks flying round the tank
       '  vec2 ball = vec2(size.x * 0.5, size.y * 0.9);',
       '  vec2 rel = px - ball; float ang = atan(rel.y, rel.x), rad = length(rel);',
@@ -232,13 +245,14 @@
     '}'
   ].join('\n');
   var fishFrag = [
+    DISCO_GLSL,
     'uniform sampler2D map; uniform float haze; uniform vec3 water; uniform float light; uniform vec3 tint; uniform float alpha;',
     'varying vec2 vUv; varying float vSide;',
     'void main() {',
     '  vec4 c = texture2D(map, vUv);',
     '  if (c.a < 0.03) discard;',
     '  vec3 col = c.rgb * (0.7 + 0.3 * vSide) * light;',   // a part seen edge-on in a turn: a little darker
-    '  col = mix(col, water, haze) * tint;',
+    '  col = mix(col, water, haze) * (tint + discoSpots(gl_FragCoord.xy) * 1.5);',
     '  gl_FragColor = vec4(col, c.a * alpha);',
     '}'
   ].join('\n');
@@ -266,7 +280,8 @@
       var depth = Math.sqrt(Math.random());                // 0 far, 1 near; most fish near the glass
       var mat = new THREE.ShaderMaterial({
         uniforms: { map: { value: tex }, phase: { value: 0 }, amp: { value: 1 }, turn: { value: 0 }, bend: { value: 0 },
-                    haze: { value: 0.42 * (1 - depth) }, water: { value: WATER }, light: { value: 1 }, tint: { value: tint }, alpha: { value: 1 } },
+                    haze: { value: 0.42 * (1 - depth) }, water: { value: WATER }, light: { value: 1 }, tint: { value: tint }, alpha: { value: 1 },
+                    dT: discoU.dT, dAmount: discoU.dAmount, dPulse: discoU.dPulse, dHue: discoU.dHue, dSize: discoU.dSize },
         vertexShader: fishVert, fragmentShader: fishFrag, transparent: true, depthTest: false, depthWrite: false,
         // both faces: mid-turn the body folds over, and a folded part faces away
         side: THREE.DoubleSide
@@ -290,6 +305,7 @@
         var puffMat = mat.clone();
         puffMat.uniforms = THREE.UniformsUtils.clone(mat.uniforms);
         puffMat.uniforms.water.value = WATER; puffMat.uniforms.tint.value = tint;
+        ['dT', 'dAmount', 'dPulse', 'dHue', 'dSize'].forEach(function (k) { puffMat.uniforms[k] = discoU[k]; });
         puffMat.uniforms.map.value = loader.load(sp.puffed, function (t) { sp.puffAspect = t.image.height / t.image.width; });
         puffMat.uniforms.alpha.value = 0;
         f.puffMesh = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1, 32, 1), puffMat);
@@ -306,11 +322,13 @@
   var floorMat = function (file, vert) {
     return new THREE.ShaderMaterial({
       uniforms: { map: { value: loader.load(file) }, t: { value: 0 }, sway: { value: 0 }, draw: { value: 0 }, wave: { value: 0 }, light: { value: 0.7 }, tint: { value: tint },
-                  water: { value: WATER }, size: { value: new THREE.Vector2(W, H) } },
+                  water: { value: WATER }, size: { value: new THREE.Vector2(W, H) },
+                  dT: discoU.dT, dAmount: discoU.dAmount, dPulse: discoU.dPulse, dHue: discoU.dHue, dSize: discoU.dSize },
       vertexShader: vert,
       // lit as the sand around it is: the same rippling light from the surface
       // plays over it, and the water's blue softens its colours
       fragmentShader: [
+        DISCO_GLSL,
         'uniform sampler2D map; uniform float light; uniform vec3 tint; uniform vec3 water; uniform vec2 size; uniform float t; varying vec2 vUv;',
         'void main() {',
         '  vec4 c = texture2D(map, vUv); if (c.a < 0.03) discard;',
@@ -320,7 +338,7 @@
         '  float caust = pow(max(w, 0.0), 6.0) + 0.6 * pow(max(sin((p.x + p.y) * 2.3 + t * 1.2 + sin(p.x * 3.0)), 0.0), 12.0);',
         '  vec3 col = mix(c.rgb, water * 2.2, 0.22) * light;',
         '  col += caust * (0.18 + 0.4 * dot(c.rgb, vec3(0.3, 0.55, 0.15))) * vec3(0.8, 0.95, 1.0);',
-        '  gl_FragColor = vec4(col * tint, c.a);',
+        '  gl_FragColor = vec4(col * (tint + discoSpots(gl_FragCoord.xy) * 1.5), c.a);',
         '}'
       ].join('\n'),
       transparent: true, depthTest: false, depthWrite: false
@@ -727,12 +745,13 @@
     music.drop = Math.max(0, music.drop - dt);
     floorLife(dt);
     // the disco: on at night while the tank dances, fading in and out
-    var du = discoMat.uniforms, discoOn = light === 2 && grooving();
-    du.amount.value += ((discoOn ? 1 : 0) - du.amount.value) * Math.min(1, dt * (discoOn ? 1.5 : 0.8));
-    du.t.value = clock.t;
-    du.pulse.value = Math.exp(-(clock.t - music.lastBeat) * 4);
-    du.hue.value = Math.floor(music.beats / 8) * 0.25;
-    disco.visible = du.amount.value > 0.01;
+    // on as soon as music is heard (no need to wait for a beat), in half a second
+    var discoOn = light === 2 && dancing && music.playing > 0.25;
+    discoU.dAmount.value += ((discoOn ? 1 : 0) - discoU.dAmount.value) * Math.min(1, dt * (discoOn ? 6 : 0.8));
+    discoU.dT.value = clock.t;
+    discoU.dPulse.value = clock.t - music.lastBeat < 1.5 ? Math.exp(-(clock.t - music.lastBeat) * 4) : 0.3;
+    discoU.dHue.value = Math.floor(music.beats / 8) * 0.25;
+    disco.visible = discoU.dAmount.value > 0.01;
     // the tank's light eases toward the time of day's
     var goal = LIGHTS[light], ease = Math.min(1, dt * 0.8);
     tint.x += (goal.tint[0] - tint.x) * ease; tint.y += (goal.tint[1] - tint.y) * ease; tint.z += (goal.tint[2] - tint.z) * ease;
