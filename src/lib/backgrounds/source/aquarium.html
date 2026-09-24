@@ -635,15 +635,20 @@
   // well above its recent level
   var music = { level: 0, bassAvg: 0, levelAvg: 0, lastBeat: -9, beatGaps: [], period: 0.5, playing: 0, drop: 0, nextDrop: 0, beats: 0, swingDir: 1, dir: Math.random() < 0.5 ? -1 : 1 };
   // the parts of the music, as ranges of Ectodeck's 32 bands (40 Hz to 11 kHz)
+  // A hit is a sudden rise in a part of the sound: the sum of how much each of
+  // its bands jumped since the last frame (the standard onset measure, which
+  // catches a drum punching through distorted guitars). It counts when it
+  // stands clearly above how much this song has been jumping over the last
+  // few seconds, so loud, compressed music and quiet music both register, and
+  // the rule follows a song as it changes. Nothing here predicts a tempo:
+  // every move comes from a hit that happened.
   var PARTS = [
-    // a hit: the part's loudness jumping by this much above its own recent
-    // level. The bands are on a decibel scale (-70 to -10 dB as 0 to 1), so a
-    // kick lifts the bass from about 0.65 to 0.85, not to double; the amounts
-    // were tuned on real music to catch each kick, snare and hi-hat
-    { name: 'bass', from: 0, to: 3, rise: 0.07, gap: 0.2 },
-    { name: 'mid', from: 6, to: 13, rise: 0.05, gap: 0.16 },
-    { name: 'high', from: 20, to: 31, rise: 0.03, gap: 0.12 },
-  ].map(function (p) { return Object.assign(p, { avg: 0, last: -9, hits: 0, dir: Math.random() < 0.5 ? -1 : 1 }); });
+    { name: 'bass', from: 0, to: 4, gap: 0.09 },
+    { name: 'mid', from: 6, to: 13, gap: 0.09 },
+    { name: 'high', from: 18, to: 31, gap: 0.07 },
+  ].map(function (p) { return Object.assign(p, { mean: 0, varr: 0.0004, last: -9, hits: 0 }); });
+  var prevBands = null;
+  var SWING_GAP = 0.25;          // the tank's swing turns at most this often, so double kicks don't jitter it
   var partOf = function (name) { return PARTS.find(function (p) { return p.name === name; }); };
   window.addEventListener('ectodeck:audio', function (e) {
     var b = e.detail.bands || [], level = Number(e.detail.level) || 0;
@@ -652,10 +657,29 @@
     music.levelAvg += (level - music.levelAvg) * 0.01;
     // music counts as playing after a moment of sound, and stops after a second of quiet
     music.playing = level > 0.04 ? Math.min(1, music.playing + 0.05) : Math.max(0, music.playing - 0.03);
-    // the bass sets the tempo
-    if (bass - music.bassAvg > 0.07 && clock.t - music.lastBeat > 0.2) {
+    // each part: its onset strength against the song's recent spread
+    var hitNow = {};
+    PARTS.forEach(function (part) {
+      var flux = 0;
+      if (prevBands) for (var k = part.from; k <= part.to; k++) flux += Math.max(0, (b[k] || 0) - (prevBands[k] || 0));
+      flux /= part.to - part.from + 1;
+      var sd = Math.sqrt(part.varr);
+      if (flux > part.mean + 1.6 * sd && flux > 0.012 && clock.t - part.last > part.gap) {
+        part.last = clock.t; part.hits++; hitNow[part.name] = true;
+        // a kind's own part: a kick of the tail
+        if (dancing && music.playing > 0.5) fish.forEach(function (f) { if (f.sp.part === part.name) f.kick = 1; });
+      }
+      // the song's spread over the last few seconds
+      var d = flux - part.mean;
+      part.mean += d * 0.02; part.varr += (d * d - part.varr) * 0.02;
+    });
+    prevBands = b.slice();
+    // a bass hit moves the whole tank: its swing turns over (not more often than
+    // SWING_GAP), and every eighth turn the kinds turn in turn
+    if (hitNow.bass && clock.t - music.lastBeat > SWING_GAP) {
       var gap = clock.t - music.lastBeat;
-      if (gap < 1.5) { music.beatGaps.push(gap); if (music.beatGaps.length > 8) music.beatGaps.shift(); }
+      if (gap < 1.5) { music.beatGaps.push(gap); if (music.beatGaps.length > 6) music.beatGaps.shift(); }
+      // how long the swing takes: the recent gaps between real hits, nothing predicted
       var sorted = music.beatGaps.slice().sort(function (a, b) { return a - b; }); if (sorted.length) music.period = sorted[sorted.length >> 1];
       music.lastBeat = clock.t;
       if (dancing && music.playing > 0.5) {
@@ -663,7 +687,7 @@
         music.swingDir = -music.swingDir;
         var inPhrase = music.beats % 8;
         if (inPhrase == 0) music.dir = -music.dir;
-        // big fish turn on the phrase's first beat, striped on the second, small on the third
+        // big fish turn on the first of eight, striped on the second, small on the third
         var turning = inPhrase == 0 ? 'bass' : inPhrase == 1 ? 'mid' : inPhrase == 2 ? 'high' : null;
         fish.forEach(function (f) {
           if (f.sp.part === turning || f.pendingTurn) f.beatTurn = true;
@@ -671,16 +695,6 @@
         });
       }
     }
-    // each part of the music, and the kinds of fish that dance to it
-    PARTS.forEach(function (part) {
-      var e = 0; for (var k = part.from; k <= part.to; k++) e += b[k] || 0; e /= part.to - part.from + 1;
-      if (e - part.avg > part.rise && clock.t - part.last > part.gap) {
-        part.last = clock.t; part.hits++;
-        // a kind's own part: a strong kick of the tail
-        if (dancing && music.playing > 0.5) fish.forEach(function (f) { if (f.sp.part === part.name) f.kick = 1; });
-      }
-      part.avg += (e - part.avg) * 0.08;
-    });
     music.bassAvg += (bass - music.bassAvg) * 0.08;
     // a drop: the music as a whole (not one kick) well above its recent level,
     // and not again for a while after a swirl
