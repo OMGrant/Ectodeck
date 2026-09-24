@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Warp: drifting through deep space. Press the centre key and jump to hyperspace: the stars stretch into streaks around a soft glowing light, you rush down the hyperspace tunnel, then drop back out among the stars. Every other key is a Star Destroyer's shot from behind you, streaking past and missing. Switch presets in Adjust, or with the Background Preset action.",
+  "DESCRIPTION": "Warp: drifting through deep space. Press the centre key and jump to hyperspace: the stars stretch into streaks around a soft glowing light, you rush down the hyperspace tunnel, then drop back out among the stars. Every other key is a Star Destroyer's shot from behind you, streaking past and missing.",
   "INPUTS": [
     {
       "NAME": "speed",
@@ -38,52 +38,6 @@
       "DEFAULT": 1.0,
       "MIN": 0.3,
       "MAX": 2.0
-    }
-  ],
-  "PRESETS": [
-    {
-      "NAME": "Blue",
-      "VALUES": {
-        "tunnel": [
-          0.35,
-          0.55,
-          1.0,
-          1
-        ]
-      }
-    },
-    {
-      "NAME": "Red",
-      "VALUES": {
-        "tunnel": [
-          1.0,
-          0.3,
-          0.25,
-          1
-        ]
-      }
-    },
-    {
-      "NAME": "Green",
-      "VALUES": {
-        "tunnel": [
-          0.35,
-          1.0,
-          0.45,
-          1
-        ]
-      }
-    },
-    {
-      "NAME": "Gold",
-      "VALUES": {
-        "tunnel": [
-          1.0,
-          0.8,
-          0.35,
-          1
-        ]
-      }
     }
   ]
 }*/
