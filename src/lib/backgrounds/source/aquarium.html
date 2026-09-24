@@ -193,13 +193,32 @@
     '  }',
     '  return col * dAmount * (0.55 + 0.6 * dPulse);',
     '}',
-    'vec3 discoSpots(vec2 px) { return discoBeams(px).rgb + discoPools(px) * 0.8; }'
+    // sparkles, as from a mirror ball hanging just above the tank, out of
+    // sight: small bright flecks turning round the tank, none close to it
+    'vec3 discoSparkle(vec2 px) {',
+    '  vec2 rel = px - vec2(dSize.x * 0.5, dSize.y * 1.06); float ang = atan(rel.y, rel.x), rad = length(rel);',
+    '  vec2 cell = vec2(floor((ang + dT * 0.35) * 18.0), floor(rad / 26.0));',
+    '  float h = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);',
+    '  vec2 inCell = vec2(fract((ang + dT * 0.35) * 18.0), fract(rad / 26.0)) - 0.5;',
+    '  float fleck = step(0.74, h) * smoothstep(0.32, 0.0, length(inCell * vec2(1.0, 1.0 + rad / 260.0))) * (0.6 + 0.4 * sin(dT * 9.0 + h * 40.0));',
+    '  fleck *= smoothstep(dSize.y * 0.3, dSize.y * 0.65, rad);',
+    '  return mix(vec3(1.0), discoPalette(dHue + h), 0.5) * fleck * 1.1 * dAmount * (0.55 + 0.6 * dPulse);',
+    '}',
+    'vec3 discoSpots(vec2 px) { return discoBeams(px).rgb + discoPools(px) * 0.8 + discoSparkle(px); }'
   ].join('\n');
   var discoMat = new THREE.ShaderMaterial({
-    uniforms: discoU,
+    uniforms: Object.assign({ reef: reefMat.uniforms.map }, discoU),
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: [
       DISCO_GLSL,
+      'uniform sampler2D reef;',
+      // open water is smooth; rock, coral and sand are full of detail. Detail is
+      // gathered from around each point so the rocks count as solid areas
+      'float detailAt(vec2 uv, vec2 o) {',
+      '  vec3 c = texture2D(reef, uv).rgb;',
+      '  vec3 n = (texture2D(reef, uv + vec2(o.x, 0.0)).rgb + texture2D(reef, uv - vec2(o.x, 0.0)).rgb + texture2D(reef, uv + vec2(0.0, o.y)).rgb + texture2D(reef, uv - vec2(0.0, o.y)).rgb) * 0.25;',
+      '  return length(c - n);',
+      '}',
       '#define t dT', '#define amount dAmount', '#define pulse dPulse', '#define hue dHue', '#define size dSize', '#define palette discoPalette',
       'varying vec2 vUv;',
       'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
@@ -208,14 +227,15 @@
       // the beams in the water: shafts of coloured light, brighter where they
       // meet the sand (the creatures light themselves)
       '  vec4 b = discoBeams(px);',
-      // sparkles, as from a mirror ball hanging just above the tank, out of
-      // sight: small bright flecks turning round the tank
-      '  vec2 rel = px - vec2(size.x * 0.5, size.y * 1.06); float ang = atan(rel.y, rel.x), rad = length(rel);',
-      '  vec2 cell = vec2(floor((ang + t * 0.35) * 18.0), floor(rad / 26.0));',
-      '  float h = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);',
-      '  vec2 inCell = vec2(fract((ang + t * 0.35) * 18.0), fract(rad / 26.0)) - 0.5;',
-      '  float fleck = step(0.82, h) * smoothstep(0.3, 0.0, length(inCell * vec2(1.0, 1.0 + rad / 260.0))) * (0.6 + 0.4 * sin(t * 9.0 + h * 40.0));',
-      '  vec3 sparkle = mix(vec3(1.0), palette(hue + h), 0.5) * fleck * 1.1 * amount * (0.55 + 0.6 * pulse);',
+      // sparkles land only on things: where the tank's picture is rock, coral or
+      // sand (brighter, or less blue) rather than open water; the creatures
+      // catch them themselves
+      '  vec2 o = 3.0 / size, r = 9.0 / size;',
+      '  float detail = 0.0;',
+      '  for (int k = 0; k < 8; k++) { float a = float(k) * 0.785; detail = max(detail, detailAt(vUv + vec2(cos(a), sin(a)) * r, o)); }',
+      '  detail = max(detail, detailAt(vUv, o));',
+      '  float solid = max(smoothstep(0.02, 0.06, detail), smoothstep(0.45, 0.65, dot(texture2D(reef, vUv).rgb, vec3(0.3, 0.55, 0.15))));',
+      '  vec3 sparkle = discoSparkle(px) * solid;',
       '  gl_FragColor = vec4(min(b.rgb * (0.2 + 0.22 * b.a), vec3(0.45)) + discoPools(px) * 0.5 + sparkle, 1.0);',
       '}'
     ].join('\n'),
