@@ -8,7 +8,9 @@
   reef tank, lit from above, drawn with three.js (MIT). The backdrop, fish,
   bubble and food are photographic images made for Ectodeck. A key press
   drops food there and the fish come to eat; two quick presses tap the
-  glass and the fish nearby dart away. The fish swim as in water: a tail
+  glass and the fish nearby dart away (a pufferfish puffs up). A crab
+  scuttles about the sand and scurries off from a press; a sea anemone
+  sways at the foot of the rocks and draws in when touched. The fish swim as in water: a tail
   thrusts them along their nose and the water slows them. With music
   playing the whole tank dances to one beat: every nose angles up on one
   beat and down on the next, so the fish swim in arcs together, and at the
@@ -181,14 +183,14 @@
     '}'
   ].join('\n');
   var fishFrag = [
-    'uniform sampler2D map; uniform float haze; uniform vec3 water; uniform float light; uniform vec3 tint;',
+    'uniform sampler2D map; uniform float haze; uniform vec3 water; uniform float light; uniform vec3 tint; uniform float alpha;',
     'varying vec2 vUv; varying float vSide;',
     'void main() {',
     '  vec4 c = texture2D(map, vUv);',
     '  if (c.a < 0.03) discard;',
     '  vec3 col = c.rgb * (0.7 + 0.3 * vSide) * light;',   // a part seen edge-on in a turn: a little darker
     '  col = mix(col, water, haze) * tint;',
-    '  gl_FragColor = vec4(col, c.a);',
+    '  gl_FragColor = vec4(col, c.a * alpha);',
     '}'
   ].join('\n');
 
@@ -200,6 +202,8 @@
     { file: 'ectodeck-asset:aquarium/angel.webp', len: 158, speed: 30, beat: 5, count: 1, band: [0.3, 0.75], part: 'bass' },
     { file: 'ectodeck-asset:aquarium/copperband.webp', len: 112, speed: 28, beat: 6, count: 1, band: [0.25, 0.65], part: 'mid' },
     { file: 'ectodeck-asset:aquarium/anthias.webp', len: 82, speed: 56, beat: 10, count: 2, band: [0.4, 0.9], part: 'high' },
+    // the puffer swims like the rest and blows up into a spiky ball when startled
+    { file: 'ectodeck-asset:aquarium/puffer.webp', puffed: 'ectodeck-asset:aquarium/puffed.webp', len: 100, speed: 24, beat: 8, count: 1, band: [0.3, 0.7], part: 'mid' },
   ];
   var fish = [];
   SPECIES.forEach(function (sp) {
@@ -213,7 +217,7 @@
       var depth = Math.sqrt(Math.random());                // 0 far, 1 near; most fish near the glass
       var mat = new THREE.ShaderMaterial({
         uniforms: { map: { value: tex }, phase: { value: 0 }, amp: { value: 1 }, turn: { value: 0 }, bend: { value: 0 },
-                    haze: { value: 0.42 * (1 - depth) }, water: { value: WATER }, light: { value: 1 }, tint: { value: tint } },
+                    haze: { value: 0.42 * (1 - depth) }, water: { value: WATER }, light: { value: 1 }, tint: { value: tint }, alpha: { value: 1 } },
         vertexShader: fishVert, fragmentShader: fishFrag, transparent: true, depthTest: false, depthWrite: false,
         // both faces: mid-turn the body folds over, and a folded part faces away
         side: THREE.DoubleSide
@@ -232,9 +236,90 @@
       };
       f.ty = f.wantY = f.y;
       f.vx = f.dir * f.speed;
+      if (sp.puffed) {
+        // the puffed-up picture, drawn over the calm one as it swells
+        var puffMat = mat.clone();
+        puffMat.uniforms = THREE.UniformsUtils.clone(mat.uniforms);
+        puffMat.uniforms.water.value = WATER; puffMat.uniforms.tint.value = tint;
+        puffMat.uniforms.map.value = loader.load(sp.puffed, function (t) { sp.puffAspect = t.image.height / t.image.width; });
+        puffMat.uniforms.alpha.value = 0;
+        f.puffMesh = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1, 32, 1), puffMat);
+        f.puffMesh.renderOrder = mesh.renderOrder + 1;
+        scene.add(f.puffMesh);
+        f.puff = 0; f.puffUntil = 0; f.nextPuff = clock.t + rand(25, 50);
+      }
       fish.push(f);
     }
   });
+
+  // ---- on the sand: a crab that scuttles about, and a sea anemone swaying at
+  // the foot of the rocks. Both are lit as the sand is, low in the tank.
+  var floorMat = function (file, vert) {
+    return new THREE.ShaderMaterial({
+      uniforms: { map: { value: loader.load(file) }, t: { value: 0 }, sway: { value: 0 }, draw: { value: 0 }, light: { value: 0.7 }, tint: { value: tint } },
+      vertexShader: vert,
+      fragmentShader: 'uniform sampler2D map; uniform float light; uniform vec3 tint; varying vec2 vUv; void main() { vec4 c = texture2D(map, vUv); if (c.a < 0.03) discard; gl_FragColor = vec4(c.rgb * light * tint, c.a); }',
+      transparent: true, depthTest: false, depthWrite: false
+    });
+  };
+  var plainVert = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+  // the anemone: its tentacles sway in slow waves, more toward the tips, and
+  // draw in (shorter, tighter) when something comes close
+  var anemoneVert = [
+    'uniform float t; uniform float sway; uniform float draw; varying vec2 vUv;',
+    'void main() {',
+    '  vUv = uv; vec3 p = position;',
+    '  float up = uv.y * uv.y;',                           // the base stays put, the tips move most
+    '  p.x += up * (0.05 + 0.04 * sway) * sin(t * 1.3 + uv.y * 3.0) * (1.0 - 0.7 * draw);',
+    '  p.x += up * 0.025 * sin(t * 2.1 + p.x * 9.0) * (1.0 - 0.7 * draw);',
+    '  p.y = -0.5 + (p.y + 0.5) * (1.0 - 0.3 * draw);',
+    '  p.x *= 1.0 - 0.25 * draw * uv.y;',
+    '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+    '}'
+  ].join('\n');
+  var anemone = { x: W * 0.28, base: H * 0.05, w: 128, draw: 0 };
+  anemone.mesh = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1, 16, 16), floorMat('ectodeck-asset:aquarium/anemone.webp', anemoneVert));
+  anemone.mesh.scale.set(anemone.w, anemone.w * 0.876, 1);
+  anemone.mesh.position.set(anemone.x, anemone.base + anemone.w * 0.438, 0);
+  anemone.mesh.renderOrder = 60;
+  scene.add(anemone.mesh);
+  // the crab: scuttles sideways along the open sand, stops, looks about,
+  // scuttles on; a press near it sends it scurrying away
+  var crab = { x: W * 0.55, y: H * 0.09, w: 96, dir: 1, walk: 0, pause: 1, step: 0, flee: 0 };
+  crab.mesh = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), floorMat('ectodeck-asset:aquarium/crab.webp', plainVert));
+  crab.mesh.scale.set(crab.w, crab.w * 0.35, 1);
+  crab.mesh.renderOrder = 70;
+  scene.add(crab.mesh);
+  function floorLife(dt) {
+    var tu = anemone.mesh.material.uniforms;
+    anemone.draw = Math.max(0, anemone.draw - dt * 0.6);
+    tu.t.value = clock.t; tu.draw.value = anemone.draw;
+    // with music, the tentacles swing wider on the beat
+    var sinceBeat = clock.t - music.lastBeat;
+    tu.sway.value = dancing && music.playing > 0.5 && sinceBeat < 1.5 ? Math.exp(-sinceBeat * 4) : 0;
+    tu.light.value = 0.66;
+    // the crab
+    var lo = W * 0.38, hi = W * 0.8;
+    if (crab.flee > 0) {
+      crab.flee -= dt;
+      crab.x += crab.dir * 190 * dt; crab.step += dt * 30;
+    } else if (crab.pause > 0) {
+      crab.pause -= dt;
+      if (crab.pause <= 0) { crab.walk = rand(0.8, 2.5); crab.dir = crab.x < lo + 40 ? 1 : crab.x > hi - 40 ? -1 : (Math.random() < 0.5 ? -1 : 1); }
+    } else {
+      crab.walk -= dt;
+      crab.x += crab.dir * 55 * dt; crab.step += dt * 18;
+      if (crab.walk <= 0) crab.pause = rand(1.5, 4.5);
+    }
+    if (crab.x < lo) { crab.x = lo; crab.dir = 1; } else if (crab.x > hi) { crab.x = hi; crab.dir = -1; }
+    var moving = crab.flee > 0 || crab.pause <= 0;
+    // legs: a quick side-to-side jiggle and a little bounce while it scuttles
+    var bob = moving ? Math.abs(Math.sin(crab.step)) * 2.5 : 0;
+    crab.mesh.position.set(crab.x, crab.y + crab.w * 0.175 + bob, 0);
+    crab.mesh.scale.x = crab.w * (moving ? 1 + 0.035 * Math.sin(crab.step * 2) : 1);
+    crab.mesh.rotation.z = moving ? 0.04 * Math.sin(crab.step) : 0;
+    crab.mesh.material.uniforms.light.value = 0.68;
+  }
 
   // ---- bubbles from a bubbler on the right, and food
   function spriteMat(frag, size) {
@@ -295,10 +380,13 @@
       fish.forEach(function (f) {
         var d = Math.hypot(f.x - px, f.y - py);
         if (d < 260) { f.dir = f.x < px ? -1 : 1; f.rush = 1.2; f.target = null; }
+        if (f.puffMesh && d < 320) f.puffUntil = clock.t + 4;
       });
       lastPress.t = -9; return;
     }
     lastPress = { t: clock.t, x: px, y: py };
+    if (Math.abs(px - crab.x) < 130 && py < H * 0.35) { crab.flee = 1.1; crab.dir = crab.x < px ? -1 : 1; crab.pause = 0; crab.walk = 0; }
+    if (Math.hypot(px - anemone.x, py - (anemone.base + anemone.w * 0.44)) < 140) anemone.draw = 1;
     for (var i = 0; i < 9; i++) food.push({ x: px + rand(-28, 28), y: py + rand(-10, 10), vx: rand(-16, 16), vy: rand(-18, -8), s: rand(9, 14), spin: rand(0, 6), rot: rand(0, 6.28), spinRate: rand(-2, 2), flutter: rand(2, 4), kind: Math.floor(rand(0, 4)) });
   }
   window.addEventListener('ectodeck:press', function (e) { if (e.detail.down) press(e.detail.x, e.detail.y); });
@@ -361,7 +449,7 @@
     if (dancing && music.playing > 0.8 && music.level > 0.5 && music.level > music.levelAvg * 1.7 && clock.t > music.nextDrop) {
       music.drop = 4;                     // seconds of swirl
       music.nextDrop = clock.t + 25;
-      fish.forEach(function (f, i) { f.orbit = (i / fish.length) * Math.PI * 2; });
+      fish.forEach(function (f, i) { f.orbit = (i / fish.length) * Math.PI * 2; if (f.puffMesh) f.puffUntil = clock.t + 3; });
     }
   });
 
@@ -456,6 +544,7 @@
   function step(dt) {
     clock.t += dt;
     music.drop = Math.max(0, music.drop - dt);
+    floorLife(dt);
     // the tank's light eases toward the time of day's
     var goal = LIGHTS[light], ease = Math.min(1, dt * 0.8);
     tint.x += (goal.tint[0] - tint.x) * ease; tint.y += (goal.tint[1] - tint.y) * ease; tint.z += (goal.tint[2] - tint.z) * ease;
@@ -526,7 +615,7 @@
       // the height it wants. Its body points along the way it is actually going.
       var groove = dancing && music.playing > 0.5 && clock.t - music.lastBeat < 1.5 ? music.playing : 0;
       f.kick = Math.max(0, (f.kick || 0) - dt * 2);          // a tail kick, fading
-      var cruise = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * (1 - 0.4 * (f.avoiding || 0));
+      var cruise = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * (1 - 0.4 * (f.avoiding || 0)) * (1 - 0.75 * (f.puff || 0));
       // dancing: a burst with each kick of its part
       var wanted = cruise * (1 + 0.15 * groove) + groove * f.kick * f.len * 1.3;
       var heading = f.turnT < 1 ? (f.turnT < 0.5 ? f.from : f.dir) : f.dir;
@@ -578,6 +667,21 @@
       f.mesh.position.set(f.x, f.y, 0);
       // the body points along its nose (the picture may be mirrored)
       f.mesh.rotation.z = -f.pitch * Math.sign(f.mesh.scale.x);
+      if (f.puffMesh) {
+        // puffing: quick to swell, slow to go down; now and then on its own
+        if (clock.t > f.nextPuff) { f.puffUntil = clock.t + 3.5; f.nextPuff = clock.t + rand(35, 70); }
+        var puffGoal = clock.t < f.puffUntil ? 1 : 0;
+        f.puff += (puffGoal - f.puff) * Math.min(1, dt * (puffGoal ? 5 : 0.9));
+        var pz = f.puff, swap = Math.min(1, Math.max(0, (pz - 0.25) / 0.5));
+        f.mesh.material.uniforms.alpha.value = 1 - swap;
+        f.mesh.scale.y = f.len * (f.sp.aspect || 0.44) * (1 + 0.5 * pz);
+        var pm = f.puffMesh, pu = pm.material.uniforms, mu = f.mesh.material.uniforms;
+        pu.alpha.value = swap; pu.phase.value = mu.phase.value; pu.amp.value = mu.amp.value * 0.4; pu.turn.value = mu.turn.value;
+        pu.light.value = mu.light.value; pu.haze.value = mu.haze.value;
+        var grow = 0.8 + 0.3 * pz;
+        pm.scale.set(f.len * grow * Math.sign(f.mesh.scale.x), f.len * grow * (f.sp.puffAspect || 0.65), 1);
+        pm.position.copy(f.mesh.position); pm.rotation.z = f.mesh.rotation.z * 0.5;
+      }
     });
 
     avoid(dt);
