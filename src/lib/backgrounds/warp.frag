@@ -135,6 +135,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // faster and faster as the ship accelerates, the tips shooting off the edge
     float surge = stretch * stretch * stretch;             // accelerating
     float ahead = surge * 0.97;                            // how far along its path, toward you, the streak reaches             // how far back in its path the streak reaches
+    vec3 starLight = vec3(0.0);
     const int STARS = 960;
     for (int i = 0; i < STARS; i++) {
         float fi = float(i);
@@ -159,13 +160,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // brighter as it nears; the streak fades toward its tail
         // fading in from the distance and out as it passes, never popping
         // the star end brightest, the smear fading toward its tip
-        // (in the jump even the faint far stars streak brightly)
-        float bright = mix(smoothstep(0.0, 0.25, prog), 1.0, surge) * (1.0 - smoothstep(0.82, 1.0, prog)) * (mix(0.35 + 0.65 * smoothstep(0.2, 1.0, prog), 0.9, surge)) * mix(1.0, 1.0 - 0.6 * t, smoothstep(0.0, 0.3, stretch));
+        // (in the jump the far stars join in, still fainter than the near)
+        float bright = mix(smoothstep(0.0, 0.25, prog), 1.0, surge * 0.8) * (1.0 - smoothstep(0.82, 1.0, prog)) * (mix(0.35 + 0.65 * smoothstep(0.2, 1.0, prog), 0.25 + 0.75 * smoothstep(0.0, 1.0, prog), surge)) * mix(1.0, 1.0 - 0.6 * t, smoothstep(0.0, 0.3, stretch));
         vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), hyper, 0.4), stretch);
         // the streaks shine brighter as they stretch
         // brighter with the exposure: the longer the smear, the more light
-        col += tint * glow * bright * starsShown * (1.0 + 1.6 * surge);
+        // each star its own brightness, most faint and a few bright, as real stars
+        float magnitude = 0.18 + 0.82 * pow(hash(vec2(fi, 6.6)), 2.2);
+        starLight += tint * glow * bright * magnitude * starsShown * (1.0 + 1.1 * surge);
     }
+
+    // like film, the stars' light rolls off softly where it builds up rather than
+    // clipping to flat white
+    col += 1.0 - exp(-starLight * 1.15);
 
     // the tunnel: a tube of light rushing past, seen down its length. Depth
     // comes from the distance to the centre (near the edges is close by);
