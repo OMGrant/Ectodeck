@@ -14,7 +14,7 @@
   sways at the foot of the rocks and draws in when touched. With music the
   crab side-steps and hops to the beat, the anemone's tentacles swing in
   time, and the pufferfish swells on each beat. At night the dance gets a
-  disco: two coloured spotlight beams sweeping the tank on the beat. The fish swim as in water: a tail
+  disco: coloured spots and two spotlight beams sweeping the tank on the beat. The fish swim as in water: a tail
   thrusts them along their nose and the water slows them. With music
   playing the whole tank dances to one beat: every nose angles up on one
   beat and down on the next, so the fish swim in arcs together, and at the
@@ -152,8 +152,8 @@
   rays.renderOrder = 500;
   scene.add(rays);
 
-  // ---- the disco: at night, with music, two coloured spotlight beams sweep
-  // the tank, pulsing on the beat, the colours changing each phrase; it
+  // ---- the disco: at night, with music, coloured spots wander the tank and
+  // two spotlight beams sweep it, pulsing on the beat, the colours changing each phrase; it
   // fades back to moonlight when the music stops
   // one set of values for everything the disco lights, and the light itself:
   // the coloured spots at a point on the screen, for the overlay and for each
@@ -181,7 +181,19 @@
     '  }',
     '  return vec4(col, haze) * dAmount * (0.6 + 0.55 * dPulse);',
     '}',
-    'vec3 discoSpots(vec2 px) { return discoBeams(px).rgb; }'
+    // the coloured disco spots: soft pools of light wandering the tank
+    'vec3 discoPools(vec2 px) {',
+    '  vec3 col = vec3(0.0);',
+    '  for (int i = 0; i < 5; i++) {',
+    '    float fi = float(i);',
+    '    vec2 c = vec2(dSize.x * (0.5 + 0.42 * sin(dT * (0.31 + fi * 0.07) + fi * 1.9)), dSize.y * (0.42 + 0.36 * sin(dT * (0.23 + fi * 0.05) + fi * 2.7)));',
+    '    float r = dSize.y * (0.2 + 0.05 * sin(fi * 3.1));',
+    '    float d = length((px - c) / vec2(1.25, 1.0)) / r;',
+    '    col += discoPalette(dHue + fi * 0.25) * smoothstep(1.0, 0.15, d);',
+    '  }',
+    '  return col * dAmount * (0.55 + 0.6 * dPulse);',
+    '}',
+    'vec3 discoSpots(vec2 px) { return discoBeams(px).rgb + discoPools(px) * 0.8; }'
   ].join('\n');
   var discoMat = new THREE.ShaderMaterial({
     uniforms: discoU,
@@ -196,7 +208,7 @@
       // the beams in the water: shafts of coloured light, brighter where they
       // meet the sand (the creatures light themselves)
       '  vec4 b = discoBeams(px);',
-      '  gl_FragColor = vec4(b.rgb * (0.22 + 0.45 * b.a), 1.0);',
+      '  gl_FragColor = vec4(min(b.rgb * (0.2 + 0.22 * b.a), vec3(0.45)) + discoPools(px) * 0.5, 1.0);',
       '}'
     ].join('\n'),
     blending: THREE.AdditiveBlending, transparent: true, depthTest: false, depthWrite: false
