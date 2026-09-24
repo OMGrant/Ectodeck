@@ -276,18 +276,10 @@ async fn animate(id: String, frame: Arc<Mutex<Frame>>) {
     let mut fps = rate(&*frame.lock().await);
     let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / fps as f64));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut count = 0u32;
-    // The deck draws only so much picture a second; past that it starts on a
-    // new frame before it has finished the last, and moving things vanish
-    // for a moment. A frame is made small enough for the rate, and a tick
-    // that comes before the deck has had time for the last one is skipped.
-    let mut deck_free_at = std::time::Instant::now();
+    let mut count = 0u32;
     loop {
         ticker.tick().await;
         count = count.wrapping_add(1);
-        if std::time::Instant::now() < deck_free_at {
-            continue;
-        }
         let lay = layout();
         let (picture, clear_windows, preview) = {
             let mut f = frame.lock().await;
@@ -317,12 +309,7 @@ async fn animate(id: String, frame: Arc<Mutex<Frame>>) {
         let result = {
             let devices = DEVICES.read().await;
             let Some(device) = devices.get(&id) else { continue };
-                        let budget = crate::background::DECK_BYTES_PER_SECOND / fps.max(1) as usize;
-            let started = std::time::Instant::now();
-            let sent = crate::background::send_region(device, &picture, 0, 0, Some(budget)).await;
-            if let Ok(bytes) = sent {
-                deck_free_at = started + Duration::from_secs_f64(bytes as f64 / crate::background::DECK_BYTES_PER_SECOND as f64);
-            }
+            let sent = crate::background::send_region(device, &picture, 0, 0).await;
             match sent {
                 Ok(_) if clear_windows => device.clear_all_button_images().await.and(device.flush().await).map(|_| true),
                 other => other.map(|_| false),
@@ -395,7 +382,7 @@ async fn repaint_later(id: String, frame: Arc<Mutex<Frame>>) {
                 let mut r = Ok(0);
                 for (x, y, w, h) in keys {
                     let tile = imageops::crop_imm(&picture, x, y, w, h).to_image();
-                    r = crate::background::send_region(device, &tile, x, y, None).await;
+                    r = crate::background::send_region(device, &tile, x, y).await;
                     if r.is_err() {
                         break;
                     }
@@ -404,7 +391,7 @@ async fn repaint_later(id: String, frame: Arc<Mutex<Frame>>) {
             }
             None => {
                 log::info!("Sending panel frame");
-                crate::background::send_region(device, &picture, 0, 0, None).await
+                crate::background::send_region(device, &picture, 0, 0).await
             }
         };
         match sent {
