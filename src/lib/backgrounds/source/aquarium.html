@@ -10,7 +10,9 @@
   drops food there and the fish come to eat; two quick presses tap the
   glass and the fish nearby dart away (a pufferfish puffs up). A crab
   scuttles about the sand and scurries off from a press; a sea anemone
-  sways at the foot of the rocks and draws in when touched. The fish swim as in water: a tail
+  sways at the foot of the rocks and draws in when touched. With music the
+  crab side-steps and hops to the beat, the anemone's tentacles swing in
+  time, and the pufferfish swells on each beat. The fish swim as in water: a tail
   thrusts them along their nose and the water slows them. With music
   playing the whole tank dances to one beat: every nose angles up on one
   beat and down on the next, so the fish swim in arcs together, and at the
@@ -256,9 +258,24 @@
   // the foot of the rocks. Both are lit as the sand is, low in the tank.
   var floorMat = function (file, vert) {
     return new THREE.ShaderMaterial({
-      uniforms: { map: { value: loader.load(file) }, t: { value: 0 }, sway: { value: 0 }, draw: { value: 0 }, light: { value: 0.7 }, tint: { value: tint } },
+      uniforms: { map: { value: loader.load(file) }, t: { value: 0 }, sway: { value: 0 }, draw: { value: 0 }, wave: { value: 0 }, light: { value: 0.7 }, tint: { value: tint },
+                  water: { value: WATER }, size: { value: new THREE.Vector2(W, H) } },
       vertexShader: vert,
-      fragmentShader: 'uniform sampler2D map; uniform float light; uniform vec3 tint; varying vec2 vUv; void main() { vec4 c = texture2D(map, vUv); if (c.a < 0.03) discard; gl_FragColor = vec4(c.rgb * light * tint, c.a); }',
+      // lit as the sand around it is: the same rippling light from the surface
+      // plays over it, and the water's blue softens its colours
+      fragmentShader: [
+        'uniform sampler2D map; uniform float light; uniform vec3 tint; uniform vec3 water; uniform vec2 size; uniform float t; varying vec2 vUv;',
+        'void main() {',
+        '  vec4 c = texture2D(map, vUv); if (c.a < 0.03) discard;',
+        '  vec2 scr = gl_FragCoord.xy / size;',
+        '  vec2 p = scr * vec2(9.0, 5.0);',
+        '  float w = sin(p.x * 1.7 + t * 0.9 + sin(p.y * 1.3 + t * 0.7) * 1.6) * sin(p.y * 2.1 - t * 0.8 + sin(p.x * 1.1 - t * 0.5) * 1.4);',
+        '  float caust = pow(max(w, 0.0), 6.0) + 0.6 * pow(max(sin((p.x + p.y) * 2.3 + t * 1.2 + sin(p.x * 3.0)), 0.0), 12.0);',
+        '  vec3 col = mix(c.rgb, water * 2.2, 0.22) * light;',
+        '  col += caust * (0.18 + 0.4 * dot(c.rgb, vec3(0.3, 0.55, 0.15))) * vec3(0.8, 0.95, 1.0);',
+        '  gl_FragColor = vec4(col * tint, c.a);',
+        '}'
+      ].join('\n'),
       transparent: true, depthTest: false, depthWrite: false
     });
   };
@@ -266,12 +283,13 @@
   // the anemone: its tentacles sway in slow waves, more toward the tips, and
   // draw in (shorter, tighter) when something comes close
   var anemoneVert = [
-    'uniform float t; uniform float sway; uniform float draw; varying vec2 vUv;',
+    'uniform float t; uniform float sway; uniform float draw; uniform float wave; varying vec2 vUv;',
     'void main() {',
     '  vUv = uv; vec3 p = position;',
     '  float up = uv.y * uv.y;',                           // the base stays put, the tips move most
     '  p.x += up * (0.05 + 0.04 * sway) * sin(t * 1.3 + uv.y * 3.0) * (1.0 - 0.7 * draw);',
     '  p.x += up * 0.025 * sin(t * 2.1 + p.x * 9.0) * (1.0 - 0.7 * draw);',
+    '  p.x += up * 0.11 * wave * (1.0 - 0.7 * draw);',
     '  p.y = -0.5 + (p.y + 0.5) * (1.0 - 0.3 * draw);',
     '  p.x *= 1.0 - 0.25 * draw * uv.y;',
     '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
@@ -290,16 +308,56 @@
   crab.mesh.scale.set(crab.w, crab.w * 0.35, 1);
   crab.mesh.renderOrder = 70;
   scene.add(crab.mesh);
+  // a soft shadow on the sand under it, smaller as it hops
+  crab.shadow = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), new THREE.ShaderMaterial({
+    uniforms: { strength: { value: 0.45 } },
+    vertexShader: plainVert,
+    fragmentShader: 'uniform float strength; varying vec2 vUv; void main() { float d = length((vUv - 0.5) * vec2(2.0, 2.0)); gl_FragColor = vec4(0.0, 0.02, 0.06, strength * smoothstep(1.0, 0.2, d)); }',
+    transparent: true, depthTest: false, depthWrite: false
+  }));
+  crab.shadow.renderOrder = 65;
+  scene.add(crab.shadow);
+  // where the music's beat is: counts up by one each beat; and whether the
+  // tank is dancing
+  var beatPosition = function () { return music.beats + Math.min(1, (clock.t - music.lastBeat) / Math.max(0.25, music.period)); };
+  var grooving = function () { return dancing && music.playing > 0.5 && clock.t - music.lastBeat < 1.5; };
   function floorLife(dt) {
+    crab.mesh.material.uniforms.t.value = clock.t;
+    var drawn = function () {
+      // the shadow follows the crab on the sand, shrinking and fading as it lifts
+      var lift = crab.mesh.position.y - (crab.y + crab.w * 0.175);
+      crab.shadow.position.set(crab.mesh.position.x, crab.y + 3, 0);
+      crab.shadow.scale.set(crab.w * (1.05 - lift * 0.02), crab.w * 0.16, 1);
+      crab.shadow.material.uniforms.strength.value = 0.45 - lift * 0.03;
+    };
     var tu = anemone.mesh.material.uniforms;
     anemone.draw = Math.max(0, anemone.draw - dt * 0.6);
     tu.t.value = clock.t; tu.draw.value = anemone.draw;
     // with music, the tentacles swing wider on the beat
     var sinceBeat = clock.t - music.lastBeat;
-    tu.sway.value = dancing && music.playing > 0.5 && sinceBeat < 1.5 ? Math.exp(-sinceBeat * 4) : 0;
+    var grooveNow = grooving();
+    tu.sway.value = grooveNow ? Math.exp(-sinceBeat * 4) : 0;
+    // with music the tentacles swing left and right in time, on the tank's wave;
+    // eased in and out so they never snap
+    anemone.wave = (anemone.wave || 0) + ((grooveNow ? Math.sin(Math.PI * beatPosition()) : 0) - (anemone.wave || 0)) * Math.min(1, dt * 6);
+    tu.wave.value = anemone.wave;
     tu.light.value = 0.66;
     // the crab
     var lo = W * 0.38, hi = W * 0.8;
+    // with music the crab dances where it stands: a side-step left on one beat
+    // and right on the next, a hop on each, rocking side to side
+    crab.dance = (crab.dance || 0) + ((grooveNow && crab.flee <= 0 ? 1 : 0) - (crab.dance || 0)) * Math.min(1, dt * 3);
+    if (crab.dance > 0.02) {
+      var bp = beatPosition(), inBeat = bp - Math.floor(bp);
+      var side = Math.floor(bp) % 2 ? 1 : -1;
+      var shuffle = side * 13 * Math.sin(Math.PI * Math.min(1, inBeat * 1.6));
+      var hop = Math.sin(Math.PI * Math.min(1, inBeat * 2.5)) * 7;
+      crab.mesh.position.set(crab.x + shuffle * crab.dance, crab.y + crab.w * 0.175 + hop * crab.dance, 0);
+      crab.mesh.rotation.z = -side * 0.1 * Math.sin(Math.PI * Math.min(1, inBeat * 1.6)) * crab.dance;
+      crab.mesh.scale.x = crab.w * (1 + 0.04 * Math.sin(Math.PI * Math.min(1, inBeat * 2.5)) * crab.dance);
+      crab.mesh.material.uniforms.light.value = 0.62;
+      if (crab.dance > 0.5) { drawn(); return; }
+    }
     if (crab.flee > 0) {
       crab.flee -= dt;
       crab.x += crab.dir * 190 * dt; crab.step += dt * 30;
@@ -318,7 +376,8 @@
     crab.mesh.position.set(crab.x, crab.y + crab.w * 0.175 + bob, 0);
     crab.mesh.scale.x = crab.w * (moving ? 1 + 0.035 * Math.sin(crab.step * 2) : 1);
     crab.mesh.rotation.z = moving ? 0.04 * Math.sin(crab.step) : 0;
-    crab.mesh.material.uniforms.light.value = 0.68;
+    crab.mesh.material.uniforms.light.value = 0.62;
+    drawn();
   }
 
   // ---- bubbles from a bubbler on the right, and food
@@ -674,7 +733,11 @@
         f.puff += (puffGoal - f.puff) * Math.min(1, dt * (puffGoal ? 5 : 0.9));
         var pz = f.puff, swap = Math.min(1, Math.max(0, (pz - 0.25) / 0.5));
         f.mesh.material.uniforms.alpha.value = 1 - swap;
-        f.mesh.scale.y = f.len * (f.sp.aspect || 0.44) * (1 + 0.5 * pz);
+        // with music it swells rounder on each beat and relaxes between,
+        // breathing to the music; the full spiky puff is kept for big moments
+        var breath = grooving() ? Math.exp(-(clock.t - music.lastBeat) * 5) : 0;
+        f.mesh.scale.y = f.len * (f.sp.aspect || 0.44) * (1 + 0.5 * pz + 0.45 * breath * (1 - pz));
+        f.mesh.scale.x = Math.sign(f.mesh.scale.x) * f.len * (1 + 0.06 * breath * (1 - pz));
         var pm = f.puffMesh, pu = pm.material.uniforms, mu = f.mesh.material.uniforms;
         pu.alpha.value = swap; pu.phase.value = mu.phase.value; pu.amp.value = mu.amp.value * 0.4; pu.turn.value = mu.turn.value;
         pu.light.value = mu.light.value; pu.haze.value = mu.haze.value;
