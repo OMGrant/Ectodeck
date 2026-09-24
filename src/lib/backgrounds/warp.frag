@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace: the view turns toward the key, the stars stretch into streaks around a soft glowing light, you rush down the swirling hyperspace tunnel, then drop back out among the stars. Switch presets in Adjust, or with the Background Preset action.",
+  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace: the stars stretch into streaks around a soft glowing light, you rush down the hyperspace tunnel, then drop back out among the stars. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "speed",
@@ -84,8 +84,7 @@ float noise(vec2 p) {
     return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
 }
 
-// the jump, from the newest press: the ship turns toward the key and the stars
-// stretch into streaks, it enters the hyperspace tunnel, then drops back out
+// the jump, from the newest press: the stars stretch into streaks, it enters the hyperspace tunnel, then drops back out
 const float STRETCH = 0.9;   // seconds for the stars to pull into streaks
 const float ENTER = 1.05;    // when the tunnel takes over
 const float DROP = 3.4;      // when the jump ends
@@ -102,14 +101,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float inTunnel = smoothstep(ENTER - 0.2, ENTER + 0.25, z) * (1.0 - smoothstep(DROP - 0.35, DROP, z));
     float flash = z > DROP ? exp(-(z - DROP) * 6.0) * 0.6 : smoothstep(ENTER - 0.25, ENTER, z) * exp(-max(z - ENTER, 0.0) * 5.0) * 0.25;
 
-    // the camera: it turns a third of the way toward the pressed key as the
-    // jump begins, banking a little, holds there, and glides back afterwards
-    float turn = smoothstep(0.0, 0.9, z) * (1.0 - smoothstep(DROP, DROP + 1.2, z));
-    vec2 aim = jumping ? (p.xy - centre) * 0.35 : vec2(0.0);
-    vec2 vp = centre + aim * turn;
-    float bank = -aim.x / iResolution.x * 0.25 * turn;
-    vec2 d = fragCoord - vp;
-    d = mat2(cos(bank), -sin(bank), sin(bank), cos(bank)) * d;
+    // straight ahead, always toward the middle of the picture
+    vec2 d = fragCoord - centre;
     float r = length(d) / iResolution.y;
     float a = atan(d.y, d.x) / 6.2831853 + 0.5;
 
@@ -155,15 +148,21 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // comes from the distance to the centre (near the edges is close by);
     // streaks run along it and the whole tube turns slowly
     if (inTunnel > 0.0) {
-        float depth = 0.16 / (r + 0.015);
-        float ang = a + z * 0.06 + depth * 0.07;                  // the streaks spiral round the tube
-        float rush = depth * 1.2 - z * 7.0;
-        float streaks = noise(vec2(ang * 90.0, rush)) * 0.65 + noise(vec2(ang * 220.0, rush * 1.6 + 3.0)) * 0.35;
+        // a wide tube: its walls well out from the middle
+        float depth = 0.34 / (r + 0.03);
+        float ang = a;                                            // streaks run straight at you, no twist
+        float rush = depth * 0.8 - z * 6.0;
+        // the streak pattern round the circle, blended across the point where
+        // the angle wraps so no seam shows
+        float wrapA = fract(ang + 0.5);
+        float sA = noise(vec2(ang * 90.0, rush)) * 0.65 + noise(vec2(ang * 220.0, rush * 1.6 + 3.0)) * 0.35;
+        float sB = noise(vec2(wrapA * 90.0 + 17.0, rush)) * 0.65 + noise(vec2(wrapA * 220.0 + 41.0, rush * 1.6 + 3.0)) * 0.35;
+        float streaks = mix(sA, sB, smoothstep(0.35, 0.5, abs(ang - 0.5)));
         streaks = pow(streaks, 2.6) * 2.4;
         // the walls: brighter toward the middle distance, fading into the core
-        float wall = smoothstep(0.02, 0.12, r) * (0.55 + 0.45 * smoothstep(0.9, 0.2, r));
+        float wall = smoothstep(0.05, 0.3, r) * (0.6 + 0.4 * smoothstep(1.1, 0.4, r));
         // blue walls with bright streaks, and soft bands of light rushing at you
-        float bands = 0.5 + 0.5 * sin(rush * 1.3 + ang * 12.566);
+        float bands = 0.5 + 0.5 * sin(rush * 1.3);
         vec3 tube = (mix(hyper * 0.8, vec3(0.9, 0.96, 1.0), clamp(streaks * 0.45, 0.0, 1.0)) * streaks + hyper * 0.35 * bands) * wall;
         col = mix(col, col * 0.3, inTunnel) + (tube + hyper * 0.1 * wall) * inTunnel;
     }
@@ -171,7 +170,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // the light at the end: a soft glow where you are headed, growing as the
     // stars stretch and brightest in the tunnel
     float glowing = stretch * 0.6 + inTunnel * 0.9;
-    col += mix(vec3(0.85, 0.92, 1.0), hyper, 0.25) * glowing * (exp(-r * r * 180.0) * 0.9 + exp(-r * 6.0) * 0.22);
+    col += mix(vec3(0.85, 0.92, 1.0), hyper, 0.25) * glowing * (exp(-r * r * 60.0) * 0.8 + exp(-r * 4.0) * 0.2);
 
     // the flash of entering and leaving
     col += vec3(0.8, 0.9, 1.0) * flash;
