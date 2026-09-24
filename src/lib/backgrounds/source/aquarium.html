@@ -18,7 +18,7 @@
   thrusts them along their nose and the water slows them. With music
   playing the whole tank dances to one beat: every nose angles up on one
   beat and down on the next, so the fish swim in arcs together, and at the
-  start of each eight-beat phrase the kinds turn in turn (big fish, then
+  start of each phrase (every few seconds) the kinds turn in turn (big fish, then
   striped, then small) until all swim one way. Each kind kicks its tail on
   its own part of the music: the big fish on the bass, the striped fish on
   the middle, the small fish on the highs. On a big drop the school
@@ -633,7 +633,7 @@
   // is playing): a beat is the bass jumping above its recent average; the
   // tempo comes from the gaps between beats; a drop is the loudness jumping
   // well above its recent level
-  var music = { level: 0, bassAvg: 0, levelAvg: 0, lastBeat: -9, beatGaps: [], period: 0.5, playing: 0, drop: 0, nextDrop: 0, beats: 0, swingDir: 1, dir: Math.random() < 0.5 ? -1 : 1 };
+  var music = { level: 0, bassAvg: 0, levelAvg: 0, lastBeat: -9, beatGaps: [], period: 0.5, playing: 0, drop: 0, nextDrop: 0, beats: 0, swingDir: 1, dir: Math.random() < 0.5 ? -1 : 1, turnStep: 3 };
   // the parts of the music, as ranges of Ectodeck's 32 bands (40 Hz to 11 kHz)
   // A hit is a sudden rise in a part of the sound: the sum of how much each of
   // its bands jumped since the last frame (the standard onset measure, which
@@ -695,10 +695,12 @@
       if (dancing && music.playing > 0.5) {
         music.beats++;
         music.swingDir = -music.swingDir;
-        var inPhrase = music.beats % 8;
-        if (inPhrase == 0) music.dir = -music.dir;
-        // big fish turn on the first of eight, striped on the second, small on the third
-        var turning = inPhrase == 0 ? 'bass' : inPhrase == 1 ? 'mid' : inPhrase == 2 ? 'high' : null;
+        // the tank turns every eighth swing, and not more than every 4.5 s,
+        // so fast drumming doesn't have it turning constantly: big fish on
+        // the first swing, striped on the next, small on the one after
+        if (music.beats % 8 == 0 && clock.t - (music.turnedAt || -99) > 4.5) { music.dir = -music.dir; music.turnedAt = clock.t; music.turnStep = 0; }
+        var turning = music.turnStep == 0 ? 'bass' : music.turnStep == 1 ? 'mid' : music.turnStep == 2 ? 'high' : null;
+        music.turnStep = (music.turnStep == null ? 3 : music.turnStep) + 1;
         fish.forEach(function (f) {
           if (f.sp.part === turning || f.pendingTurn) f.beatTurn = true;
           f.pendingTurn = false;
