@@ -8,11 +8,14 @@
   reef tank, lit from above, drawn with three.js (MIT). The backdrop, fish,
   bubble and food are photographic images made for Ectodeck. A key press
   drops food there and the fish come to eat; two quick presses tap the
-  glass and the fish nearby dart away. With music playing the fish dance,
-  each kind to its own part of the music: the big fish to the bass, the
-  striped fish to the middle, the small fish to the highs. A kind dashes
-  forward together on each hit of its part and glides between, swinging
-  up and down in wide sweeps, and turns together every few hits. On a big drop the school
+  glass and the fish nearby dart away. The fish swim as in water: a tail
+  thrusts them along their nose and the water slows them. With music
+  playing the whole tank dances to one beat: every nose angles up on one
+  beat and down on the next, so the fish swim in arcs together, and at the
+  start of each eight-beat phrase the kinds turn in turn (big fish, then
+  striped, then small) until all swim one way. Each kind kicks its tail on
+  its own part of the music: the big fish on the bass, the striped fish on
+  the middle, the small fish on the highs. On a big drop the school
   gathers and swirls. Its presets are the time of day.
 
   Built by scripts/build_backgrounds.py, which inlines three.js and the
@@ -225,9 +228,10 @@
         sp: sp, mesh: mesh, len: len, depth: depth,
         x: rand(0.1, 0.9) * W, y: rand(sp.band[0], sp.band[1]) * H, ty: 0,
         dir: dir, from: dir, turnT: 1, sinceTurn: rand(0, 3), speed: sp.speed * (0.7 + 0.5 * depth) * rand(0.85, 1.15),
-        phase: rand(0, 6.28), rush: 0, target: null, retarget: 0, orbit: 0, vy: 0, wantY: 0, surge: 0, pendingTurn: false, beatTurn: false, turnTime: 0.9
+        phase: rand(0, 6.28), rush: 0, target: null, retarget: 0, orbit: 0, vx: 0, vy: 0, pitch: 0, wantY: 0, kick: 0, pendingTurn: false, beatTurn: false, turnTime: 0.9
       };
       f.ty = f.wantY = f.y;
+      f.vx = f.dir * f.speed;
       fish.push(f);
     }
   });
@@ -303,16 +307,16 @@
   // is playing): a beat is the bass jumping above its recent average; the
   // tempo comes from the gaps between beats; a drop is the loudness jumping
   // well above its recent level
-  var music = { level: 0, bassAvg: 0, levelAvg: 0, lastBeat: -9, beatGaps: [], period: 0.5, playing: 0, drop: 0, nextDrop: 0 };
+  var music = { level: 0, bassAvg: 0, levelAvg: 0, lastBeat: -9, beatGaps: [], period: 0.5, playing: 0, drop: 0, nextDrop: 0, beats: 0, swingDir: 1, dir: Math.random() < 0.5 ? -1 : 1 };
   // the parts of the music, as ranges of Ectodeck's 32 bands (40 Hz to 11 kHz)
   var PARTS = [
     // a hit: the part's loudness jumping by this much above its own recent
     // level. The bands are on a decibel scale (-70 to -10 dB as 0 to 1), so a
     // kick lifts the bass from about 0.65 to 0.85, not to double; the amounts
     // were tuned on real music to catch each kick, snare and hi-hat
-    { name: 'bass', from: 0, to: 3, rise: 0.07, gap: 0.2, turnEvery: 4 },
-    { name: 'mid', from: 6, to: 13, rise: 0.05, gap: 0.16, turnEvery: 2 },
-    { name: 'high', from: 20, to: 31, rise: 0.03, gap: 0.12, turnEvery: 4 },
+    { name: 'bass', from: 0, to: 3, rise: 0.07, gap: 0.2 },
+    { name: 'mid', from: 6, to: 13, rise: 0.05, gap: 0.16 },
+    { name: 'high', from: 20, to: 31, rise: 0.03, gap: 0.12 },
   ].map(function (p) { return Object.assign(p, { avg: 0, last: -9, hits: 0, dir: Math.random() < 0.5 ? -1 : 1 }); });
   var partOf = function (name) { return PARTS.find(function (p) { return p.name === name; }); };
   window.addEventListener('ectodeck:audio', function (e) {
@@ -328,29 +332,26 @@
       if (gap < 1.5) { music.beatGaps.push(gap); if (music.beatGaps.length > 8) music.beatGaps.shift(); }
       var sorted = music.beatGaps.slice().sort(function (a, b) { return a - b; }); if (sorted.length) music.period = sorted[sorted.length >> 1];
       music.lastBeat = clock.t;
+      if (dancing && music.playing > 0.5) {
+        music.beats++;
+        music.swingDir = -music.swingDir;
+        var inPhrase = music.beats % 8;
+        if (inPhrase == 0) music.dir = -music.dir;
+        // big fish turn on the phrase's first beat, striped on the second, small on the third
+        var turning = inPhrase == 0 ? 'bass' : inPhrase == 1 ? 'mid' : inPhrase == 2 ? 'high' : null;
+        fish.forEach(function (f) {
+          if (f.sp.part === turning || f.pendingTurn) f.beatTurn = true;
+          f.pendingTurn = false;
+        });
+      }
     }
     // each part of the music, and the kinds of fish that dance to it
     PARTS.forEach(function (part) {
       var e = 0; for (var k = part.from; k <= part.to; k++) e += b[k] || 0; e /= part.to - part.from + 1;
       if (e - part.avg > part.rise && clock.t - part.last > part.gap) {
         part.last = clock.t; part.hits++;
-        if (dancing && music.playing > 0.5) {
-          // every fourth hit the whole kind turns together, to face one way
-          var turnNow = part.hits % part.turnEvery == 0;
-          if (turnNow) part.dir = -part.dir;
-          fish.forEach(function (f) {
-            if (f.sp.part !== part.name) return;
-            f.surge = 1;
-            // a wide swing up or down, the other way each hit, over the hit's time
-            f.swingFrom = f.swing || 0;
-            f.swingDir = -(f.swingDir || 1);
-            f.swingTo = f.swingDir * f.len * (part.name === 'bass' ? 0.34 : part.name === 'mid' ? 0.26 : 0.18);
-            f.swingT = 0;
-            f.swingTime = part.name === 'bass' ? Math.max(0.3, music.period * 0.95) : part.name === 'mid' ? 0.45 : 0.3;
-            if (turnNow || f.pendingTurn) f.beatTurn = true;
-            f.pendingTurn = false;
-          });
-        }
+        // a kind's own part: a strong kick of the tail
+        if (dancing && music.playing > 0.5) fish.forEach(function (f) { if (f.sp.part === part.name) f.kick = 1; });
       }
       part.avg += (e - part.avg) * 0.08;
     });
@@ -388,6 +389,8 @@
   // room, and back to its own course once past. Nothing is pushed.
   function avoid(dt) {
     fish.forEach(function (f) {
+      // dancing on the spot, a fish's place already keeps it apart
+      if (danced && f.place && !f.target) { f.ty = f.place.y; f.avoiding = 0; return; }
       var hf = heightOf(f), goal = f.wantY, worst = 0;
       fish.forEach(function (o) {
         if (o === f || !near(f, o)) return;
@@ -398,6 +401,9 @@
         if (Math.abs(dy) >= need) return;
         // closer matters more; one alongside matters most
         var weight = ahead > 0 ? 1 - ahead / reach : 1 - Math.pow(-ahead / side, 2);
+        // one alongside or behind going the same way is travelling with it, not
+        // coming at it: it matters much less
+        if (ahead < 0 && o.dir === f.dir) weight *= 0.6;
         if (weight <= worst) return;
         worst = weight;
         var up = o.y + need * 1.15, down = o.y - need * 1.15;
@@ -414,6 +420,28 @@
   }
 
 
+  // ---- dancing on the spot: when the music starts each fish takes a place of
+  // its own, near where it is, spread so fish at a similar depth keep apart
+  function takePlaces() {
+    fish.forEach(function (f) {
+      f.place = { x: Math.max(f.len * 0.8, Math.min(W - f.len * 0.8, f.x)), y: Math.max(H * 0.2, Math.min(H * 0.85, f.y)) };
+    });
+    for (var round = 0; round < 40; round++) fish.forEach(function (a) {
+      fish.forEach(function (b) {
+        if (a === b || !near(a, b)) return;
+        var dx = b.place.x - a.place.x, dy = b.place.y - a.place.y;
+        var gx = (a.len + b.len) * 0.62 - Math.abs(dx), gy = (heightOf(a) + heightOf(b)) * 0.75 - Math.abs(dy);
+        if (gx <= 0 || gy <= 0) return;
+        // part them the shorter way
+        if (gy / ((heightOf(a) + heightOf(b)) * 0.75) < gx / ((a.len + b.len) * 0.62)) { var m = gy * 0.5 * (dy >= 0 ? 1 : -1); a.place.y -= m; b.place.y += m; }
+        else { var n = gx * 0.5 * (dx >= 0 ? 1 : -1); a.place.x -= n; b.place.x += n; }
+        a.place.x = Math.max(a.len * 0.6, Math.min(W - a.len * 0.6, a.place.x)); a.place.y = Math.max(H * 0.18, Math.min(H * 0.88, a.place.y));
+        b.place.x = Math.max(b.len * 0.6, Math.min(W - b.len * 0.6, b.place.x)); b.place.y = Math.max(H * 0.18, Math.min(H * 0.88, b.place.y));
+      });
+    });
+  }
+  var danced = false;
+
   // ---- the tank's life
   function step(dt) {
     clock.t += dt;
@@ -428,6 +456,11 @@
     // flakes sink slowly, sliding side to side as they flutter
     food.forEach(function (p) { p.vx *= Math.pow(0.4, dt); p.x += p.vx * dt + Math.sin(clock.t * p.flutter + p.spin) * 14 * dt; p.y += p.vy * dt; p.vy = Math.max(p.vy - 1.5 * dt, -16); p.rot += p.spinRate * dt; });
     food = food.filter(function (p) { return p.y > H * 0.12 && !p.eaten; }).slice(-MAXF);
+
+    // the music starting: everyone to a place; stopping: back to swimming about
+    var dancingNow = dancing && music.playing > 0.5 && clock.t - music.lastBeat < 1.5 && music.drop <= 0;
+    if (dancingNow && !danced) takePlaces();
+    danced = dancingNow;
 
     fish.forEach(function (f) {
       // find food
@@ -463,8 +496,8 @@
       // dancing, a turn waits for the next beat and takes less than a beat
       f.sinceTurn += dt;
       var onBeat = dancing && music.playing > 0.5 && !rushing && !swirling;
-      var atGlass = f.x < f.len * 0.4 || f.x > W - f.len * 0.4;
-      if (onBeat && f.beatTurn && f.turnT >= 1) { var kind = partOf(f.sp.part); if (kind && kind.dir !== f.dir && !atGlass) want = kind.dir; else if (want === f.dir) want = f.dir; }
+      var atGlass = !danced && (f.x < f.len * 0.4 || f.x > W - f.len * 0.4);
+      if (onBeat && f.beatTurn && f.turnT >= 1 && music.dir !== f.dir && !atGlass) want = music.dir;
       if (want !== f.dir && f.turnT >= 1) {
         if (onBeat && !f.beatTurn && !atGlass) f.pendingTurn = true;
         else if (onBeat || f.sinceTurn > (swirling ? 0.8 : 2.5) || rushing || atGlass) {
@@ -476,53 +509,65 @@
       if (f.turnT < 1) f.turnT = Math.min(1, f.turnT + dt / (f.turnTime || 0.9));
       f.rush = Math.max(0, f.rush - dt);
       var turning = f.turnT < 1 ? Math.sin(Math.PI * f.turnT) : 0;
-      // dancing: a burst of speed on each beat, easing to a slow glide before the next
-      f.surge = Math.max(0, (f.surge || 0) - dt / (f.sp.part === 'bass' ? Math.max(0.25, music.period * 0.7) : f.sp.part === 'mid' ? 0.3 : 0.22));
-      // the dance holds while the fish's own part keeps hitting; a part gone
-      // quiet lets its fish swim as usual
-      var myPart = partOf(f.sp.part);
-      var groove = dancing && myPart && clock.t - myPart.last < 1.2 ? music.playing : 0;
-      // a dash of about half a body length on each hit, then almost still
-      var dashSpeed = f.len * 2.6 / f.speed;               // as a multiple of cruising speed
-      var pulse = 1 + groove * ((0.3 + dashSpeed * f.surge * f.surge) - 1);
-      // easing off a little while something is in the way
-      var speed = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * pulse * (1 - 0.7 * turning) * (1 - 0.45 * (f.avoiding || 0));
-      // while turning the fish keeps drifting the old way, then goes the new one
+
+      // ---- swimming, as in water. Forward, the tail thrusts toward the speed
+      // the fish wants and the water's drag slows it, so it builds speed and
+      // coasts. Up and down, its fins carry it on a soft, weighted spring toward
+      // the height it wants. Its body points along the way it is actually going.
+      var groove = dancing && music.playing > 0.5 && clock.t - music.lastBeat < 1.5 ? music.playing : 0;
+      f.kick = Math.max(0, (f.kick || 0) - dt * 2);          // a tail kick, fading
+      var cruise = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * (1 - 0.65 * (f.avoiding || 0));
+      // dancing: a burst with each kick of its part
+      var wanted = cruise * (1 + 0.15 * groove) + groove * f.kick * f.len * 1.3;
       var heading = f.turnT < 1 ? (f.turnT < 0.5 ? f.from : f.dir) : f.dir;
-      f.x += heading * speed * dt;
-      f.x = Math.max(f.len * 0.3, Math.min(W - f.len * 0.3, f.x));
-      // height moves on a soft spring: it eases off, travels and settles
-      var stiff = f.target ? 5 : swirling ? 4 : 1.6 + 2.2 * (f.avoiding || 0);
-      f.vy += ((f.ty - f.y) * stiff * stiff - f.vy * 2 * stiff) * dt;
-      f.y += f.vy * dt;
+      var along = f.vx * heading;
+      var onSpot = danced && f.place && !f.target && !rushing;
+      if (onSpot) {
+        // holding its place, as a fish holds station in moving water: a gentle
+        // pull back to it, and each kick of its part a push forward it drifts
+        // back from
+        var home = 2.2;
+        f.vx += ((f.place.x - f.x) * home * home - f.vx * 2 * home) * dt;
+        f.vx += heading * f.kick * f.len * 2.4 * dt;
+        f.ty = f.place.y;
+      } else {
+        var thrust = Math.max(0, wanted - along) * (2.2 + 1.8 * f.kick) * (1 - 0.8 * turning);
+        f.vx += heading * thrust * dt;
+        // drag; moving backwards is stopped fast, and a fish whose way is
+        // blocked backs off with its fins
+        f.vx *= Math.exp(-(along > 0 ? 1.1 + 2.5 * (f.avoiding || 0) : 4) * dt);
+      }
+      // dancing, the height it swims for rises and falls with the beat, one
+      // wave for the whole tank (up over one beat, down over the next); its own
+      // place, which keeps the fish apart, stays underneath
+      var avoiding = f.avoiding || 0;
+      var beatPos = music.beats + Math.min(1, (clock.t - music.lastBeat) / Math.max(0.25, music.period));
+      var sway = groove * f.len * (f.sp.part === 'bass' ? 0.44 : f.sp.part === 'mid' ? 0.38 : 0.32) * Math.sin(Math.PI * beatPos);
+      var stiff = onSpot ? 5 : f.target ? 5 : swirling ? 4 : 1.6 + 2.2 * avoiding;
+      f.vy += ((f.ty + sway - f.y) * stiff * stiff - f.vy * 2 * stiff) * dt;
+      f.x += f.vx * dt; f.y += f.vy * dt;
+      if (f.x < f.len * 0.3 || f.x > W - f.len * 0.3) { f.x = Math.max(f.len * 0.3, Math.min(W - f.len * 0.3, f.x)); f.vx = 0; }
       if (f.y < H * 0.12 || f.y > H * 0.93) { f.y = Math.max(H * 0.12, Math.min(H * 0.93, f.y)); f.vy = 0; }
-      f.phase += dt * f.sp.beat * (0.6 + speed / f.speed * 0.5 + turning * 0.8);
+      var pitchGoal = Math.max(-0.6, Math.min(0.6, Math.atan2(f.vy, Math.abs(f.vx) + 25)));
+      f.pitch += (pitchGoal - f.pitch) * Math.min(1, dt * 8);
+      var speed = Math.max(Math.hypot(f.vx, f.vy), onSpot ? f.speed * 0.6 : 0);
+      var thrust = typeof thrust === 'number' ? thrust : f.kick * f.speed * 6;
+      // the tail works harder while it thrusts
+      f.phase += dt * f.sp.beat * (0.6 + speed / f.speed * 0.5 + turning * 0.8 + Math.min(1.5, thrust / (f.speed * 6)));
       var u = f.mesh.material.uniforms;
       // the picture faces left; a fish going right is drawn mirrored, and a
       // turn runs from the old side to the new
       u.turn.value = f.turnT < 1 ? f.turnT : 0;
       var base = f.turnT < 1 ? f.from : f.dir;
       f.mesh.scale.x = Math.abs(f.mesh.scale.x) * (base < 0 ? 1 : -1);
-      u.phase.value = f.phase; u.amp.value = 0.6 + 0.4 * Math.min(2, speed / f.speed);
-      // the dance swing, eased, drawn on top of where the fish swims; when the
-      // music stops it settles back to level
-      var swingVel = 0;
-      if (groove > 0.05 && f.swingTime) {
-        f.swingT = Math.min(1, (f.swingT || 0) + dt / f.swingTime);
-        var e = f.swingT * f.swingT * (3 - 2 * f.swingT);
-        var next = f.swingFrom + (f.swingTo - f.swingFrom) * e;
-        swingVel = (next - (f.swing || 0)) / Math.max(dt, 1e-3);
-        f.swing = next;
-      } else if (f.swing) {
-        var settled = f.swing * Math.max(0, 1 - dt * 2);
-        swingVel = (settled - f.swing) / Math.max(dt, 1e-3);
-        f.swing = settled;
-      }
-      u.bend.value = Math.max(-1, Math.min(1, (f.vy + swingVel * 0.6) / 50)) * 0.6;
+      u.phase.value = f.phase; u.amp.value = 0.6 + 0.4 * Math.min(2, speed / f.speed) + 0.5 * f.kick;
+      u.bend.value = 0;
       // lit from above: a fish high in the tank is bright, one down by the sand dimmer
       u.light.value = 0.62 + 0.5 * (f.y / H);
       u.haze.value = 0.38 * (1 - f.depth) + 0.12 * (1 - f.y / H);
-      f.mesh.position.set(f.x, f.y + (f.swing || 0), 0);
+      f.mesh.position.set(f.x, f.y, 0);
+      // the body points along its nose (the picture may be mirrored)
+      f.mesh.rotation.z = -f.pitch * Math.sign(f.mesh.scale.x);
     });
 
     avoid(dt);
