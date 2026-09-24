@@ -99,7 +99,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float build = smoothstep(0.0, STRETCH, z);
     float stretch = build * build * (1.0 - smoothstep(DROP - 0.05, DROP + 0.25, z));
     float inTunnel = smoothstep(ENTER - 0.1, ENTER + 0.25, z) * (1.0 - smoothstep(DROP - 0.35, DROP, z));
-    float flash = z > DROP ? exp(-(z - DROP) * 6.0) * 0.6 : smoothstep(ENTER - 0.25, ENTER, z) * exp(-max(z - ENTER, 0.0) * 5.0) * 0.25;
+    // the flashes: entering, a soft one; leaving, one that peaks as the tunnel
+    // begins to fade and then only fades itself, so the light never dips first
+    float enterFlash = smoothstep(ENTER - 0.25, ENTER, z) * exp(-max(z - ENTER, 0.0) * 5.0) * 0.25;
+    float leaveFlash = smoothstep(DROP - 0.5, DROP - 0.3, z) * exp(-max(z - (DROP - 0.3), 0.0) * 3.5) * 0.45;
+    float flash = enterFlash + leaveFlash;
 
     // straight ahead, always toward the middle of the picture
     vec2 d = fragCoord - centre;
@@ -144,10 +148,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         vec2 seg = now - then + vec2(1e-6), rel = uv - then;
         float t = clamp(dot(rel, seg) / max(dot(seg, seg), 1e-7), 0.0, 1.0);
         float dist = length(rel - seg * t) * iResolution.y;
-        float size = 0.45 + 1.3 / zNow;                   // pixels: nearer is bigger
+        // pixels: nearer is bigger, but a streak stays a fine line
+        float size = mix(0.45 + 1.3 / zNow, min(0.55 + 0.25 / zNow, 1.1), stretch);
         float glow = exp(-dist * dist / (size * size));
         // brighter as it nears; the streak fades toward its tail
-        float bright = smoothstep(0.0, 0.25, prog) * (0.35 + 0.65 * smoothstep(0.2, 1.0, prog)) * mix(1.0, 0.25 + 0.75 * t, stretch);
+        // fading in from the distance and out as it passes, never popping
+        float bright = smoothstep(0.0, 0.25, prog) * (1.0 - smoothstep(0.82, 1.0, prog)) * (0.35 + 0.65 * smoothstep(0.2, 1.0, prog)) * mix(1.0, 0.25 + 0.75 * t, stretch);
         vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), hyper, 0.4), stretch);
         col += tint * glow * bright * starsShown;
     }
