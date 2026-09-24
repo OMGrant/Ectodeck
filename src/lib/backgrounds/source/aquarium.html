@@ -14,7 +14,7 @@
   sways at the foot of the rocks and draws in when touched. With music the
   crab side-steps and hops to the beat, the anemone's tentacles swing in
   time, and the pufferfish swells on each beat. At night the dance gets a
-  disco: a mirror ball and coloured spots sweeping the tank on the beat. The fish swim as in water: a tail
+  disco: two coloured spotlight beams sweeping the tank on the beat. The fish swim as in water: a tail
   thrusts them along their nose and the water slows them. With music
   playing the whole tank dances to one beat: every nose angles up on one
   beat and down on the next, so the fish swim in arcs together, and at the
@@ -152,9 +152,9 @@
   rays.renderOrder = 500;
   scene.add(rays);
 
-  // ---- the disco: at night, with music, a mirror ball under the surface and
-  // coloured spots sweeping the tank, pulsing on the beat, the colours
-  // changing each phrase; it fades back to moonlight when the music stops
+  // ---- the disco: at night, with music, two coloured spotlight beams sweep
+  // the tank, pulsing on the beat, the colours changing each phrase; it
+  // fades back to moonlight when the music stops
   // one set of values for everything the disco lights, and the light itself:
   // the coloured spots at a point on the screen, for the overlay and for each
   // fish, the crab and the anemone to light their own colours with
@@ -162,17 +162,26 @@
   var DISCO_GLSL = [
     'uniform float dT; uniform float dAmount; uniform float dPulse; uniform float dHue; uniform vec2 dSize;',
     'vec3 discoPalette(float k) { k = fract(k); return k < 0.25 ? vec3(1.0, 0.25, 0.7) : k < 0.5 ? vec3(0.2, 0.9, 1.0) : k < 0.75 ? vec3(0.65, 0.35, 1.0) : vec3(1.0, 0.8, 0.25); }',
-    'vec3 discoSpots(vec2 px) {',
-    '  vec3 col = vec3(0.0);',
-    '  for (int i = 0; i < 5; i++) {',
-    '    float fi = float(i);',
-    '    vec2 c = vec2(dSize.x * (0.5 + 0.42 * sin(dT * (0.31 + fi * 0.07) + fi * 1.9)), dSize.y * (0.42 + 0.36 * sin(dT * (0.23 + fi * 0.05) + fi * 2.7)));',
-    '    float r = dSize.y * (0.2 + 0.05 * sin(fi * 3.1));',
-    '    float d = length((px - c) / vec2(1.25, 1.0)) / r;',
-    '    col += discoPalette(dHue + fi * 0.25) * smoothstep(1.0, 0.15, d);',
+    // two spotlight beams shining down from above either side of the tank,
+    // sweeping back and forth across it; returns the light at a point, and the
+    // beams' own haze in the water (brighter at the sand) as w
+    'vec4 discoBeams(vec2 px) {',
+    '  vec3 col = vec3(0.0); float haze = 0.0;',
+    '  for (int i = 0; i < 2; i++) {',
+    '    float fi = float(i), side = fi * 2.0 - 1.0;',
+    '    vec2 o = vec2(dSize.x * (0.5 + side * 0.36), dSize.y * 1.08);',
+    '    vec2 aim = vec2(dSize.x * (0.5 - side * 0.3 * sin(dT * 0.55 + fi * 1.3)), dSize.y * 0.06);',
+    '    vec2 a = normalize(aim - o), v = px - o;',
+    '    float along = dot(v, a), across = length(v - along * a);',
+    '    float width = 14.0 + along * 0.2;',
+    '    float beam = along > 0.0 ? smoothstep(width, width * 0.45, across) : 0.0;',
+    '    vec3 c = discoPalette(dHue + fi * 0.5);',
+    '    col += c * beam;',
+    '    haze += beam * (0.35 + 0.65 * smoothstep(dSize.y * 0.3, 0.0, px.y)) ;',
     '  }',
-    '  return col * dAmount * (0.55 + 0.6 * dPulse);',
-    '}'
+    '  return vec4(col, haze) * dAmount * (0.6 + 0.55 * dPulse);',
+    '}',
+    'vec3 discoSpots(vec2 px) { return discoBeams(px).rgb; }'
   ].join('\n');
   var discoMat = new THREE.ShaderMaterial({
     uniforms: discoU,
@@ -184,24 +193,10 @@
       'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
       'void main() {',
       '  vec2 px = vUv * size;',
-      // the spots on the water and rocks (the creatures light themselves)
-      '  vec3 col = discoSpots(px) * 0.55 / max(amount * (0.55 + 0.6 * pulse), 1e-3);',
-      // sparkles from the ball: small bright flecks flying round the tank
-      '  vec2 ball = vec2(size.x * 0.5, size.y * 0.9);',
-      '  vec2 rel = px - ball; float ang = atan(rel.y, rel.x), rad = length(rel);',
-      '  vec2 cell = vec2(floor((ang + t * 0.35) * 18.0), floor(rad / 26.0));',
-      '  float h = hash(cell);',
-      '  vec2 inCell = vec2(fract((ang + t * 0.35) * 18.0), fract(rad / 26.0)) - 0.5;',
-      '  float fleck = step(0.82, h) * smoothstep(0.3, 0.0, length(inCell * vec2(1.0, 1.0 + rad / 260.0))) * (0.6 + 0.4 * sin(t * 9.0 + h * 40.0));',
-      '  col += mix(vec3(1.0), palette(hue + h), 0.5) * fleck * 1.1;',
-      // the ball itself, faceted and glinting, on its line from the surface
-      '  float db = length(rel) / 24.0;',
-      '  if (db < 1.0) {',
-      '    vec2 f = floor((rel / 24.0 + vec2(t * 0.25, 0.0)) * 6.0);',
-      '    float g = hash(f + floor(t * 3.0));',
-      '    col = vec3(0.55, 0.6, 0.7) * (0.5 + 0.5 * g) * (1.0 - db * 0.4) + vec3(1.0) * step(0.93, g);',
-      '  } else if (abs(rel.x) < 1.2 && rel.y > 0.0) col += vec3(0.4);',
-      '  gl_FragColor = vec4(col * amount * (0.55 + 0.6 * pulse), 1.0);',
+      // the beams in the water: shafts of coloured light, brighter where they
+      // meet the sand (the creatures light themselves)
+      '  vec4 b = discoBeams(px);',
+      '  gl_FragColor = vec4(b.rgb * (0.22 + 0.45 * b.a), 1.0);',
       '}'
     ].join('\n'),
     blending: THREE.AdditiveBlending, transparent: true, depthTest: false, depthWrite: false
@@ -252,7 +247,7 @@
     '  vec4 c = texture2D(map, vUv);',
     '  if (c.a < 0.03) discard;',
     '  vec3 col = c.rgb * (0.7 + 0.3 * vSide) * light;',   // a part seen edge-on in a turn: a little darker
-    '  col = mix(col, water, haze) * (tint + discoSpots(gl_FragCoord.xy) * 1.5);',
+    '  col = mix(col, water, haze) * (tint + min(discoSpots(gl_FragCoord.xy) * 1.05, vec3(1.3)));',
     '  gl_FragColor = vec4(col, c.a * alpha);',
     '}'
   ].join('\n');
@@ -338,7 +333,7 @@
         '  float caust = pow(max(w, 0.0), 6.0) + 0.6 * pow(max(sin((p.x + p.y) * 2.3 + t * 1.2 + sin(p.x * 3.0)), 0.0), 12.0);',
         '  vec3 col = mix(c.rgb, water * 2.2, 0.22) * light;',
         '  col += caust * (0.18 + 0.4 * dot(c.rgb, vec3(0.3, 0.55, 0.15))) * vec3(0.8, 0.95, 1.0);',
-        '  gl_FragColor = vec4(col * (tint + discoSpots(gl_FragCoord.xy) * 1.5), c.a);',
+        '  gl_FragColor = vec4(col * (tint + min(discoSpots(gl_FragCoord.xy) * 1.05, vec3(1.3))), c.a);',
         '}'
       ].join('\n'),
       transparent: true, depthTest: false, depthWrite: false
