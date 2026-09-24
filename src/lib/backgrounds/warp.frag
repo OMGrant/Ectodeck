@@ -107,41 +107,49 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float a = atan(d.y, d.x) / 6.2831853 + 0.5;
 
     // how far we have travelled: cruising, plus the distance of every jump
-    float travel = iTime * 0.04 * speed;
+    float travel = iTime * 0.012 * speed;
     for (int i = 0; i < 8; i++) {
         vec4 k = iKeyPresses[i];
         if (k.w < 0.0) continue;
         float kb = clamp(k.z / STRETCH, 0.0, 1.0);
-        travel += 0.2 * kb * kb * kb * STRETCH + 0.9 * clamp(k.z - STRETCH, 0.0, DROP - STRETCH);
+        travel += 0.12 * kb * kb * kb * STRETCH + 0.5 * clamp(k.z - STRETCH, 0.0, DROP - STRETCH);
     }
 
     vec3 col = vec3(0.0, 0.004, 0.012);
     // a faint nebula far behind, only when cruising
     col += hyper * 0.06 * noise(fragCoord / 140.0 + iTime * 0.01) * (1.0 - inTunnel);
 
-    // stars in three layers of radial sectors; each sector holds at most one
-    // star, moving outward, drawn as a streak whose length is the jump's stretch
+    // A starfield in true 3D: each star is a point in space coming toward you;
+    // its place on the screen is its position divided by its distance, so far
+    // stars sit close to the middle and creep, near ones spread out and race
+    // past. On a jump each draws a streak from where it is back to where it
+    // was a moment before.
+    vec2 uv = d / iResolution.y;
     float starsShown = 1.0 - 0.85 * inTunnel;
-    for (int layer = 0; layer < 3; layer++) {
-        float fl = float(layer);
-        float N = 220.0 + fl * 180.0;
-        float sector = floor(a * N);
-        float seed = hash(vec2(sector, fl * 13.0));
-        if (seed > 0.5 * density) continue;
-        float pace = 0.5 + seed * 1.5;
-        float s = fract(seed * 37.0 + travel * pace);
-        float rad = s * s * 1.4;                                    // accelerates outward, like perspective
-        float len = 0.004 + stretch * (0.12 + 0.8 * rad);
-        // across the sector: the star's thickness in pixels
-        float across = abs(fract(a * N) - 0.5) * 6.2831853 * r / N * iResolution.y;
-        float thick = 0.6 + 1.4 * s + stretch * 0.6;
-        float body = exp(-across * across / (thick * thick));
-        float along = (rad - r) / max(len, 1e-4);                   // 0 at the head, 1 at the tail
-        float streak = step(0.0, along) * step(along, 1.0) * mix(1.0, 1.0 - along, stretch * 0.7);
-        float head = exp(-pow((r - rad) * iResolution.y / thick, 2.0));
-        float bright = (streak * (0.55 + 0.45 * stretch) + head) * body * smoothstep(0.0, mix(0.35, 0.08, stretch), rad);
+    float trailBack = stretch * 0.22;             // how far back in its path the streak reaches
+    const int STARS = 480;
+    for (int i = 0; i < STARS; i++) {
+        float fi = float(i);
+        float h1 = hash(vec2(fi, 1.7)), h2 = hash(vec2(fi, 8.3)), h3 = hash(vec2(fi, 4.1));
+        if (h3 > 0.6 * density + 0.2) continue;
+        // where it sits across the view: spread so that, far off, the stars
+        // cover the picture evenly rather than bunching in the middle
+        float h4 = hash(vec2(fi, 2.3));
+        vec2 pos = (vec2(h1, h2) - 0.5) * vec2(1.78, 1.0) * 12.0 * (0.12 + 0.88 * h4);
+        float prog = fract(h3 * 7.1 + travel * (0.8 + 0.4 * h1));
+        float zNow = mix(6.0, 0.12, prog);                // distance from you
+        float zThen = zNow + trailBack * (6.0 - 0.12);
+        vec2 now = pos / zNow * 0.5, then = pos / zThen * 0.5;
+        // distance from this pixel to the streak between then and now
+        vec2 seg = now - then + vec2(1e-6), rel = uv - then;
+        float t = clamp(dot(rel, seg) / max(dot(seg, seg), 1e-7), 0.0, 1.0);
+        float dist = length(rel - seg * t) * iResolution.y;
+        float size = 0.45 + 1.3 / zNow;                   // pixels: nearer is bigger
+        float glow = exp(-dist * dist / (size * size));
+        // brighter as it nears; the streak fades toward its tail
+        float bright = smoothstep(0.0, 0.25, prog) * (0.35 + 0.65 * smoothstep(0.2, 1.0, prog)) * mix(1.0, 0.25 + 0.75 * t, stretch);
         vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), hyper, 0.4), stretch);
-        col += tint * bright * (0.6 + 0.4 * seed) * starsShown;
+        col += tint * glow * bright * starsShown;
     }
 
     // the tunnel: a tube of light rushing past, seen down its length. Depth
