@@ -25,9 +25,9 @@
       "TYPE": "color",
       "LABEL": "Laser colour",
       "DEFAULT": [
-        0.25,
         1.0,
-        0.3,
+        0.12,
+        0.08,
         1
       ]
     },
@@ -295,7 +295,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             float tailFade = 1.0 - clamp(along / len, 0.0, 1.0) * 0.6;
             float core = exp(-across * across / (width * width * 0.25)) * step(-width * 0.5, along) * step(along, len);
             float halo = exp(-across * across / (width * width * 3.0)) * smoothstep(len + width, len * 0.5, along) * smoothstep(-width, 0.0, along);
-            col += (mix(laser.rgb, vec3(1.0), 0.7) * core * 1.4 + laser.rgb * halo * 1.3) * tailFade * fadeOut;
+            // a white-hot core inside a glow of the bolt's colour, as the films' blasters
+            float hot = exp(-across * across / (width * width * 0.06)) * step(-width * 0.3, along) * step(along, len * 0.92);
+            col += (vec3(1.0) * hot * 1.6 + laser.rgb * core * 1.3 + laser.rgb * halo * 1.4) * tailFade * fadeOut;
         }
     }
 
