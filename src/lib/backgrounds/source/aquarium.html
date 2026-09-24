@@ -889,12 +889,12 @@
         // with music it swells rounder on each beat and relaxes between,
         // breathing to the music; the full spiky puff is kept for big moments
         var breath = grooving() ? Math.exp(-(clock.t - music.lastBeat) * 5) : 0;
-        f.mesh.scale.y = f.len * (f.sp.aspect || 0.44) * (1 + 0.5 * pz + 0.45 * breath * (1 - pz));
-        f.mesh.scale.x = Math.sign(f.mesh.scale.x) * f.len * (1 + 0.06 * breath * (1 - pz));
+        f.mesh.scale.y = f.len * (f.sp.aspect || 0.44) * (1 + 1.1 * pz + 0.8 * breath * (1 - pz));
+        f.mesh.scale.x = Math.sign(f.mesh.scale.x) * f.len * (1 + 0.2 * pz + 0.12 * breath * (1 - pz));
         var pm = f.puffMesh, pu = pm.material.uniforms, mu = f.mesh.material.uniforms;
         pu.alpha.value = swap; pu.phase.value = mu.phase.value; pu.amp.value = mu.amp.value * 0.4; pu.turn.value = mu.turn.value;
         pu.light.value = mu.light.value; pu.haze.value = mu.haze.value;
-        var grow = 0.8 + 0.3 * pz;
+        var grow = 0.8 + 0.9 * pz;   // fully puffed, about 1.7 times its length
         pm.scale.set(f.len * grow * Math.sign(f.mesh.scale.x), f.len * grow * (f.sp.puffAspect || 0.65), 1);
         pm.position.copy(f.mesh.position); pm.rotation.z = f.mesh.rotation.z * 0.5;
       }
