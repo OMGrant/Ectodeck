@@ -136,11 +136,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float surge = stretch * stretch * stretch;             // accelerating
     float ahead = surge * 0.97;                            // how far along its path, toward you, the streak reaches             // how far back in its path the streak reaches
     vec3 starLight = vec3(0.0);
-    const int STARS = 960;
+    const int STARS = 2000;
     for (int i = 0; i < STARS; i++) {
         float fi = float(i);
         float h1 = hash(vec2(fi, 1.7)), h2 = hash(vec2(fi, 8.3)), h3 = hash(vec2(fi, 4.1));
-        if (h3 > 0.5 * density + 0.15) continue;   // fewer while cruising, so the field stays calm
+        // a calm field while cruising; in the jump every star streaks
+        float surgeNow = stretch * stretch * stretch;
+        float gate = mix(0.25 * density + 0.07, 1.08, surgeNow);
+        if (h3 > gate) continue;
+        float joining = 1.0 - smoothstep(gate - 0.08, gate, h3);   // fading in as it joins
         // where it sits across the view: spread so that, far off, the stars
         // cover the picture evenly rather than bunching in the middle
         float h4 = hash(vec2(fi, 2.3));
@@ -166,8 +170,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // the streaks shine brighter as they stretch
         // brighter with the exposure: the longer the smear, the more light
         // each star its own brightness, most faint and a few bright, as real stars
-        float magnitude = 0.18 + 0.82 * pow(hash(vec2(fi, 6.6)), 2.2);
-        starLight += tint * glow * bright * magnitude * starsShown * (1.0 + 1.1 * surge);
+        float magnitude = 0.3 + 0.7 * pow(hash(vec2(fi, 6.6)), 2.2);
+        starLight += tint * glow * bright * magnitude * joining * starsShown * (1.0 + 1.1 * surge);
     }
 
     // like film, the stars' light rolls off softly where it builds up rather than
