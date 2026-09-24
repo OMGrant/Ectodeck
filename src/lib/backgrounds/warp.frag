@@ -136,9 +136,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // faster and faster as the ship accelerates, the tips shooting off the edge
     float surge = stretch * stretch * stretch;             // accelerating
     float ahead = surge * 0.97;                            // how far along its path, toward you, the streak reaches             // how far back in its path the streak reaches
+    // the way in (to halfway through the tunnel): the dense exposure streaks
+    // the way out and cruising use the calmer field below; a press crossfades
+    // from it into this one while the stars are still at rest
+    bool leaving = z > 0.5 * (ENTER + DROP);
+    float inField = leaving ? 0.0 : smoothstep(0.0, 0.3, z);
     vec3 starLight = vec3(0.0);
     const int STARS = 2000;
     for (int i = 0; i < STARS; i++) {
+        if (leaving || inField <= 0.0) break;
         float fi = float(i);
         float h1 = hash(vec2(fi, 1.7)), h2 = hash(vec2(fi, 8.3)), h3 = hash(vec2(fi, 4.1));
         // a calm field while cruising; in the jump every star streaks
@@ -172,12 +178,38 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // brighter with the exposure: the longer the smear, the more light
         // each star its own brightness, most faint and a few bright, as real stars
         float magnitude = 0.3 + 0.7 * pow(hash(vec2(fi, 6.6)), 2.2);
-        starLight += tint * glow * bright * magnitude * joining * starsShown * (1.0 + 1.1 * surge);
+        starLight += tint * glow * bright * magnitude * joining * starsShown * inField * (1.0 + 1.1 * surge);
     }
 
     // like film, the stars' light rolls off softly where it builds up rather than
     // clipping to flat white
     col += 1.0 - exp(-starLight * 1.15);
+
+    // the way out: the stars as they were when the exit was right, fewer,
+    // their streaks trailing back to the middle and shrinking to points
+    if (leaving || z < 0.3) {
+        float trailOut = stretch * 0.5;
+        float shownOut = (1.0 - 0.85 * inTunnel) * (leaving ? 1.0 : 1.0 - smoothstep(0.0, 0.3, z));
+        for (int i = 0; i < 480; i++) {
+            float fi = float(i);
+            float h1 = hash(vec2(fi, 1.7)), h2 = hash(vec2(fi, 8.3)), h3 = hash(vec2(fi, 4.1));
+            if (h3 > 0.6 * density + 0.2) continue;
+            float h4 = hash(vec2(fi, 2.3));
+            vec2 pos = (vec2(h1, h2) - 0.5) * vec2(1.78, 1.0) * 12.0 * (0.12 + 0.88 * h4);
+            float prog = fract(h3 * 7.1 + travel * (0.8 + 0.4 * h1));
+            float zNow = mix(6.0, 0.12, prog);
+            float zThen = zNow + trailOut * (6.0 - 0.12);
+            vec2 now = pos / zNow * 0.5, then = pos / zThen * 0.5;
+            vec2 seg = now - then + vec2(1e-6), rel = uv - then;
+            float t = clamp(dot(rel, seg) / max(dot(seg, seg), 1e-7), 0.0, 1.0);
+            float dist = length(rel - seg * t) * iResolution.y;
+            float size = mix(0.45 + 1.3 / zNow, min(0.55 + 0.25 / zNow, 1.1), stretch);
+            float glow = exp(-dist * dist / (size * size));
+            float bright = smoothstep(0.0, 0.25, prog) * (1.0 - smoothstep(0.82, 1.0, prog)) * (0.35 + 0.65 * smoothstep(0.2, 1.0, prog)) * mix(1.0, 0.25 + 0.75 * t, stretch);
+            vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), hyper, 0.4), stretch);
+            col += tint * glow * bright * shownOut * (1.0 + 1.3 * stretch);
+        }
+    }
 
     // the tunnel: a tube of light rushing past, seen down its length. Depth
     // comes from the distance to the centre (near the edges is close by);
