@@ -86,7 +86,7 @@ float noise(vec2 p) {
 
 // the jump, from the newest press: the stars stretch into streaks, it enters the hyperspace tunnel, then drops back out
 const float STRETCH = 1.0;   // seconds for the stars to pull into full-length streaks
-const float ENTER = 1.45;    // when the tunnel takes over, after the streaks have held at full length
+const float ENTER = 1.08;    // when the tunnel takes over, as the streaks reach full length
 const float DROP = 3.4;      // when the jump ends
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
@@ -116,7 +116,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         vec4 k = iKeyPresses[i];
         if (k.w < 0.0) continue;
         float kb = clamp(k.z / STRETCH, 0.0, 1.0);
-        travel += 0.015 * kb * STRETCH + 0.5 * clamp(k.z - ENTER, 0.0, DROP - ENTER);
+        // the stars hold, then start to rush in the last moments of the stretch
+        travel += 0.12 * pow(kb, 6.0) + 0.5 * clamp(k.z - ENTER, 0.0, DROP - ENTER);
     }
 
     vec3 col = vec3(0.0, 0.004, 0.012);
@@ -129,7 +130,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // past. On a jump each draws a streak from where it is back to where it
     // was a moment before.
     vec2 uv = d / iResolution.y;
-    float starsShown = 1.0 - 0.85 * inTunnel;
+    float starsShown = 1.0 - inTunnel;
     // The jump as the film did it, with exposure: the stars hold still and the
     // camera's shutter smears each one's path outward, the streaks lengthening
     // faster and faster as the ship accelerates, the tips shooting off the edge
