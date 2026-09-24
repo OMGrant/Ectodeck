@@ -392,40 +392,34 @@
     }
     return best;
   }
-  // Fish look ahead along their way: another at a similar depth coming up in
-  // front makes a fish ease up or down in good time, toward the side with more
-  // room, and back to its own course once past. Nothing is pushed.
+  // Keeping apart the way schools of animated animals do ("separation", from
+  // Reynolds' boids): each fish near another at a similar depth is pushed
+  // gently apart, up or down, more the closer they are. The push is the same
+  // for both and changes smoothly, so nothing jerks, stalls or ping-pongs.
+  // A fish being pushed lets its own height drift to where it is, so two
+  // don't keep coming back to the same lane; one right ahead in its lane
+  // makes a fish ease off a little.
   function avoid(dt) {
     fish.forEach(function (f) {
+      f.push = 0; f.avoiding = 0;
       // dancing on the spot, a fish's place already keeps it apart
-      if (danced && f.place && !f.target) { f.ty = f.place.y; f.avoiding = 0; return; }
-      var hf = heightOf(f), goal = f.wantY, worst = 0;
+      if (danced && f.place && !f.target) { f.ty = f.place.y; return; }
+      var hf = heightOf(f);
       fish.forEach(function (o) {
         if (o === f || !near(f, o)) return;
-        var ahead = (o.x - f.x) * f.dir;                      // how far in front (behind if negative)
-        var reach = f.len * 3.2 + o.len * 0.8, side = (f.len + o.len) * 0.6;
-        if (ahead < -side || ahead > reach) return;
-        var need = (hf + heightOf(o)) * 0.7, dy = f.y - o.y;
-        if (Math.abs(dy) >= need) return;
-        // closer matters more; one alongside matters most
-        var weight = ahead > 0 ? 1 - ahead / reach : 1 - Math.pow(-ahead / side, 2);
-        // one alongside or behind going the same way is travelling with it, not
-        // coming at it: it matters much less
-        if (ahead < 0 && o.dir === f.dir) weight *= 0.6;
-        if (weight <= worst) return;
-        worst = weight;
-        var up = o.y + need * 1.15, down = o.y - need * 1.15;
-        // keep to the side it is already on; head-on, the one lower in the list goes up
-        var goUp = dy !== 0 ? dy > 0 : fish.indexOf(f) < fish.indexOf(o);
-        if (goUp && up > H * 0.93) goUp = false; else if (!goUp && down < H * 0.12) goUp = true;
-        goal = f.wantY + ((goUp ? up : down) - f.wantY) * Math.min(1, weight * 1.4);
+        var rx = (f.len + o.len) * 0.75, ry = (hf + heightOf(o)) * 0.95;
+        var dx = (o.x - f.x) / rx, dy = (o.y - f.y) / ry, d = Math.hypot(dx, dy);
+        if (d >= 1) return;
+        var q = 1 - d;
+        f.push += (dy > 0 ? -1 : dy < 0 ? 1 : (fish.indexOf(f) < fish.indexOf(o) ? 1 : -1)) * q * q * 1500;
+        if (dx * f.dir > 0 && Math.abs(dy) < 0.6) f.avoiding = Math.max(f.avoiding, q);
       });
-      // the aim itself glides, so a neighbour coming or going never jerks it
-      goal = Math.max(H * 0.12, Math.min(H * 0.93, goal));
-      f.ty += (goal - f.ty) * Math.min(1, dt * 4);
-      f.avoiding = (f.avoiding || 0) + (worst - (f.avoiding || 0)) * Math.min(1, dt * 3);
+      if (f.push) f.wantY += (f.y - f.wantY) * Math.min(1, dt * 0.8);
+      f.ty = f.wantY;
     });
   }
+
+
 
 
   // ---- dancing on the spot: when the music starts each fish takes a place of
@@ -540,7 +534,7 @@
       // the height it wants. Its body points along the way it is actually going.
       var groove = dancing && music.playing > 0.5 && clock.t - music.lastBeat < 1.5 ? music.playing : 0;
       f.kick = Math.max(0, (f.kick || 0) - dt * 2);          // a tail kick, fading
-      var cruise = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * (1 - 0.65 * (f.avoiding || 0));
+      var cruise = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * (1 - 0.4 * (f.avoiding || 0));
       // dancing: a burst with each kick of its part
       var wanted = cruise * (1 + 0.15 * groove) + groove * f.kick * f.len * 1.3;
       var heading = f.turnT < 1 ? (f.turnT < 0.5 ? f.from : f.dir) : f.dir;
@@ -559,7 +553,7 @@
         f.vx += heading * thrust * dt;
         // drag; moving backwards is stopped fast, and a fish whose way is
         // blocked backs off with its fins
-        f.vx *= Math.exp(-(along > 0 ? 1.1 + 2.5 * (f.avoiding || 0) : 4) * dt);
+        f.vx *= Math.exp(-(along > 0 ? 1.1 : 4) * dt);
       }
       // dancing, the height it swims for rises and falls with the beat, one
       // wave for the whole tank (up over one beat, down over the next); its own
@@ -567,8 +561,8 @@
       var avoiding = f.avoiding || 0;
       var beatPos = music.beats + Math.min(1, (clock.t - music.lastBeat) / Math.max(0.25, music.period));
       var sway = groove * f.len * (f.sp.part === 'bass' ? 0.44 : f.sp.part === 'mid' ? 0.38 : 0.32) * Math.sin(Math.PI * beatPos);
-      var stiff = onSpot ? 5 : f.target ? 5 : swirling ? 4 : 1.6 + 2.2 * avoiding;
-      f.vy += ((f.ty + sway - f.y) * stiff * stiff - f.vy * 2 * stiff) * dt;
+      var stiff = onSpot ? 5 : f.target ? 5 : swirling ? 4 : 1.4;
+      f.vy += ((f.ty + sway - f.y) * stiff * stiff - f.vy * 2 * stiff + (onSpot ? 0 : f.push || 0)) * dt;
       f.x += f.vx * dt; f.y += f.vy * dt;
       if (f.x < f.len * 0.3 || f.x > W - f.len * 0.3) { f.x = Math.max(f.len * 0.3, Math.min(W - f.len * 0.3, f.x)); f.vx = 0; }
       if (f.y < H * 0.12 || f.y > H * 0.93) { f.y = Math.max(H * 0.12, Math.min(H * 0.93, f.y)); f.vy = 0; }
