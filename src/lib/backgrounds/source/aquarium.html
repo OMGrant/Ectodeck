@@ -80,7 +80,9 @@
   // the tank's deep blue, which far and low fish sink into
   var WATER = new THREE.Vector3(0.02, 0.09, 0.22);
 
-  // ---- the reef: the photograph, with light rippling over it and the surface moving
+  // ---- the reef: the photograph, a little soft like the back of a real tank
+  // (which also keeps each frame small enough for the deck to draw cleanly),
+  // with light rippling over it and the surface moving
   var reefMat = new THREE.ShaderMaterial({
     uniforms: { map: { value: loader.load('ectodeck-asset:aquarium/reef.webp') }, t: { value: 0 }, tint: { value: tint } },
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',

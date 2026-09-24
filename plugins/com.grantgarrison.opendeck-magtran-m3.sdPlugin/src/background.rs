@@ -38,6 +38,14 @@ const CHUNK: usize = 1024;
 
 /// Key icons are small text and thin lines; the default 75 smears them.
 const JPEG_QUALITY: u8 = 88;
+/// Lower qualities tried, in turn, for a frame too big for the rate it is
+/// sent at; below the last, JPEG's blocks start to show in smooth colour.
+const FALLBACK_QUALITIES: [u8; 3] = [80, 72, 64];
+/// About as much picture a second as the deck draws cleanly. Measured with
+/// the Aquarium: at about 1.5 MB a second its fish stayed whole; at about
+/// 3 MB they vanished for a frame now and then, the deck drawing over a
+/// picture before it had finished the last one.
+pub const DECK_BYTES_PER_SECOND: usize = 1_500_000;
 
 /// Scale to cover `w` x `h` preserving aspect ratio, then crop the overflow
 /// equally from both sides.
@@ -104,12 +112,26 @@ fn bgcle_command() -> Vec<u8> {
 /// The panel's native framebuffer is portrait, 480 wide by 854 tall, mounted
 /// rotated in the housing, so pictures are rotated 90 degrees counter-clockwise
 /// and declared at their portrait size.
-fn encode(picture: &RgbImage) -> Result<Vec<u8>, MirajazzError> {
+///
+/// Given `max_bytes`, a frame bigger than that is encoded again at lower
+/// qualities until it fits, or the lowest has been tried.
+fn encode(picture: &RgbImage, max_bytes: Option<usize>) -> Result<Vec<u8>, MirajazzError> {
     let rotated = imageops::rotate270(picture);
-    let mut out = Cursor::new(Vec::new());
-    let encoder = JpegEncoder::new_with_quality(&mut out, JPEG_QUALITY);
-    rotated.write_with_encoder(encoder)?;
-    Ok(out.into_inner())
+    let at = |quality: u8| -> Result<Vec<u8>, MirajazzError> {
+        let mut out = Cursor::new(Vec::new());
+        rotated.write_with_encoder(JpegEncoder::new_with_quality(&mut out, quality))?;
+        Ok(out.into_inner())
+    };
+    let mut jpeg = at(JPEG_QUALITY)?;
+    if let Some(max) = max_bytes {
+        for quality in FALLBACK_QUALITIES {
+            if jpeg.len() <= max {
+                break;
+            }
+            jpeg = at(quality)?;
+        }
+    }
+    Ok(jpeg)
 }
 
 /// Where a landscape rectangle lands in the portrait framebuffer after that
@@ -123,9 +145,10 @@ pub fn portrait_rect(x: u32, y: u32, w: u32, h: u32) -> (u16, u16, u16, u16) {
 
 /// Paint `picture` into the layer with its top-left corner at landscape
 /// (`x`, `y`), leaving the rest of the layer as it was. A whole-panel frame
-/// is the case x = y = 0 at 854x480.
-pub async fn send_region(device: &Device, picture: &RgbImage, x: u32, y: u32) -> Result<usize, MirajazzError> {
-    let jpeg = encode(picture)?;
+/// is the case x = y = 0 at 854x480. `max_bytes` asks for a smaller JPEG if
+/// the picture comes out bigger. Returns the bytes sent.
+pub async fn send_region(device: &Device, picture: &RgbImage, x: u32, y: u32, max_bytes: Option<usize>) -> Result<usize, MirajazzError> {
+    let jpeg = encode(picture, max_bytes)?;
     let (px, py, pw, ph) = portrait_rect(x, y, picture.width(), picture.height());
 
     let mut cmd = bgpic_command(jpeg.len(), px, py, pw, ph);
@@ -148,6 +171,21 @@ pub async fn send_region(device: &Device, picture: &RgbImage, x: u32, y: u32) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+        #[test]
+    fn a_frame_too_big_for_its_rate_is_made_smaller() {
+        // a busy picture: fine noise all over, which JPEG keeps poorly
+        let busy = RgbImage::from_fn(crate::background::PANEL_WIDTH, crate::background::PANEL_HEIGHT, |x, y| {
+            let n = (x.wrapping_mul(2654435761) ^ y.wrapping_mul(40503)) % 251;
+            image::Rgb([n as u8, (n * 3 % 251) as u8, (n * 7 % 251) as u8])
+        });
+        let full = encode(&busy, None).unwrap().len();
+        let fitted = encode(&busy, Some(full / 2)).unwrap().len();
+        assert!(fitted < full, "the frame was not made smaller: {fitted} of {full}");
+        // and a small one keeps its quality
+        let calm = RgbImage::from_pixel(crate::background::PANEL_WIDTH, crate::background::PANEL_HEIGHT, image::Rgb([20, 60, 120]));
+        assert_eq!(encode(&calm, Some(100_000)).unwrap(), encode(&calm, None).unwrap());
+    }
 
     #[test]
     fn bgpic_header_matches_the_captured_layout() {
@@ -185,7 +223,7 @@ mod tests {
 
     #[test]
     fn layer_frame_is_portrait_on_the_wire() {
-        let jpeg = encode(&RgbImage::new(PANEL_WIDTH, PANEL_HEIGHT)).unwrap();
+        let jpeg = encode(&RgbImage::new(PANEL_WIDTH, PANEL_HEIGHT), None).unwrap();
         let d = image::load_from_memory(&jpeg).unwrap();
         assert_eq!((d.width(), d.height()), (PANEL_HEIGHT, PANEL_WIDTH));
     }
