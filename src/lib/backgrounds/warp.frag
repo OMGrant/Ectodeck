@@ -155,7 +155,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // fading in from the distance and out as it passes, never popping
         float bright = smoothstep(0.0, 0.25, prog) * (1.0 - smoothstep(0.82, 1.0, prog)) * (0.35 + 0.65 * smoothstep(0.2, 1.0, prog)) * mix(1.0, 0.25 + 0.75 * t, stretch);
         vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), hyper, 0.4), stretch);
-        col += tint * glow * bright * starsShown;
+        // the streaks shine brighter as they stretch
+        col += tint * glow * bright * starsShown * (1.0 + 1.3 * stretch);
     }
 
     // the tunnel: a tube of light rushing past, seen down its length. Depth
