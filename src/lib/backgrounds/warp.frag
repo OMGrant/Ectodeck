@@ -178,7 +178,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // the light at the end: a soft glow where you are headed, growing as the
     // stars stretch and brightest in the tunnel
     float glowing = stretch * 0.6 + inTunnel * 0.9;
-    col += mix(vec3(0.85, 0.92, 1.0), hyper, 0.25) * glowing * (exp(-r * r * 60.0) * 0.8 + exp(-r * 4.0) * 0.2);
+    // in the tunnel the light ahead is a large, bright opening, white at its
+    // heart and blooming into the blue, as in Star Wars; smaller while the
+    // stars stretch
+    float core = exp(-r * r * mix(60.0, 14.0, inTunnel));
+    float bloom = exp(-r * mix(4.0, 2.2, inTunnel));
+    col += mix(vec3(0.85, 0.92, 1.0), hyper, 0.25) * glowing * (core * 0.6 + bloom * 0.18);
+    col += vec3(1.0) * inTunnel * exp(-r * r * 90.0) * 0.5;
 
     // the flash of entering and leaving
     col += vec3(0.8, 0.9, 1.0) * flash;
