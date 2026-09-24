@@ -303,10 +303,27 @@
   scene.add(anemone.mesh);
   // the crab: scuttles sideways along the open sand, stops, looks about,
   // scuttles on; a press near it sends it scurrying away
-  var crab = { x: W * 0.55, y: H * 0.09, w: 96, dir: 1, walk: 0, pause: 1, step: 0, flee: 0 };
-  crab.mesh = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), floorMat('ectodeck-asset:aquarium/crab.webp', plainVert));
-  crab.mesh.scale.set(crab.w, crab.w * 0.35, 1);
-  crab.mesh.renderOrder = 70;
+  var crab = { x: W * 0.55, y: H * 0.09, w: 124, dir: 1, walk: 0, pause: 1, step: 0, flee: 0 };
+  // the crab in three parts: its body, and two claws that swing up from the
+  // shoulder (at 152, 104 in the 480 by 168 picture) when it dances
+  crab.mesh = new THREE.Group();
+  var crabPart = function (file, order) {
+    var m = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), floorMat(file, plainVert));
+    m.scale.set(crab.w, crab.w * 0.35, 1); m.renderOrder = order; return m;
+  };
+  crab.body = crabPart('ectodeck-asset:aquarium/crab-body.webp', 70);
+  crab.mesh.add(crab.body);
+  var shoulderX = (152 - 240) / 480 * crab.w, shoulderY = (84 - 104) / 480 * crab.w;
+  crab.claws = [-1, 1].map(function (side) {
+    var joint = new THREE.Group();
+    joint.position.set(side < 0 ? shoulderX : -shoulderX, shoulderY, 0);   // the right shoulder mirrors the left
+    var claw = crabPart(side < 0 ? 'ectodeck-asset:aquarium/crab-claw-left.webp' : 'ectodeck-asset:aquarium/crab-claw-right.webp', 71);
+    claw.position.set(-joint.position.x, -shoulderY, 0);
+    joint.add(claw);
+    crab.mesh.add(joint);
+    return { joint: joint, claw: claw, side: side, raise: 0, rest: joint.position.clone() };
+  });
+  crab.parts = [crab.body].concat(crab.claws.map(function (c) { return c.claw; }));
   scene.add(crab.mesh);
   // a soft shadow on the sand under it, smaller as it hops
   crab.shadow = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), new THREE.ShaderMaterial({
@@ -322,7 +339,17 @@
   var beatPosition = function () { return music.beats + Math.min(1, (clock.t - music.lastBeat) / Math.max(0.25, music.period)); };
   var grooving = function () { return dancing && music.playing > 0.5 && clock.t - music.lastBeat < 1.5; };
   function floorLife(dt) {
-    crab.mesh.material.uniforms.t.value = clock.t;
+    crab.parts.forEach(function (m) { m.material.uniforms.t.value = clock.t; m.material.uniforms.light.value = 0.62; });
+    // claws: raised while it dances, waving in time, one higher on each beat;
+    // 2.43 radians (139 degrees) about the shoulder points a claw up and out
+    var beatNow = beatPosition(), waveIn = beatNow - Math.floor(beatNow), upSide = Math.floor(beatNow) % 2 ? 1 : -1;
+    crab.claws.forEach(function (c) {
+      var want = (crab.dance || 0) * (0.72 + 0.28 * (c.side === upSide ? Math.sin(Math.PI * Math.min(1, waveIn * 1.4)) : 0));
+      c.raise += (want - c.raise) * Math.min(1, dt * 7);
+      // the arm lifts and reaches out as the claw swings up, as a crab rears
+      c.joint.rotation.z = -c.side * 2.5 * c.raise;
+      c.joint.position.set(c.rest.x + c.side * crab.w * 0.1 * c.raise, c.rest.y + crab.w * 0.2 * c.raise, 0);
+    });
     var drawn = function () {
       // the shadow follows the crab on the sand, shrinking and fading as it lifts
       var lift = crab.mesh.position.y - (crab.y + crab.w * 0.175);
@@ -354,8 +381,7 @@
       var hop = Math.sin(Math.PI * Math.min(1, inBeat * 2.5)) * 7;
       crab.mesh.position.set(crab.x + shuffle * crab.dance, crab.y + crab.w * 0.175 + hop * crab.dance, 0);
       crab.mesh.rotation.z = -side * 0.1 * Math.sin(Math.PI * Math.min(1, inBeat * 1.6)) * crab.dance;
-      crab.mesh.scale.x = crab.w * (1 + 0.04 * Math.sin(Math.PI * Math.min(1, inBeat * 2.5)) * crab.dance);
-      crab.mesh.material.uniforms.light.value = 0.62;
+      crab.mesh.scale.x = 1 + 0.04 * Math.sin(Math.PI * Math.min(1, inBeat * 2.5)) * crab.dance;
       if (crab.dance > 0.5) { drawn(); return; }
     }
     if (crab.flee > 0) {
@@ -374,9 +400,8 @@
     // legs: a quick side-to-side jiggle and a little bounce while it scuttles
     var bob = moving ? Math.abs(Math.sin(crab.step)) * 2.5 : 0;
     crab.mesh.position.set(crab.x, crab.y + crab.w * 0.175 + bob, 0);
-    crab.mesh.scale.x = crab.w * (moving ? 1 + 0.035 * Math.sin(crab.step * 2) : 1);
+    crab.mesh.scale.x = moving ? 1 + 0.035 * Math.sin(crab.step * 2) : 1;
     crab.mesh.rotation.z = moving ? 0.04 * Math.sin(crab.step) : 0;
-    crab.mesh.material.uniforms.light.value = 0.62;
     drawn();
   }
 
@@ -513,7 +538,7 @@
   });
 
   // ?debug: the music and the fish, for checking by hand
-  if (/debug/.test(location.search)) window.__aquarium = { music: music, fish: fish, clock: clock, parts: PARTS };
+  if (/debug/.test(location.search)) window.__aquarium = { music: music, fish: fish, clock: clock, parts: PARTS, crab: crab };
 
   // ---- keeping the fish from piling up: fish at a similar depth are in each
   // other's way; one at a different depth may pass in front
