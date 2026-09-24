@@ -1,5 +1,5 @@
 /*{
-  "DESCRIPTION": "Warp: drifting through deep space. Press a key and jump to hyperspace: the stars stretch into streaks around a soft glowing light, you rush down the hyperspace tunnel, then drop back out among the stars. Switch presets in Adjust, or with the Background Preset action.",
+  "DESCRIPTION": "Warp: drifting through deep space. Press the centre key and jump to hyperspace: the stars stretch into streaks around a soft glowing light, you rush down the hyperspace tunnel, then drop back out among the stars. Every other key fires a pair of lasers from behind you toward it. Switch presets in Adjust, or with the Background Preset action.",
   "INPUTS": [
     {
       "NAME": "speed",
@@ -17,6 +17,17 @@
         0.35,
         0.55,
         1.0,
+        1
+      ]
+    },
+    {
+      "NAME": "laser",
+      "TYPE": "color",
+      "LABEL": "Laser colour",
+      "DEFAULT": [
+        1.0,
+        0.18,
+        0.12,
         1
       ]
     },
@@ -92,7 +103,13 @@ const float DROP = 3.4;      // when the jump ends
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec3 hyper = tunnel.rgb;
     vec2 centre = 0.5 * iResolution.xy;
-    vec4 p = iKeyPresses[0];
+    // the centre key jumps (the key in the middle of the screen, whichever way
+    // the deck is turned); every other key fires lasers
+    vec4 p = vec4(0.0, 0.0, 1e6, -1.0);
+    for (int i = 7; i >= 0; i--) {
+        vec4 k = iKeyPresses[i];
+        if (k.w >= 0.0 && length(k.xy - centre) < iResolution.y * 0.12) p = k;
+    }
     bool jumping = p.w >= 0.0 && p.z < DROP + 1.2;
     float z = jumping ? p.z : 1e6;
     // the stretch builds slowly and then races, as a jump to lightspeed does
@@ -114,7 +131,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float travel = iTime * 0.012 * speed;
     for (int i = 0; i < 8; i++) {
         vec4 k = iKeyPresses[i];
-        if (k.w < 0.0) continue;
+        if (k.w < 0.0 || length(k.xy - centre) >= iResolution.y * 0.12) continue;
         float kb = clamp(k.z / STRETCH, 0.0, 1.0);
         // the stars hold, then start to rush in the last moments of the stretch
         travel += 0.12 * pow(kb, 6.0) + 0.5 * clamp(k.z - ENTER, 0.0, DROP - ENTER);
@@ -247,5 +264,44 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     // the flash of entering and leaving
     col += vec3(0.8, 0.9, 1.0) * flash;
+
+    // Lasers: every key but the centre fires a pair of bolts from just behind
+    // the camera, low left and low right, that converge on the point out in
+    // space in front of the key. They start big and bright and shrink as they
+    // fly away (fast near, slowing with distance, as perspective does), and
+    // flash where they meet.
+    const float BOLT = 0.42;                              // seconds to reach the point
+    for (int i = 0; i < 8; i++) {
+        vec4 k = iKeyPresses[i];
+        if (k.w < 0.0 || length(k.xy - centre) < iResolution.y * 0.12 || k.z > BOLT + 0.35) continue;
+        for (int b = 0; b < 2; b++) {
+            float fb = float(b), side = fb * 2.0 - 1.0;
+            float age = k.z - fb * 0.05;                  // the second a moment after the first
+            if (age < 0.0) continue;
+            vec2 from = centre + vec2(side * iResolution.x * 0.62, -iResolution.y * 0.62);
+            float u = clamp(age / BOLT, 0.0, 1.0);
+            float travelled = 1.0 - pow(1.0 - u, 2.6);   // fast near the camera, slowing far off
+            vec2 head = mix(from, k.xy, travelled);
+            vec2 dir = normalize(k.xy - from);
+            float near = 1.0 - travelled;                 // 1 right by the camera, 0 far off
+            float len = iResolution.y * (0.05 + 0.5 * near * near);
+            float width = 1.8 + 11.0 * near * near;
+            vec2 rel = fragCoord - head;
+            float along = dot(rel, -dir), across = abs(dot(rel, vec2(-dir.y, dir.x)));
+            if (u < 1.0 && along > -width && along < len + width) {
+                float tailFade = 1.0 - clamp(along / len, 0.0, 1.0) * 0.6;
+                float core = exp(-across * across / (width * width * 0.25)) * step(-width * 0.5, along) * step(along, len);
+                float halo = exp(-across * across / (width * width * 3.0)) * smoothstep(len + width, len * 0.5, along) * smoothstep(-width, 0.0, along);
+                col += (mix(laser.rgb, vec3(1.0), 0.75) * core * 1.4 + laser.rgb * halo * 1.3) * tailFade;
+            }
+        }
+        // where the bolts meet: a small burst in the bolt's colour
+        float since = k.z - BOLT;
+        if (since > 0.0) {
+            float dd = length(fragCoord - k.xy);
+            float burst = exp(-since * 7.0) * (exp(-dd * dd / (60.0 + since * 2600.0)) * 1.8 + exp(-dd / (10.0 + since * 80.0)) * 0.6);
+            col += mix(laser.rgb, vec3(1.0), 0.4) * burst;
+        }
+    }
     fragColor = vec4(col, 1.0);
 }
