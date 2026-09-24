@@ -32,9 +32,15 @@
   "DESCRIPTION": "Looking into a deep reef tank lit from above, with clownfish, tangs, an angelfish, Moorish idols and more. Press a key to feed the fish there; press it twice quickly to tap the glass. Play music and the fish dance to it. Its presets are the time of day, or Automatic to follow your clock.",
   "INPUTS": [
     { "NAME": "time", "TYPE": "long", "LABEL": "Light", "DEFAULT": 0, "VALUES": [-1, 0, 1, 2], "LABELS": ["Automatic", "Day", "Dusk", "Night"], "PRESET": true },
+    { "NAME": "dance", "TYPE": "bool", "LABEL": "Dance to music", "DEFAULT": true },
+    { "NAME": "energy", "TYPE": "float", "LABEL": "Dance energy", "DEFAULT": 1, "MIN": 0.3, "MAX": 1.6 },
+    { "NAME": "disco", "TYPE": "long", "LABEL": "Disco lights", "DEFAULT": 1, "VALUES": [0, 1, 2], "LABELS": ["Off", "At night", "Always"] },
+    { "NAME": "speed", "TYPE": "float", "LABEL": "Swim speed", "DEFAULT": 1, "MIN": 0.4, "MAX": 1.8 },
     { "NAME": "fish", "TYPE": "float", "LABEL": "Fish", "DEFAULT": 1, "MIN": 0.3, "MAX": 2 },
-    { "NAME": "bubbles", "TYPE": "bool", "LABEL": "Bubbles", "DEFAULT": true },
-    { "NAME": "dance", "TYPE": "bool", "LABEL": "Dance to music", "DEFAULT": true }
+    { "NAME": "puffer", "TYPE": "bool", "LABEL": "Pufferfish", "DEFAULT": true },
+    { "NAME": "crab", "TYPE": "bool", "LABEL": "Crab", "DEFAULT": true },
+    { "NAME": "anemone", "TYPE": "bool", "LABEL": "Sea anemone", "DEFAULT": true },
+    { "NAME": "bubbles", "TYPE": "bool", "LABEL": "Bubbles", "DEFAULT": true }
   ]
 }
 </script>
@@ -54,6 +60,12 @@
   var setting = function (k) { return q.has(k) ? parseFloat(q.get(k)) : Number(declared[k]); };
   var bubbler = q.has('bubbles') ? q.get('bubbles') === '1' : declared.bubbles;
   var dancing = q.has('dance') ? q.get('dance') === '1' : declared.dance;
+  var flag = function (k) { return q.has(k) ? q.get(k) === '1' : declared[k]; };
+  var truthy = function (v) { return !!v && v !== '0' && v !== 'false'; };
+  var energy = Math.min(1.6, Math.max(0.3, setting('energy')));
+  var discoMode = Math.round(setting('disco'));          // 0 off, 1 at night, 2 always
+  var swimSpeed = Math.min(1.8, Math.max(0.4, setting('speed')));
+  var showPuffer = flag('puffer'), showCrab = flag('crab'), showAnemone = flag('anemone');
   var fishScale = Math.min(2, Math.max(0.3, setting('fish')));
   function sunHours(now) {
     var y = now.getFullYear(), jan = new Date(y, 0, 1).getTimezoneOffset(), jul = new Date(y, 6, 1).getTimezoneOffset();
@@ -324,7 +336,7 @@
       fish.forEach(function (f) { if (f.sp === sp) f.mesh.scale.set(f.len * Math.sign(f.mesh.scale.x || 1), f.len * sp.aspect, 1); });
     });
     tex.anisotropy = 4;
-    var count = Math.max(sp.count > 1 ? 1 : 0, Math.round(sp.count * fishScale));
+    var count = sp.puffed ? (showPuffer ? 1 : 0) : Math.max(sp.count > 1 ? 1 : 0, Math.round(sp.count * fishScale));
     for (var n = 0; n < count; n++) {
       var depth = Math.sqrt(Math.random());                // 0 far, 1 near; most fish near the glass
       var mat = new THREE.ShaderMaterial({
@@ -460,6 +472,9 @@
   var beatPosition = function () { return music.beats + Math.min(1, (clock.t - music.lastBeat) / Math.max(0.25, music.period)); };
   var grooving = function () { return dancing && music.playing > 0.5 && clock.t - music.lastBeat < 1.5; };
   function floorLife(dt) {
+    anemone.mesh.visible = showAnemone;
+    crab.mesh.visible = crab.shadow.visible = showCrab;
+    if (!showCrab) crab.food = null;
     crab.parts.forEach(function (m) { m.material.uniforms.t.value = clock.t; m.material.uniforms.light.value = 0.62; });
     // claws: raised while it dances, waving in time, one higher on each beat;
     // 2.43 radians (139 degrees) about the shoulder points a claw up and out
@@ -498,7 +513,7 @@
     // with music the tentacles swing left and right in time, on the tank's wave;
     // eased in and out so they never snap
     anemone.wave = (anemone.wave || 0) + ((grooveNow ? Math.sin(Math.PI * beatPosition()) : 0) - (anemone.wave || 0)) * Math.min(1, dt * 6);
-    tu.wave.value = anemone.wave;
+    tu.wave.value = anemone.wave * energy;
     tu.light.value = 0.66;
     // the crab
     var lo = W * 0.38, hi = W * 0.8;
@@ -507,7 +522,7 @@
     // food: the crab goes for the flake it can reach soonest, sinking or settled,
     // scuttles under it, and when it lies on the sand picks it up with a claw
     // and lifts it to its mouth
-    if (crab.flee <= 0 && (!crab.food || crab.food.eaten || !food.includes(crab.food))) {
+    if (showCrab && crab.flee <= 0 && (!crab.food || crab.food.eaten || !food.includes(crab.food))) {
       crab.food = null; var bestFood = 1e9;
       food.forEach(function (p) {
         if (p.x < lo - 30 || p.x > hi + 30 || (!p.landed && p.y > H * 0.5)) return;
@@ -540,8 +555,8 @@
     if (crab.dance > 0.02) {
       var bp = beatPosition(), inBeat = bp - Math.floor(bp);
       var side = Math.floor(bp) % 2 ? 1 : -1;
-      var shuffle = side * 13 * Math.sin(Math.PI * Math.min(1, inBeat * 1.6));
-      var hop = Math.sin(Math.PI * Math.min(1, inBeat * 2.5)) * 7;
+      var shuffle = side * 13 * energy * Math.sin(Math.PI * Math.min(1, inBeat * 1.6));
+      var hop = Math.sin(Math.PI * Math.min(1, inBeat * 2.5)) * 7 * energy;
       crab.mesh.position.set(crab.x + shuffle * crab.dance, crab.y + crab.w * 0.175 + hop * crab.dance, 0);
       crab.mesh.rotation.z = -side * 0.1 * Math.sin(Math.PI * Math.min(1, inBeat * 1.6)) * crab.dance;
       crab.mesh.scale.x = 1 + 0.04 * Math.sin(Math.PI * Math.min(1, inBeat * 2.5)) * crab.dance;
@@ -634,7 +649,7 @@
       lastPress.t = -9; return;
     }
     lastPress = { t: clock.t, x: px, y: py };
-    if (Math.hypot(px - anemone.x, py - (anemone.base + anemone.w * 0.44)) < 140) anemone.draw = 1;
+    if (showAnemone && Math.hypot(px - anemone.x, py - (anemone.base + anemone.w * 0.44)) < 140) anemone.draw = 1;
     for (var i = 0; i < 9; i++) food.push({ x: px + rand(-28, 28), y: py + rand(-10, 10), vx: rand(-16, 16), vy: rand(-18, -8), s: rand(9, 14), spin: rand(0, 6), rot: rand(0, 6.28), spinRate: rand(-2, 2), flutter: rand(2, 4), kind: Math.floor(rand(0, 4)), floor: H * rand(0.085, 0.115) });
   }
   window.addEventListener('ectodeck:press', function (e) { if (e.detail.down) press(e.detail.x, e.detail.y); });
@@ -821,7 +836,7 @@
     floorLife(dt);
     // the disco: on at night while the tank dances, fading in and out
     // on as soon as music is heard (no need to wait for a beat), in half a second
-    var discoOn = light === 2 && dancing && music.playing > 0.25;
+    var discoOn = discoMode > 0 && (discoMode === 2 || light === 2) && dancing && music.playing > 0.25;
     discoU.dAmount.value += ((discoOn ? 1 : 0) - discoU.dAmount.value) * Math.min(1, dt * (discoOn ? 6 : 0.8));
     discoU.dT.value = clock.t;
     discoU.dPulse.value = clock.t - music.lastBeat < 1.5 ? Math.exp(-(clock.t - music.lastBeat) * 4) : 0.3;
@@ -902,9 +917,9 @@
       // the height it wants. Its body points along the way it is actually going.
       var groove = dancing && music.playing > 0.5 && clock.t - music.lastBeat < 1.5 ? music.playing : 0;
       f.kick = Math.max(0, (f.kick || 0) - dt * 2);          // a tail kick, fading
-      var cruise = f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * (1 - 0.4 * (f.avoiding || 0)) * (1 - 0.75 * (f.puff || 0));
+      var cruise = swimSpeed * f.speed * (f.target ? 1.8 : 1) * (rushing ? 3.5 : 1) * (swirling ? 2.2 : 1) * (1 - 0.4 * (f.avoiding || 0)) * (1 - 0.75 * (f.puff || 0));
       // dancing: a burst with each kick of its part
-      var wanted = cruise * (1 + 0.15 * groove) + groove * f.kick * f.len * 1.3;
+      var wanted = cruise * (1 + 0.15 * groove) + groove * f.kick * f.len * 1.3 * energy;
       var heading = f.turnT < 1 ? (f.turnT < 0.5 ? f.from : f.dir) : f.dir;
       var along = f.vx * heading;
       var onSpot = danced && f.place && !f.target && !rushing;
@@ -928,7 +943,7 @@
       // place, which keeps the fish apart, stays underneath
       var avoiding = f.avoiding || 0;
       var beatPos = music.beats + Math.min(1, (clock.t - music.lastBeat) / Math.max(0.25, music.period));
-      var sway = groove * f.len * (f.sp.part === 'bass' ? 0.44 : f.sp.part === 'mid' ? 0.38 : 0.32) * Math.sin(Math.PI * beatPos);
+      var sway = groove * energy * f.len * (f.sp.part === 'bass' ? 0.44 : f.sp.part === 'mid' ? 0.38 : 0.32) * Math.sin(Math.PI * beatPos);
       var stiff = onSpot ? 5 : f.target ? 5 : swirling ? 4 : 1.4;
       f.vy += ((f.ty + sway - f.y) * stiff * stiff - f.vy * 2 * stiff + (onSpot ? 0 : f.push || 0)) * dt;
       f.x += f.vx * dt; f.y += f.vy * dt;
@@ -966,7 +981,7 @@
         var breath = grooving() ? Math.exp(-(clock.t - music.lastBeat) * 5) : 0;
         f.mesh.scale.y = f.len * (f.sp.aspect || 0.44);
         f.mesh.scale.x = Math.sign(f.mesh.scale.x) * f.len;
-        f.mesh.material.uniforms.bulge.value = 1.3 * pz + 0.7 * breath * (1 - pz);
+        f.mesh.material.uniforms.bulge.value = 1.3 * pz + 0.7 * energy * breath * (1 - pz);
         var pm = f.puffMesh, pu = pm.material.uniforms, mu = f.mesh.material.uniforms;
         pu.alpha.value = swap; pu.phase.value = mu.phase.value; pu.amp.value = mu.amp.value * 0.4; pu.turn.value = mu.turn.value;
         pu.light.value = mu.light.value; pu.haze.value = mu.haze.value;
@@ -998,16 +1013,22 @@
     fGeo.attributes.position.needsUpdate = true; fGeo.attributes.scale.needsUpdate = true;
   }
 
-  // a new time of day, bubbles or dance setting arrives in place, so the fish keep
+  // most settings arrive in place (the number of fish and the pufferfish
+  // need the tank set up again), so the fish keep
   // swimming; any other setting starts the page again with the new address
   var startQuery = location.search;
   window.addEventListener('ectodeck:params', function (e) {
     var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
     var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
-    for (var i = 0; i < keys.length; i++) if (['time', 'bubbles', 'dance'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
+    for (var i = 0; i < keys.length; i++) if (['time', 'bubbles', 'dance', 'energy', 'disco', 'speed', 'crab', 'anemone'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
     if (p.time !== undefined) { timeSetting = Math.round(p.time); light = timeSetting < 0 ? clockLight() : timeSetting % 3; }
     if (p.bubbles !== undefined) bubbler = !!p.bubbles && p.bubbles !== '0';
-    if (p.dance !== undefined) dancing = !!p.dance && p.dance !== '0';
+    if (p.dance !== undefined) dancing = truthy(p.dance);
+    if (p.energy !== undefined) energy = Math.min(1.6, Math.max(0.3, Number(p.energy)));
+    if (p.disco !== undefined) discoMode = Math.round(Number(p.disco));
+    if (p.speed !== undefined) swimSpeed = Math.min(1.8, Math.max(0.4, Number(p.speed)));
+    if (p.crab !== undefined) showCrab = truthy(p.crab);
+    if (p.anemone !== undefined) showAnemone = truthy(p.anemone);
   });
   addEventListener('resize', function () { location.reload(); });
 
