@@ -423,22 +423,38 @@
   // ---- dancing on the spot: when the music starts each fish takes a place of
   // its own, near where it is, spread so fish at a similar depth keep apart
   function takePlaces() {
+    // start from where each fish is, then keep parting any two at a similar
+    // depth that are too close, the shorter way (up or down, or along), until
+    // none are; a fish near a wall is parted away from it
+    var lo = H * 0.18, hi = H * 0.88;
     fish.forEach(function (f) {
-      f.place = { x: Math.max(f.len * 0.8, Math.min(W - f.len * 0.8, f.x)), y: Math.max(H * 0.2, Math.min(H * 0.85, f.y)) };
+      f.place = { x: Math.max(f.len * 0.7, Math.min(W - f.len * 0.7, f.x)), y: Math.max(lo, Math.min(hi, f.y)) };
     });
-    for (var round = 0; round < 40; round++) fish.forEach(function (a) {
-      fish.forEach(function (b) {
-        if (a === b || !near(a, b)) return;
+    var clampPlace = function (f) {
+      f.place.x = Math.max(f.len * 0.6, Math.min(W - f.len * 0.6, f.place.x));
+      f.place.y = Math.max(lo, Math.min(hi, f.place.y));
+    };
+    for (var round = 0; round < 200; round++) {
+      var moved = false;
+      for (var i = 0; i < fish.length; i++) for (var j = i + 1; j < fish.length; j++) {
+        var a = fish[i], b = fish[j];
+        if (!near(a, b)) continue;
         var dx = b.place.x - a.place.x, dy = b.place.y - a.place.y;
-        var gx = (a.len + b.len) * 0.62 - Math.abs(dx), gy = (heightOf(a) + heightOf(b)) * 0.75 - Math.abs(dy);
-        if (gx <= 0 || gy <= 0) return;
-        // part them the shorter way
-        if (gy / ((heightOf(a) + heightOf(b)) * 0.75) < gx / ((a.len + b.len) * 0.62)) { var m = gy * 0.5 * (dy >= 0 ? 1 : -1); a.place.y -= m; b.place.y += m; }
-        else { var n = gx * 0.5 * (dx >= 0 ? 1 : -1); a.place.x -= n; b.place.x += n; }
-        a.place.x = Math.max(a.len * 0.6, Math.min(W - a.len * 0.6, a.place.x)); a.place.y = Math.max(H * 0.18, Math.min(H * 0.88, a.place.y));
-        b.place.x = Math.max(b.len * 0.6, Math.min(W - b.len * 0.6, b.place.x)); b.place.y = Math.max(H * 0.18, Math.min(H * 0.88, b.place.y));
-      });
-    });
+        var needX = (a.len + b.len) * 0.62, needY = (heightOf(a) + heightOf(b)) * 0.75;
+        var gx = needX - Math.abs(dx), gy = needY - Math.abs(dy);
+        if (gx <= 0 || gy <= 0) continue;
+        moved = true;
+        // part them the shorter way; if a wall is in the way, the other way
+        var sy = dy !== 0 ? Math.sign(dy) : (i % 2 ? 1 : -1), sx = dx !== 0 ? Math.sign(dx) : (j % 2 ? 1 : -1);
+        var byY = gy / needY < gx / needX;
+        var roomY = sy > 0 ? (hi - b.place.y) + (a.place.y - lo) : (hi - a.place.y) + (b.place.y - lo);
+        if (byY && roomY < gy) byY = false;
+        if (byY) { a.place.y -= sy * gy * 0.55; b.place.y += sy * gy * 0.55; }
+        else { a.place.x -= sx * gx * 0.55; b.place.x += sx * gx * 0.55; }
+        clampPlace(a); clampPlace(b);
+      }
+      if (!moved) break;
+    }
   }
   var danced = false;
 
