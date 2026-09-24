@@ -135,11 +135,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // faster and faster as the ship accelerates, the tips shooting off the edge
     float surge = stretch * stretch * stretch;             // accelerating
     float ahead = surge * 0.97;                            // how far along its path, toward you, the streak reaches             // how far back in its path the streak reaches
-    const int STARS = 480;
+    const int STARS = 960;
     for (int i = 0; i < STARS; i++) {
         float fi = float(i);
         float h1 = hash(vec2(fi, 1.7)), h2 = hash(vec2(fi, 8.3)), h3 = hash(vec2(fi, 4.1));
-        if (h3 > 0.6 * density + 0.2) continue;
+        if (h3 > 0.5 * density + 0.15) continue;   // fewer while cruising, so the field stays calm
         // where it sits across the view: spread so that, far off, the stars
         // cover the picture evenly rather than bunching in the middle
         float h4 = hash(vec2(fi, 2.3));
@@ -159,7 +159,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // brighter as it nears; the streak fades toward its tail
         // fading in from the distance and out as it passes, never popping
         // the star end brightest, the smear fading toward its tip
-        float bright = smoothstep(0.0, 0.25, prog) * (1.0 - smoothstep(0.82, 1.0, prog)) * (0.35 + 0.65 * smoothstep(0.2, 1.0, prog)) * mix(1.0, 1.0 - 0.6 * t, smoothstep(0.0, 0.3, stretch));
+        // (in the jump even the faint far stars streak brightly)
+        float bright = mix(smoothstep(0.0, 0.25, prog), 1.0, surge) * (1.0 - smoothstep(0.82, 1.0, prog)) * (mix(0.35 + 0.65 * smoothstep(0.2, 1.0, prog), 0.9, surge)) * mix(1.0, 1.0 - 0.6 * t, smoothstep(0.0, 0.3, stretch));
         vec3 tint = mix(vec3(0.85, 0.9, 1.0), mix(vec3(1.0), hyper, 0.4), stretch);
         // the streaks shine brighter as they stretch
         // brighter with the exposure: the longer the smear, the more light
