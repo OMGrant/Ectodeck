@@ -247,7 +247,8 @@ pub struct Pass {
 }
 
 /// An ISF size expression relative to the picture: "$WIDTH", "$WIDTH/4",
-/// "$HEIGHT*0.5". Anything else is the full size.
+/// "$HEIGHT*0.5", up to four times the picture (a simulation may keep its
+/// dye finer than the screen). Anything else is the full size.
 fn size_scale(v: &serde_json::Value) -> f32 {
     let Some(text) = v.as_str() else { return 1.0 };
     let t: String = text.chars().filter(|c| !c.is_whitespace()).collect();
@@ -264,7 +265,7 @@ fn size_scale(v: &serde_json::Value) -> f32 {
     } else {
         None
     };
-    factor.unwrap_or(1.0).clamp(0.01, 1.0)
+    factor.unwrap_or(1.0).clamp(0.01, 4.0)
 }
 
 /// The ISF header's PASSES, or a single pass to the picture when it has none.

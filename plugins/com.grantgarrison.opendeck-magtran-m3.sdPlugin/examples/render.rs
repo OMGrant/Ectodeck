@@ -12,6 +12,10 @@
 //! report from RENDER_WEATHER="code,wind,sunrise,sunset" (seconds after the
 //! place's midnight), e.g. RENDER_WEATHER=73,60,25200,69000.
 //!
+//! RENDER_FPS sets the frames a second stepped through (30 by default; the
+//! deck runs at the fps in its settings, and a simulation that steps a fixed
+//! amount each frame runs at that pace).
+//!
 //! RENDER_CHANGE="seconds:json" changes settings part-way, as the app does,
 //! e.g. RENDER_CHANGE='2:{"weather":2}', to look at a transition.
 #[path = "../src/shader.rs"]
@@ -54,13 +58,14 @@ fn main() {
 		}
 		Err(_) => place.and_then(|(lat, lon)| weather::ask(lat, lon).map_err(|e| eprintln!("no weather: {e}")).ok()),
 	};
-	// step through time at the deck's 30 frames a second, so simulations and
+	// step through time at RENDER_FPS frames a second, so simulations and
 	// feedback buffers evolve as they would, saving the requested moments
 	let last = times.iter().cloned().fold(0.0, f32::max);
 	let change: Option<(f32, serde_json::Map<String, serde_json::Value>)> = std::env::var("RENDER_CHANGE").ok().and_then(|v| {
 		let (at, json) = v.split_once(':')?;
 		Some((at.parse().ok()?, serde_json::from_str(json).ok()?))
 	});
+	let fps: f32 = std::env::var("RENDER_FPS").ok().and_then(|v| v.parse().ok()).unwrap_or(30.0);
 	let mut frame = 0;
 	let mut t = 0.0f32;
 	while t <= last + 1e-3 {
@@ -89,10 +94,10 @@ fn main() {
 			}
 		}
 		let image = renderer.render(t, &defaults, &controls, &World::now(place, report));
-		if times.iter().any(|x| (x - t).abs() < 0.5 / 30.0) {
+		if times.iter().any(|x| (x - t).abs() < 0.5 / fps) {
 			image.save(out.join(format!("t{:05.2}.png", t))).unwrap();
 		}
 		frame += 1;
-		t = frame as f32 / 30.0;
+		t = frame as f32 / fps;
 	}
 }
