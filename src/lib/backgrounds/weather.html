@@ -563,7 +563,9 @@
       '    put(acc, mix(vec3(0.9, 0.92, 0.95), vec3(0.2, 0.22, 0.28), night), fa);',
       '  }',
       '  vec3 light = vec3(0.8, 0.85, 1.0) * glow;',
-      '  gl_FragColor = vec4(acc.rgb + add + light + (hash(gl_FragCoord.xy) - 0.5) / 255.0, acc.a);',
+      // a grain of up to one shade either way (two random values, the usual
+      // way), which hides the steps between shades in a smooth sky
+      '  gl_FragColor = vec4(acc.rgb + add + light + (hash(gl_FragCoord.xy) + hash(gl_FragCoord.yx + 71.3) - 1.0) / 255.0, acc.a);',
       '}'
     ].join('\n'),
     // the layer's own colour is added; its cover veils what is behind
@@ -597,12 +599,27 @@
   });
   // The clouds are drawn at a third of the size and scaled up smoothly, as
   // Sky draws them, which keeps them soft; the sun, moon, stars and weather
-  // are drawn over them at full size, so those stay sharp.
+  // are drawn over them at full size, so those stay sharp. The scaling is a
+  // cubic B-spline (four blended reads, the usual way), not a straight-line
+  // blend, which leaves a faint grid of diamonds three pixels across that
+  // shows on the deck as squares in the cloud.
   var soft = null;
   var upMaterial = new THREE.ShaderMaterial({
-    uniforms: { map: { value: null } },
+    uniforms: { map: { value: null }, texel: { value: new THREE.Vector2(1, 1) } },
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-    fragmentShader: 'uniform sampler2D map; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb, 1.0); }',
+    fragmentShader: [
+      'uniform sampler2D map; uniform vec2 texel; varying vec2 vUv;',
+      'void main() {',
+      '  vec2 st = vUv / texel - 0.5, i = floor(st), f = st - i;',
+      '  vec2 w0 = (1.0 - f) * (1.0 - f) * (1.0 - f) / 6.0, w1 = (4.0 - 6.0 * f * f + 3.0 * f * f * f) / 6.0;',
+      '  vec2 w3 = f * f * f / 6.0, w2 = 1.0 - w0 - w1 - w3;',
+      '  vec2 s0 = w0 + w1, s1 = w2 + w3;',
+      '  vec2 p0 = (i - 0.5 + w1 / s0) * texel, p1 = (i + 1.5 + w3 / s1) * texel;',
+      '  vec3 c = (texture2D(map, vec2(p0.x, p0.y)).rgb * s0.x + texture2D(map, vec2(p1.x, p0.y)).rgb * s1.x) * s0.y',
+      '         + (texture2D(map, vec2(p0.x, p1.y)).rgb * s0.x + texture2D(map, vec2(p1.x, p1.y)).rgb * s1.x) * s1.y;',
+      '  gl_FragColor = vec4(c, 1.0);',
+      '}'
+    ].join('\n'),
     depthTest: false, depthWrite: false
   });
   var upScene = new THREE.Scene();
@@ -611,8 +628,11 @@
     var w = Math.max(1, Math.round(bufferSize.x / 3)), h = Math.max(1, Math.round(bufferSize.y / 3));
     if (!soft || soft.width !== w || soft.height !== h) {
       if (soft) soft.dispose();
-      soft = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+      // kept at more than 8 bits a colour, so the soft shading is not cut into
+      // steps before it is scaled up three times
+      soft = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, type: THREE.HalfFloatType });
       upMaterial.uniforms.map.value = soft.texture;
+      upMaterial.uniforms.texel.value.set(1 / w, 1 / h);
     }
     // Sky works out its picture and its camera from these, in pixels: both at the smaller size
     var res = effect.uniforms.iResolution.value, mouse = effect.uniforms.iMouse.value;
