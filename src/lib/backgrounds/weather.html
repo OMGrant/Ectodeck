@@ -484,13 +484,22 @@
       '      put(acc, pc, a);',
       '    }',
       // night (clear or cloudy): a shooting star falls from the key
-      '    if ((weather == 0 || weather == 1) && night > 0.5 && age < 1.2) {',
-      '      vec2 dir = normalize(vec2(fract(k.w) > 0.5 ? 1.0 : -1.0, -0.45));',
-      '      vec2 head = kp + dir * age * 0.7;',
+      // night: a shooting star streaks in from out of frame, high on the far
+      // side, and lands on the key, flashing where it hits
+      '    if ((weather == 0 || weather == 1) && night > 0.5 && age < 1.6) {',
+      '      float side = kp.x < aspect * 0.5 ? 1.0 : -1.0;',
+      '      vec2 dir = normalize(vec2(-side, -0.5 - 0.25 * fract(k.w * 7.0)));',
+      '      vec2 start = kp - dir * 1.6;',
+      '      float fly = 0.5, e = clamp(age / fly, 0.0, 1.0);',
+      '      vec2 head = mix(start, kp, e * e * (3.0 - 2.0 * e) * 0.35 + e * 0.65);',
       '      vec2 r = p - head; float along = dot(r, -dir), across = abs(dot(r, vec2(-dir.y, dir.x)));',
-      '      float trail = step(0.0, along) * exp(-along * 7.0) * exp(-across * 700.0);',
-      '      float life = smoothstep(0.0, 0.1, age) * (1.0 - smoothstep(0.7, 1.2, age));',
-      '      add += vec3(0.95, 0.97, 1.0) * (trail * 1.4 + exp(-length(r) * 90.0) * 1.2) * life;',
+      // the trail behind the head, never past the key it is heading for
+      '      float trail = step(0.0, along) * exp(-along * 5.0) * exp(-across * 650.0) * step(0.0, dot(p - kp, -dir) + 0.002);',
+      '      float streak = (1.0 - smoothstep(fly, fly + 0.6, age));',
+      '      float hit = smoothstep(fly - 0.05, fly, age) * (1.0 - smoothstep(fly, fly + 0.9, age));',
+      '      float d = length(p - kp);',
+      '      add += vec3(0.95, 0.97, 1.0) * (trail * 1.5 + exp(-length(r) * 90.0) * 1.3 * (1.0 - hit)) * streak;',
+      '      add += vec3(0.9, 0.94, 1.0) * (exp(-d * 60.0) * 1.2 + exp(-d * 14.0) * 0.25) * hit;',
       '    }',
       // rain: drops splash onto the glass at the key, bead up catching the light,
       // then run down the glass one by one, leaving wet trails, and dry away
