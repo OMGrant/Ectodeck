@@ -184,13 +184,20 @@
     { to: 0xb8bec6, grey: 0.7, dark: 0.1 },      // fog
     { to: 0x2a2f3c, grey: 0.72, dark: 0.55 },    // dry thunderstorm
   ];
-  // Every weather is seen from the same place, on the ground looking up, so a
-  // change of weather is the sky changing, never the view moving: clear is open
-  // sky; cloudy, cloud forming overhead with blue between; rain, snow and storms,
-  // cloud thickening into a ceiling they fall out of; fog, cloud closing in.
-  // Only how much cloud there is differs.
-  var GROUND = { lookAt: -1, flip: -1, lift: 0.9, stretch: 0.68, swing: 1 };
-  var VIEWS = [5, 0.45, -0.3, -0.4, -0.2, -1.2, -0.4].map(function (clearing) { return Object.assign({ clearing: clearing }, GROUND); });
+  // Clear looks up into open sky; Cloudy looks down on the sea of cloud; rain,
+  // snow and storms are seen from under their clouds, which they fall out of,
+  // all from the same place there, so changing between them only reshapes
+  // and recolours the cloud; fog is inside the cloud.
+  var BELOW = { lookAt: -1, flip: -1, lift: 0.9, swing: 1 };
+  var VIEWS = [
+    { clearing: 5, lookAt: 3.35, flip: 1, lift: 0, stretch: 1, swing: 0 },   // clear
+    { clearing: 0, lookAt: -1, flip: 1, lift: 0, stretch: 1, swing: 1 },     // cloudy
+    Object.assign({ clearing: -0.3, stretch: 1 }, BELOW),                    // rain
+    Object.assign({ clearing: -0.4, stretch: 0.68 }, BELOW),                 // thunderstorm
+    Object.assign({ clearing: -0.2, stretch: 1 }, BELOW),                    // snow
+    { clearing: -1.2, lookAt: -1, flip: 1, lift: 0, stretch: 1, swing: 1 },  // fog
+    Object.assign({ clearing: -0.4, stretch: 0.68 }, BELOW),                 // dry thunderstorm
+  ];
   var under = function () { return VIEWS[weather].flip < 0; };
   function look(timeIndex) {
     var base = TIMES[timeIndex], m = MOODS[weather], out = {};
@@ -571,6 +578,35 @@
     fragmentShader: 'uniform sampler2D old; uniform float amount; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(old, vUv).rgb, amount); }',
     transparent: true, depthTest: false, depthWrite: false
   });
+  // The clouds are drawn at a third of the size and scaled up smoothly, as
+  // Sky draws them, which keeps them soft; the sun, moon, stars and weather
+  // are drawn over them at full size, so those stay sharp.
+  var soft = null;
+  var upMaterial = new THREE.ShaderMaterial({
+    uniforms: { map: { value: null } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: 'uniform sampler2D map; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb, 1.0); }',
+    depthTest: false, depthWrite: false
+  });
+  var upScene = new THREE.Scene();
+  upScene.add(new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), upMaterial));
+  function drawClouds(scene, camera, target) {
+    var w = Math.max(1, Math.round(bufferSize.x / 3)), h = Math.max(1, Math.round(bufferSize.y / 3));
+    if (!soft || soft.width !== w || soft.height !== h) {
+      if (soft) soft.dispose();
+      soft = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+      upMaterial.uniforms.map.value = soft.texture;
+    }
+    // Sky works out its picture and its camera from these, in pixels: both at the smaller size
+    var res = effect.uniforms.iResolution.value, mouse = effect.uniforms.iMouse.value;
+    var rx = res.x, ry = res.y, mx = mouse.x, my = mouse.y;
+    res.set(w, h); mouse.set(mx * w / rx, my * h / ry);
+    renderer.setRenderTarget(soft);
+    drawScene(scene, camera);
+    res.set(rx, ry); mouse.set(mx, my);
+    renderer.setRenderTarget(target);
+    drawScene(upScene, layerCamera);
+  }
   var blendScene = new THREE.Scene();
   blendScene.add(new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), blendMaterial));
   renderer.render = function (scene, camera) {
@@ -588,19 +624,16 @@
         blendMaterial.uniforms.old.value = oldView.texture;
       }
       showView(shown.fromView);
-      renderer.setRenderTarget(oldView);
-      drawScene(scene, camera);
+      drawClouds(scene, camera, oldView);
       showView(shown);
-      renderer.setRenderTarget(finished);
-      drawScene(scene, camera);
+      drawClouds(scene, camera, finished);
       // the old view laid over the new, fading away
       blendMaterial.uniforms.amount.value = 1 - shown.mixView;
       var keepClear = renderer.autoClear; renderer.autoClear = false;
       drawScene(blendScene, layerCamera);
       renderer.autoClear = keepClear;
     } else {
-      renderer.setRenderTarget(finished);
-      drawScene(scene, camera);
+      drawClouds(scene, camera, finished);
     }
     var now = performance.now() / 1000;
     slots.forEach(function (slot, i) { var b = presses[i]; if (b) slot.set(b.x, b.y, now - b.at, b.seed); else slot.z = -1; });
@@ -619,8 +652,10 @@
   };
   // ---- changes of weather and time of day ease in: every colour and setting
   // of the sky, clouds and weather moves from where it is to where it is going.
-  // Each change takes about three seconds. Every weather shares one view, so the
-  // cloud simply forms, thickens or clears where it is.
+  // Each change takes about three seconds. Between weathers seen from the same
+  // place the cloud morphs where it is (it forms, thickens, reshapes, clears);
+  // between places (above the cloud and under it) one pattern cross-fades into
+  // the other where it stands. Nothing flies.
   var COLOURS = ['skyTopColor', 'skyColor', 'skyHorizonColor', 'skyGlowColor', 'cloudColor', 'cloudShadowColor', 'sunColor', 'sunGlareColor', 'sunlightColor', 'backgroundColor'];
   var SKY_NUMBERS = ['sunHeight', 'clearing', 'lookAt', 'flip', 'lift', 'stretch', 'swing'];
   var LAYER_NUMBERS = ['aClear', 'aCloudy', 'aRain', 'aSnow', 'aStorm', 'aFog', 'night', 'dusk'];
@@ -680,7 +715,7 @@
     var from = shown, to = goal();
     delete from.fromView; delete from.mixView;
     var builds = (from.w === 0 || from.w === 1) && (to.w === 0 || to.w === 1);
-    var moves = VIEW.some(function (k) { return from[k] !== to[k]; });
+    var moves = ['lookAt', 'flip', 'lift', 'swing'].some(function (k) { return from[k] !== to[k]; });
     easing = { from: from, to: to, start: performance.now(), ms: ms || 3000, dissolving: moves && !builds };
   }
   function stepEasing(now) {
