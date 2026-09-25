@@ -459,8 +459,29 @@
   });
   var layerScene = new THREE.Scene(), layerCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   layerScene.add(new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), layer));
+  // The clouds and the weather are drawn into a hidden picture first and
+  // copied to the screen in one step, so the screen only ever holds a
+  // finished frame, as the Aquarium does: drawn straight onto it, pass by
+  // pass, the deck's headless Chrome can take a frame part-way, with the
+  // weather missing.
   var renderer = effect.renderer, drawScene = renderer.render.bind(renderer);
+  var finished = null, bufferSize = new THREE.Vector2();
+  var copyMaterial = new THREE.ShaderMaterial({
+    uniforms: { map: { value: null } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: 'uniform sampler2D map; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb, 1.0); }',
+    depthTest: false, depthWrite: false
+  });
+  var copyScene = new THREE.Scene();
+  copyScene.add(new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), copyMaterial));
   renderer.render = function (scene, camera) {
+    renderer.getDrawingBufferSize(bufferSize);
+    if (!finished || finished.width !== bufferSize.x || finished.height !== bufferSize.y) {
+      if (finished) finished.dispose();
+      finished = new THREE.WebGLRenderTarget(bufferSize.x, bufferSize.y, { depthBuffer: false });
+      copyMaterial.uniforms.map.value = finished.texture;
+    }
+    renderer.setRenderTarget(finished);
     drawScene(scene, camera);
     var now = performance.now() / 1000;
     slots.forEach(function (slot, i) { var b = presses[i]; if (b) slot.set(b.x, b.y, now - b.at, b.seed); else slot.z = -1; });
@@ -472,6 +493,9 @@
     layer.uniforms.ratio.value = renderer.getPixelRatio();
     var keep = renderer.autoClear; renderer.autoClear = false;
     drawScene(layerScene, layerCamera);
+    // then the finished frame onto the screen, whole; it covers every pixel, so no clear
+    renderer.setRenderTarget(null);
+    drawScene(copyScene, layerCamera);
     renderer.autoClear = keep;
   };
   function relight() {
