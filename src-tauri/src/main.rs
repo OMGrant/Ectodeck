@@ -77,6 +77,7 @@ async fn main() {
 			frontend::devices::get_device_key_style,
 			frontend::devices::set_device_key_style,
 			frontend::devices::get_device_animated_background,
+			frontend::devices::get_device_background_settings,
 			frontend::devices::set_device_animated_background,
 			frontend::devices::save_background_page,
 			frontend::devices::set_background_preview,

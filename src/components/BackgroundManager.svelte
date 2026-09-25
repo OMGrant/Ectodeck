@@ -212,6 +212,15 @@
 	let enteringUrl = false;
 	let url = "";
 
+	// a background chosen again comes back with the settings it was left with
+	async function remembered(name: string): Promise<Record<string, unknown>> {
+		try {
+			return (await invoke<Record<string, unknown> | null>("get_device_background_settings", { device: device.id, name })) ?? {};
+		} catch {
+			return {};
+		}
+	}
+
 	async function setAnimated(value: AnimatedBackground | null) {
 		const previous = animated;
 		animated = value;
@@ -237,12 +246,12 @@
 		if (id == "none") await setAnimated(null);
 		else if (id.startsWith("builtin:")) {
 			const shader = builtinShaders.find((s) => "builtin:" + s.id == id);
-			if (shader) await setAnimated({ kind: "shader", name: shader.name, source: shader.source, params: {} });
+			if (shader) await setAnimated({ kind: "shader", name: shader.name, source: shader.source, params: await remembered(shader.name) });
 		} else if (id.startsWith("page:")) {
 			const page = builtinPages.find((p) => "page:" + p.id == id);
 			if (!page) return;
 			try {
-				await setAnimated({ kind: "web", name: page.name, url: await writeBuiltinPage(page), params: {} });
+				await setAnimated({ kind: "web", name: page.name, url: await writeBuiltinPage(page), params: await remembered(page.name) });
 			} catch (error) {
 				animationError = String(error);
 			}

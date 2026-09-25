@@ -204,6 +204,10 @@ pub struct DeviceConfig {
 	/// meaningful for devices that declare `has_background`.
 	#[serde(default)]
 	pub animated_background: Option<AnimatedBackground>,
+	/// The settings last chosen for each live background, by its name, so a
+	/// background chosen again comes back as it was left.
+	#[serde(default)]
+	pub background_settings: HashMap<String, serde_json::Map<String, serde_json::Value>>,
 }
 
 /// A background rendered live: a web page (a URL, or the path of an HTML file
@@ -289,10 +293,22 @@ impl DeviceStores {
 	pub fn set_animated_background(&mut self, device: &str, background: Option<AnimatedBackground>) -> Result<(), anyhow::Error> {
 		self.get_selected_profile(device)?;
 		if let Some(store) = self.stores.get_mut(device) {
+			// the background being replaced keeps its settings too, as does the new one
+			for bg in [&store.value.animated_background, &background] {
+				if let Some(AnimatedBackground::Web { name, params, .. } | AnimatedBackground::Shader { name, params, .. }) = bg {
+					store.value.background_settings.insert(name.clone(), params.clone());
+				}
+			}
 			store.value.animated_background = background;
 			store.save()?;
 		}
 		Ok(())
+	}
+
+	/// The settings last chosen for the live background of this name, if any.
+	pub fn get_background_settings(&mut self, device: &str, name: &str) -> Result<Option<serde_json::Map<String, serde_json::Value>>, anyhow::Error> {
+		self.get_selected_profile(device)?;
+		Ok(self.stores.get(device).and_then(|s| s.value.background_settings.get(name).cloned()))
 	}
 
 	pub fn get_selected_profile(&mut self, device: &str) -> Result<String, anyhow::Error> {
@@ -302,6 +318,7 @@ impl DeviceStores {
 				background: None,
 				key_style: KeyStyle::default(),
 				animated_background: None,
+				background_settings: HashMap::new(),
 			};
 
 			let store = Store::new(device, &config_dir().join("profiles"), default).context(format!("Failed to create store for device config {}", device))?;
@@ -332,7 +349,7 @@ impl DeviceStores {
 			store.value.selected_profile = id;
 			store.save()?;
 		} else {
-			let default = DeviceConfig { selected_profile: id, background: None, key_style: KeyStyle::default(), animated_background: None };
+			let default = DeviceConfig { selected_profile: id, background: None, key_style: KeyStyle::default(), animated_background: None, background_settings: HashMap::new() };
 
 			let store = Store::new(device, &config_dir().join("profiles"), default).context(format!("Failed to create store for device config {}", device))?;
 			store.save()?;

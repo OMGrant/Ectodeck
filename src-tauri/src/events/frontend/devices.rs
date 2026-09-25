@@ -68,6 +68,14 @@ pub async fn get_device_animated_background(device: String) -> Result<Option<Ani
 	Ok(locks.device_stores.get_animated_background(&device)?)
 }
 
+/// The settings last chosen for the live background of this name on this
+/// device, so choosing it again brings them back.
+#[command]
+pub async fn get_device_background_settings(device: String, name: String) -> Result<Option<serde_json::Map<String, serde_json::Value>>, Error> {
+	let mut locks = acquire_locks_mut().await;
+	Ok(locks.device_stores.get_background_settings(&device, &name)?)
+}
+
 /// Set or clear the live background. Passing `None` returns to the still one.
 #[command]
 pub async fn set_device_animated_background(device: String, background: Option<AnimatedBackground>) -> Result<(), Error> {
