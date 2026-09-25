@@ -50,7 +50,7 @@
 	const builtinPages: { id: string; name: string; file: string; group: Group; load: () => Promise<string> }[] = [
 		{ id: "aquarium", name: "Aquarium", file: "aquarium.html", group: "scenes", load: page("aquarium.html") },
 		{ id: "birds", name: "Birds", file: "birds.html", group: "scenes", load: page("birds.html") },
-		{ id: "sky", name: "Sky", file: "sky.html", group: "scenes", load: page("sky.html") },
+		{ id: "weather", name: "Weather", file: "weather.html", group: "scenes", load: page("weather.html") },
 		{ id: "blob", name: "Blob", file: "blob.html", group: "abstract", load: page("blob.html") },
 		{ id: "ink", name: "Ink", file: "ink.html", group: "abstract", load: page("ink.html") },
 		{ id: "milkdrop", name: "Milkdrop", file: "milkdrop.html", group: "music", load: page("milkdrop.html") },
@@ -286,6 +286,12 @@
 		background = await invoke<string | null>("get_device_background", { device: device.id });
 		keyStyle = await invoke<KeyStyle>("get_device_key_style", { device: device.id });
 		animated = await invoke<AnimatedBackground | null>("get_device_animated_background", { device: device.id });
+		// Weather took Sky's place: a deck on Sky moves to Weather's cloudy sea,
+		// which is Sky's clouds, keeping its time of day and wind
+		if (animated?.kind == "web" && animated.name == "Sky") {
+			const weather = builtinPages.find((p) => p.id == "weather")!;
+			await setAnimated({ kind: "web", name: weather.name, url: await writeBuiltinPage(weather), params: { ...(animated.params ?? {}), weather: 1 } });
+		}
 		// bring a built-in chosen under an older version up to date: a page
 		const current = animated;
 		const page = current?.kind == "web" ? builtinPages.find((p) => p.name == current.name) : undefined;

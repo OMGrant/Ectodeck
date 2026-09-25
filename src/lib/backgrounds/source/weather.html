@@ -1,0 +1,497 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Weather</title>
+<!--
+  Ectodeck's built-in Weather: Sky's sea of clouds, from Vanta (MIT, Teng
+  Bao) on three.js (MIT), in the weather you choose and lit for the time of
+  day. The weather is drawn after Apple's Weather app, in the clouds' own
+  renderer straight after them, so the deck never catches it half drawn:
+  soft rain streaks, snow, a drifting haze, lightning glowing inside the
+  clouds, and at night the stars and the moon in its real phase.
+
+  A key press does something in the weather there: a cloud puffs up, rain
+  squalls across, snow gusts out, the fog parts, lightning strikes, or at
+  night a shooting star falls.
+
+  Built by scripts/build_backgrounds.py, which inlines the libraries from
+  third_party; edit this source, not the built page.
+-->
+<script type="application/json" id="ectodeck-inputs">
+{
+  "DESCRIPTION": "Weather: Sky's sea of clouds in the weather you choose, lit for the time of day, with rain, snow, fog, lightning, and at night the stars and the moon in its real phase. A key press does something in the weather there: a cloud puffs up, rain squalls across, snow gusts out, the fog parts, lightning strikes, or at night a shooting star falls. From Vanta (MIT) on three.js (MIT).",
+  "INPUTS": [
+    { "NAME": "weather", "TYPE": "long", "LABEL": "Weather", "DEFAULT": 0, "VALUES": [0, 1, 2, 3, 4, 5], "LABELS": ["Clear", "Cloudy", "Rain", "Thunderstorm", "Snow", "Fog"], "PRESET": true },
+    { "NAME": "time", "TYPE": "long", "LABEL": "Time of day", "DEFAULT": -1, "VALUES": [-1, 0, 1, 2, 3], "LABELS": ["Automatic", "Morning", "Afternoon", "Sunset", "Night"] },
+    { "NAME": "speed", "TYPE": "float", "LABEL": "Wind", "DEFAULT": 0.8, "MIN": 0.2, "MAX": 3 }
+  ]
+}
+</script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #6a9ad6; }
+  #sky { position: fixed; inset: 0; }
+</style>
+</head>
+<body>
+<div id="sky" aria-hidden="true"></div>
+<script>/*THREE*/</script>
+<script>/*VANTA_CLOUDS*/</script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var declared = {};
+  JSON.parse(document.getElementById('ectodeck-inputs').textContent).INPUTS.forEach(function (i) { declared[i.NAME] = i.DEFAULT; });
+  var num = function (k) { return q.has(k) ? parseFloat(q.get(k)) : Number(declared[k]); };
+  // each time of day, as Sky has it: sky, clouds, their shadows, the sun, its glow and its light
+  // plus the sky's own gradient, overhead to the horizon, and the glow low around the sun
+  var TIMES = [
+    { skyTopColor: 0x3d7fd6, skyColor: 0x8fc4ee, skyHorizonColor: 0xdce9f5, skyGlowColor: 0x9a8468, cloudColor: 0xc6d8ee, cloudShadowColor: 0x5a7394, sunColor: 0xfff1d6, sunGlareColor: 0xb08a66, sunlightColor: 0xffe8c0, sunHeight: 0.35 },
+    { skyTopColor: 0x2463c8, skyColor: 0x5fa8e6, skyHorizonColor: 0xc4e2f6, skyGlowColor: 0xfff0d0, cloudColor: 0xadc1de, cloudShadowColor: 0x183550, sunColor: 0xfffaf0, sunGlareColor: 0xffd9a0, sunlightColor: 0xffe7c0, sunHeight: 0.75 },
+    { skyTopColor: 0x1d2a5e, skyColor: 0x8c5a92, skyHorizonColor: 0xff9148, skyGlowColor: 0xb8703a, cloudColor: 0xf0a888, cloudShadowColor: 0x3b2c5e, sunColor: 0xffe8a8, sunGlareColor: 0xff7a3a, sunlightColor: 0xff9a58, sunHeight: 0.03 },
+    { skyTopColor: 0x0c1230, skyColor: 0x18204a, skyHorizonColor: 0x2a3566, skyGlowColor: 0x000000, cloudColor: 0x3a4a6a, cloudShadowColor: 0x05080f, sunColor: 0x000000, sunGlareColor: 0x000000, sunlightColor: 0x9ab0e0, sunHeight: 0.5 },
+  ];
+
+  // Automatic: the time of day where the deck is, from the computer's clock.
+  // Sunrise and sunset are estimated from the date, the time zone's daylight
+  // saving and a latitude of 35 degrees (south of the equator when daylight
+  // saving falls in January), which lands within about an hour for most places.
+  function sunHours(now) {
+    var y = now.getFullYear(), jan = new Date(y, 0, 1).getTimezoneOffset(), jul = new Date(y, 6, 1).getTimezoneOffset();
+    var lat = (jan < jul ? -35 : 35) * Math.PI / 180;
+    var noon = 12 + (now.getTimezoneOffset() < Math.max(jan, jul) ? 1 : 0);
+    var day = (now - new Date(y, 0, 0)) / 864e5;
+    var decl = -23.44 * Math.PI / 180 * Math.cos(2 * Math.PI / 365 * (day + 10));
+    var cosH = (Math.sin(-0.833 * Math.PI / 180) - Math.sin(lat) * Math.sin(decl)) / (Math.cos(lat) * Math.cos(decl));
+    var half = Math.acos(Math.max(-1, Math.min(1, cosH))) * 12 / Math.PI;
+    return { now: now.getHours() + now.getMinutes() / 60, rise: noon - half, noon: noon, set: noon + half };
+  }
+  // morning, afternoon, sunset or night, by the sun
+  function clockTime() {
+    var s = sunHours(new Date());
+    if (s.now < s.rise - 0.5 || s.now >= s.set + 0.75) return 3;
+    if (s.now < s.noon - 1) return 0;
+    if (s.now >= s.set - 1.25) return 2;
+    return 1;
+  }
+  // the moon's phase today, 0 new to 0.5 full to 1 new again
+  // (a phase in the address, from 0 to 1, shows that one instead, for previews)
+  function moonPhase() {
+    if (q.has('phase')) return ((parseFloat(q.get('phase')) % 1) + 1) % 1;
+    var days = (Date.now() - Date.UTC(2000, 0, 6, 18, 14)) / 864e5;
+    return ((days / 29.530588853) % 1 + 1) % 1;
+  }
+
+  // the weather: its colours are the time of day's, greyed, darkened and
+  // cooled; the layer drawn after the clouds adds what is in the air
+  var weather = Math.round(num('weather')) % 6;
+  var mixHex = function (a, b, t) {
+    var r = ((a >> 16) & 255) * (1 - t) + ((b >> 16) & 255) * t, g = ((a >> 8) & 255) * (1 - t) + ((b >> 8) & 255) * t, bl = (a & 255) * (1 - t) + (b & 255) * t;
+    return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(bl);
+  };
+  // for each weather: toward what grey, how far, and how dark
+  var MOODS = [
+    { to: 0x000000, grey: 0, dark: 0 },          // clear
+    { to: 0x9aa4b0, grey: 0.35, dark: 0.08 },    // cloudy
+    { to: 0x5c6670, grey: 0.6, dark: 0.3 },      // rain
+    { to: 0x2a2f3c, grey: 0.72, dark: 0.55 },    // thunderstorm
+    { to: 0xc4ccd8, grey: 0.55, dark: 0.05 },    // snow
+    { to: 0xb8bec6, grey: 0.7, dark: 0.1 },      // fog
+  ];
+  // Clear has no cloud and looks up into open sky; Cloudy looks down on the
+  // sea of cloud; rain, snow and storms are seen from under the cloud, which
+  // they fall out of; fog is inside it.
+  var VIEWS = [
+    { clearing: 5, lookAt: 3.8, flip: 1, lift: 0, stretch: 1, swing: 0 },
+    { clearing: 0, lookAt: -1, flip: 1, lift: 0, stretch: 1, swing: 1 },
+    { clearing: -0.3, lookAt: -1, flip: -1, lift: 0, stretch: 1, swing: 1 },
+    { clearing: -0.4, lookAt: -1, flip: -1, lift: 0.9, stretch: 0.68, swing: 1 },
+    { clearing: -0.2, lookAt: -1, flip: -1, lift: 0, stretch: 1, swing: 1 },
+    { clearing: -1.2, lookAt: -1, flip: 1, lift: 0, stretch: 1, swing: 1 },
+  ];
+  var under = function () { return VIEWS[weather].flip < 0; };
+  function look(timeIndex) {
+    var base = TIMES[timeIndex], m = MOODS[weather], out = {};
+    Object.keys(base).forEach(function (k) {
+      if (typeof base[k] !== 'number' || !/Color$/.test(k)) return;
+      var c = m.grey ? mixHex(base[k], m.to, k === 'sunColor' || k === 'sunGlareColor' ? m.grey * 0.8 : m.grey) : base[k];
+      out[k] = mixHex(c, 0x000000, m.dark * (timeIndex === 3 ? 0.4 : 1));
+    });
+    // the renderer's clear colour follows the sky: Vanta's default is white
+    out.backgroundColor = out.skyColor;
+    out.sunHeight = base.sunHeight;
+    if (weather === 4) ['cloudColor', 'sunlightColor', 'sunGlareColor', 'sunColor'].forEach(function (k) { out[k] = mixHex(mixHex(out[k], 0xcbd3de, 0.6), 0x000000, 0.14); });
+    else if (VIEWS[weather].flip < 0) ['cloudColor', 'sunlightColor', 'sunGlareColor', 'sunColor'].forEach(function (k) { out[k] = mixHex(mixHex(out[k], 0x8a929c, 0.4), 0x000000, 0.35); });
+    if (weather === 3 && timeIndex === 3) Object.keys(out).forEach(function (k) { if (/Color$/.test(k)) out[k] = mixHex(mixHex(out[k], 0x1c2840, 0.5), 0x000000, 0.12); });
+    Object.assign(out, VIEWS[weather]);
+    // a clear sunset keeps the horizon in view, for the sun to set on
+    if (weather === 0 && timeIndex === 2) Object.assign(out, { lookAt: 2.4, sunHeight: 0.045, skyHorizonColor: 0xffa644, skyColor: 0xe8683a, skyTopColor: 0x4a3868, skyGlowColor: 0x8a4418 });
+    // and a clear morning's sun is up in the sky, not on the edge of the view
+    if (weather === 0 && timeIndex === 0) out.sunHeight = 0.6;
+    // a clear day's sun and its round halo are drawn by the layer above; Sky's
+    // own glow lies in a band along the horizon and would stretch it sideways
+    if (weather === 0 && timeIndex < 2) out.skyGlowColor = 0x000000;
+    return out;
+  }
+  // how fast the clouds go: Sky's clock already runs at this speed and the
+  // clouds move by it again, so it is felt squared. Seen from under the
+  // cloud they are nearer, so they go slower to look as calm as Sky's
+  var pace = function () { return base * [1, 1, 0.62, 0.55, 0.6, 1][weather]; };
+  var timeSetting = Math.round(num('time'));
+  var time = timeSetting < 0 ? clockTime() : timeSetting % 4, base = num('speed');
+  // drawn at full resolution: Sky's default of a third keeps the soft clouds
+  // cheap, but the sun, moon and stars drawn with them would be pixelated
+  var effect = VANTA.CLOUDS(Object.assign({ el: '#sky', THREE: THREE, mouseControls: false, touchControls: false, gyroControls: false, scale: 1, scaleMobile: 1, speed: pace() }, look(time)));
+
+  // Sky's clouds, taught four things: a sky that is a gradient rather than
+  // one colour, a sun at its own height with a disc, air that can be clear of
+  // cloud, and a view from under the cloud as well as over it
+  var cloudMesh = effect.scene.children.filter(function (o) { return o.material && o.material.fragmentShader; })[0];
+  var edits = [
+    ['uniform vec3 backgroundColor;', 'uniform vec3 backgroundColor;\nuniform vec3 skyTopColor;\nuniform vec3 skyHorizonColor;\nuniform vec3 skyGlowColor;\nuniform float clearing;\nuniform float lookAt;\nuniform float flip;\nuniform float sunHeight;\nuniform float lift;\nuniform float stretch;\nuniform float swing;'],
+    ['vec4 col = vec4( mix( vec3(1.0,0.95,0.8), cloudShadowColor, den ), den );', 'vec4 col = vec4( mix( mix(vec3(1.0,0.95,0.8), vec3(0.86,0.9,0.98), step(flip, 0.0)), cloudShadowColor, den ), den );'],
+    [/return clamp\( 1\.5 - p\.y - 2\.0 \+ 1\.75\*f, 0\.0, 1\.0 \);/g, 'return clamp( 1.5 - p.y - 2.0 + 1.75*f - clearing, 0.0, 1.0 );'],
+    [/vec3 q = p - speed1\*\(iTime \+ constantTime\);/g, 'vec3 q = p * vec3(stretch, 1.0, stretch) - speed1*(iTime + constantTime);'],
+    ['vec3 sundir = normalize( vec3(-1.0,0.0,-1.0) );', '#define sundir normalize(vec3(-1.0, sunHeight, -1.0))'],
+    ['vec3 col = skyColor - rd.y*0.2*vec3(1.0,0.5,1.0) + 0.15*0.5;',
+     'float up = rd.y * flip;\n    vec3 col = mix(skyHorizonColor, skyColor, smoothstep(-0.03, 0.22, up));\n    col = mix(col, skyTopColor, smoothstep(0.2, 0.75, up));\n    col = mix(col, skyHorizonColor * 0.6 + skyTopColor * 0.25, smoothstep(0.0, -0.45, up));\n    col += skyGlowColor * (0.3 * pow(sun, 16.0) + 0.14 * pow(sun, 4.0)) * (1.0 - smoothstep(0.0, 0.35, abs(up - sundir.y)));'],
+    ['col += 0.2*sunColor*pow( sun, 8.0 );', 'float ownSun = (1.0 - step(2.0, clearing)) * step(0.0, flip);\n    col += (0.3*sunColor*pow( sun, 120.0 ) + 0.12*sunGlareColor*pow( sun, 14.0 )) * ownSun;'],
+    ['col += 0.2*sunGlareColor*pow( sun, 3.0 );',
+     'col += (0.08*sunGlareColor*pow( sun, 30.0 ) + (sunColor * 1.6 * smoothstep(0.99955, 0.9998, sun) + sunColor * 0.45 * pow(sun, 400.0)) * (1.0 - res.w)) * ownSun;'],
+    // Sky's camera swings slowly side to side to show off its clouds; with a clear
+    // sky there is nothing to show, and the sun would only crawl along the horizon
+    ['m.x += sin(iTime * 0.1 + 3.1415) * 0.25 + 0.25;', 'm.x += mix(0.137, sin(iTime * 0.1 + 3.1415) * 0.25 + 0.25, swing);'],
+    ['vec3 ta = vec3(0.0, -1.0, 0.0);', 'ro.y += lift;\n    vec3 ta = vec3(0.0, lookAt, 0.0);'],
+    ['vec2 p = (-iResolution.xy + 2.0*gl_FragCoord.xy)/ iResolution.y;', 'vec2 p = (-iResolution.xy + 2.0*gl_FragCoord.xy)/ iResolution.y;\n    p.y *= flip;'],
+  ];
+  var src = cloudMesh.material.fragmentShader;
+  edits.forEach(function (e) { var was = src; src = src.replace(e[0], e[1]); if (src === was) console.error('weather: Sky shader edit did not apply', String(e[0])); });
+  cloudMesh.material.fragmentShader = src;
+  cloudMesh.material.needsUpdate = true;
+
+  // ---- the weather in the air, drawn by the clouds' renderer straight after
+  // them (one canvas, so the deck never catches it half drawn)
+  var presses = [];
+  window.addEventListener('ectodeck:press', function (e) {
+    if (e.detail.down) { presses.unshift({ x: e.detail.x, y: 1 - e.detail.y, at: performance.now() / 1000, seed: Math.random() * 100 }); presses.length = Math.min(presses.length, 8); }
+  });
+  // the full moon, photographed by NASA's Goddard Space Flight Center (public domain)
+  var moonMap = new THREE.TextureLoader().load('ectodeck-asset:weather/moon.webp');
+  var slots = []; for (var si = 0; si < 8; si++) slots.push(new THREE.Vector4(0, 0, -1, 0));
+  var layer = new THREE.ShaderMaterial({
+    uniforms: {
+      t: { value: 0 }, weather: { value: weather }, night: { value: time === 3 ? 1 : 0 }, size: { value: new THREE.Vector2(innerWidth, innerHeight) }, ratio: { value: 1 },
+      presses: { value: slots }, wind: { value: base }, phase: { value: moonPhase() }, cloudLight: { value: new THREE.Color(look(time).cloudColor) },
+      moon: { value: moonMap }, under: { value: under() ? 1 : 0 },
+      skyTime: { value: 0 }, skyMouse: { value: new THREE.Vector2(0.5, 0.5) }, swing: { value: look(time).swing }, lookAt: { value: look(time).lookAt }, sunHeight: { value: look(time).sunHeight },
+      sunColor: { value: new THREE.Color(look(time).sunColor) }, dusk: { value: time === 2 ? 1 : 0 },
+    },
+    vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: [
+      'uniform float t; uniform int weather; uniform float night; uniform vec2 size; uniform float ratio; uniform vec4 presses[8]; uniform float wind; uniform float phase; uniform vec3 cloudLight; uniform sampler2D moon; uniform float under;',
+      'uniform float skyTime; uniform vec2 skyMouse; uniform float swing; uniform float lookAt; uniform float sunHeight; uniform vec3 sunColor; uniform float dusk;',
+      'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+      'float noise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y); }',
+      'float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + 17.1; a *= 0.5; } return v; }',
+      // lays a colour over what the layer holds so far, as much as a covers
+      'void put(inout vec4 acc, vec3 c, float a) { acc = vec4(c * a, a) + acc * (1.0 - a); }',
+      'void main() {',
+      '  vec2 uv = gl_FragCoord.xy / ratio / size; float aspect = size.x / size.y; vec2 p = vec2(uv.x * aspect, uv.y);',
+      '  vec3 add = vec3(0.0); vec4 acc = vec4(0.0);',
+      '  float dim = 1.0 - 0.7 * night;',
+      // a clear sky's sun, drawn sharp at full size where Sky's camera sees it
+      '  if (weather == 0 && night < 0.5) {',
+      '    float mx = skyMouse.x * 0.25 + mix(0.137, sin(skyTime * 0.1 + 3.1415) * 0.25 + 0.25, swing), my = (1.0 - skyMouse.y) * 0.33 + 0.28;',
+      '    vec3 ro = 4.0 * normalize(vec3(sin(3.0 * mx), 0.4 * my, cos(3.0 * mx)));',
+      '    vec3 cw = normalize(vec3(0.0, lookAt, 0.0) - ro), cu = normalize(cross(cw, vec3(0.0, 1.0, 0.0))), cv = normalize(cross(cu, cw));',
+      '    vec3 sd = normalize(vec3(-1.0, sunHeight, -1.0));',
+      '    vec3 local = vec3(dot(sd, cu), dot(sd, cv), dot(sd, cw));',
+      '    vec2 q = (uv * 2.0 - 1.0) * vec2(aspect, 1.0);',
+      // how far above the horizon this pixel looks
+      '    float up = normalize(cu * q.x + cv * q.y + cw * 1.5).y;',
+      '    if (local.z > 0.0) {',
+      '      vec2 sp = local.xy / local.z * 1.5;',
+      '      vec2 dv = q - sp; float d = length(dv), px = 2.0 / size.y;',
+      '      if (dusk < 0.5) {',
+      // by day: a small white-hot disc, a tight inner glow, a wide soft halo, and a
+      // starburst of fine rays of uneven length, as a camera sees the sun
+      // by day: a big white-hot disc in a bright glow that fades wide into the sky
+      '        float r = 0.24, k = 0.6;',
+      // the disc laid on solid, pale yellow brightest at its middle; added light
+      // over a blue sky would only turn white
+      '        float disc = smoothstep(r + px * 2.0, r - px * 2.0, d);',
+      // its glow scaled with it, so it keeps the look it had when it was smaller
+      '        float halo = exp(-max(d - r, 0.0) * 17.0 * k) * 0.5;',
+      '        put(acc, vec3(1.0, 0.86, 0.5), halo * (1.0 - disc));',
+      // evenly bright across most of its face, deepening only near the rim
+      '        put(acc, mix(vec3(1.0, 0.99, 0.9), vec3(1.0, 0.94, 0.68), pow(clamp(d / r, 0.0, 1.0), 9.0)), disc);',
+      '        add += vec3(1.0, 0.9, 0.5) * disc * 0.08;',
+      '        add += vec3(1.0, 0.84, 0.46) * (exp(-max(d - r, 0.0) * 3.0 * k) * 0.2 + exp(-max(d - r, 0.0) * 12.0 * k) * 0.18);',
+      '        add += vec3(1.0, 0.88, 0.62) * (exp(-d * 1.4) * 0.12 + exp(-d * 0.6) * 0.05) * (1.0 - disc);',
+      '      } else {',
+      // at sunset, as photographs show it: a big bright disc, pale gold and almost
+      // white, the brightest thing in view, resting on the horizon with its lower
+      // edge sinking behind the land; warm light spread along
+      // the horizon; streaks of cloud lit gold and orange; the land a silhouette
+      '        float r = 0.3;',
+      '        float ridge = (noise(vec2(p.x * 2.5, 1.0)) - 0.5) * 0.02 + (noise(vec2(p.x * 9.0, 4.0)) - 0.5) * 0.006;',
+      '        float land = smoothstep(ridge + 0.0015, ridge - 0.0015, up);',
+      '        float sky = 1.0 - land * 0.85;',
+      '        vec2 w = vec2(p.x * 0.8 - t * 0.005 * wind, uv.y * 8.5);',
+      '        float warp = fbm(w * vec2(0.45, 1.0) + vec2(3.0, t * 0.01));',
+      '        float n = fbm(w + vec2(warp * 1.6, 0.0));',
+      '        float below = fbm(w + vec2(warp * 1.6, -0.22));',
+      '        float streak = smoothstep(0.47, 0.68, n) * smoothstep(0.3, 0.5, uv.y) * (1.0 - smoothstep(0.85, 1.0, uv.y));',
+      '        vec3 lit = mix(vec3(1.0, 0.72, 0.36), vec3(0.95, 0.5, 0.42), smoothstep(0.35, 0.8, uv.y));',
+      '        lit += vec3(1.0, 0.7, 0.35) * exp(-d * 2.2) * 0.3;',
+      '        vec3 sc = mix(lit, vec3(0.42, 0.24, 0.3), smoothstep(0.0, 0.18, below - n) * 0.75);',
+      '        put(acc, sc, streak * 0.8);',
+      '        add += vec3(1.0, 0.62, 0.28) * exp(-abs(up) * 60.0) * exp(-abs(dv.x) * 0.9) * 0.3 * mix(1.0, sky, 0.6);',
+      '        float disc = smoothstep(r + px * 3.5, r - px * 3.5, d);',
+      '        add += vec3(1.0, 0.72, 0.36) * exp(-max(d - r, 0.0) * 13.0) * 0.32 * (1.0 - disc) * (1.0 - land);',
+      '        put(acc, vec3(1.0, 0.92, 0.6), disc);',
+      '        add += vec3(1.0, 0.92, 0.6) * disc * 0.25 * (1.0 - land);',
+      // the land: a low line of hills, dark against the glow, faintly lit near the horizon
+      '        vec3 ground = mix(vec3(0.07, 0.04, 0.05), vec3(0.3, 0.14, 0.08), exp((up - ridge) * 45.0));',
+      '        put(acc, ground, land);',
+      '      }',
+      '    }',
+      '  }',
+      // night, after Apple Weather's: a navy sky full of fine stars, faint wisps
+      // drifting through it, and the moon photographed, high up, glowing softly,
+      // in today's phase. A clear night is all sky; over the cloud only the strip
+      // above it shows; under the cloud there is none
+      '  if (night > 0.5 && (weather == 0 || weather == 1)) {',
+      '    float clearSky = weather == 0 ? 1.0 : 0.0;',
+      '    float open = mix(smoothstep(0.88, 0.95, uv.y), smoothstep(0.0, 0.25, uv.y), clearSky);',
+      '    vec2 mc = vec2(0.2 * aspect, mix(0.935, 0.77, clearSky)); float mr = mix(0.05, 0.15, clearSky);',
+      '    float behind = smoothstep(mr * 0.98, mr * 1.02, length(p - mc));',
+      '    for (int l = 0; l < 3; l++) {',
+      '      float fl = float(l), sc = 60.0 + fl * 55.0; vec2 g = p * sc; vec2 cell = floor(g); float r = hash(cell + fl * 13.0);',
+      '      vec2 o = vec2(hash(cell + 3.1), hash(cell + 7.7)) * 0.7 + 0.15;',
+      '      float tw = 0.7 + 0.3 * sin(t * (0.8 + r * 2.5) + r * 40.0);',
+      '      float size = 0.06 + 0.07 * hash(cell + 2.4) * (1.0 - fl * 0.3);',
+      '      add += mix(vec3(1.0, 0.92, 0.84), vec3(0.82, 0.88, 1.0), hash(cell + 5.5)) * step(0.88, r) * smoothstep(size, 0.0, length(fract(g) - o)) * tw * (0.3 + 0.7 * pow(hash(cell + 1.3), 2.0)) * open * behind;',
+      '    }',
+      '    if (clearSky > 0.5) {',
+      '      vec2 w = vec2(p.x * 0.8 - t * 0.004 * wind, uv.y * 3.2);',
+      '      float n = fbm(w + vec2(fbm(w * vec2(0.4, 1.0) + 7.0) * 1.8, 0.0));',
+      '      put(acc, vec3(0.3, 0.32, 0.52), smoothstep(0.5, 0.75, n) * smoothstep(0.2, 0.5, uv.y) * 0.2);',
+      '    }',
+      '    vec2 m = (p - mc) / mr; float md = length(p - mc);',
+      '    float full = 0.35 + 0.65 * sin(phase * 3.14159);',
+      '    float outside = smoothstep(mr * 0.85, mr * 1.0, md);',
+      // the glow comes from the lit part: all round at full, from the bright edge of a crescent
+      '    float sunSide = sin(phase * 6.28318);',
+      '    float glowSide = mix(1.0, smoothstep(-0.7, 0.9, dot((p - mc) / max(md, 1e-4), vec2(sunSide > 0.0 ? 1.0 : -1.0, 0.0))), abs(sunSide));',
+      '    add += vec3(0.6, 0.68, 0.95) * (exp(-max(md - mr, 0.0) * 14.0) * 0.22 + exp(-max(md - mr, 0.0) * 3.5) * 0.08 + exp(-md * 1.2) * 0.04) * full * outside * glowSide;',
+      '    if (dot(m, m) < 1.1) {',
+      '      float px = 1.5 / (mr * size.y);',
+      '      float edge = smoothstep(1.0 + px * 1.5, 1.0 - px * 1.5, length(m));',
+      '      vec3 photo = texture2D(moon, m * 0.47 + 0.5).rgb;',
+      '      vec3 nrm = vec3(m, sqrt(max(1.0 - dot(m, m), 0.0)));',
+      '      float a = phase * 6.28318;',
+      '      float lit = smoothstep(-0.06, 0.08, dot(nrm, vec3(sin(a), 0.0, -cos(a))));',
+      // seen through the air: its light is added to the sky rather than laid over it,
+      // the sky's blue showing across it and filling its dark side; only the stars
+      // behind it are hidden
+      '      float luma = dot(photo, vec3(0.3, 0.59, 0.11));',
+      '      vec3 face = mix(photo, vec3(luma), 0.15) * vec3(0.9, 0.94, 1.04) * lit * 1.05 * (1.0 + 0.12 * smoothstep(0.75, 1.0, length(m)));',
+      // the dark part still faintly there in earthshine, so the phase reads as the moon's shape
+      '      vec3 dim = mix(photo, vec3(luma), 0.4) * vec3(0.55, 0.62, 0.85) * 0.09 * (1.0 - lit);',
+      '      add += (face + dim) * edge;',
+      '      put(acc, vec3(0.0), edge * 0.3 * smoothstep(1.0, 0.8, length(m)));',
+      '    }',
+      '  }',
+      // cloudy: high wisps drifting over, in the strip of sky above the cloud
+      '  if (weather == 1) {',
+      '    float w = fbm(vec2(p.x * 2.2 + t * 0.03 * wind, p.y * 7.0 + t * 0.01)) * fbm(vec2(p.x * 5.0 - t * 0.02 * wind, p.y * 12.0));',
+      '    float wisp = smoothstep(0.18, 0.42, w) * smoothstep(0.45, 0.8, uv.y);',
+      '    vec3 wc = mix(vec3(0.95, 0.96, 1.0), vec3(0.35, 0.38, 0.45), float(weather >= 2) * 0.7) * dim;',
+      '    float wa = wisp * (weather == 1 ? 0.55 : 0.75);',
+      '    put(acc, wc, wa);',
+      '  }',
+      // rain: soft slanting streaks of every length, falling past at three depths
+      '  float lum = 0.35 + 0.65 * dot(cloudLight, vec3(0.33));',
+      '  if (weather == 2 || weather == 3) {',
+      '    float rain = weather == 3 ? 1.3 : 1.0;',
+      '    for (int l = 0; l < 3; l++) {',
+      '      float fl = float(l);',
+      '      float slant = 0.12 + 0.12 * wind;',
+      '      vec2 rq = vec2((p.x + uv.y * slant) * (70.0 - fl * 18.0), uv.y * (7.0 - fl * 1.8) + t * (13.0 - fl * 3.0));',
+      '      vec2 cell = floor(rq); float r = hash(cell + fl * 11.0);',
+      '      float y0 = hash(cell + 5.0 + fl) * 0.5, len = 0.22 + 0.3 * hash(cell + 2.2);',
+      '      float fy = fract(rq.y) - y0;',
+      '      float xoff = fract(rq.x) - 0.5 - (hash(cell + 9.0) - 0.5) * 0.7;',
+      '      float streak = step(1.0 - 0.3 * rain, r) * smoothstep(0.12 + fl * 0.04, 0.0, abs(xoff)) * smoothstep(0.0, len * 0.6, fy) * smoothstep(len, len * 0.7, fy);',
+      '      add += vec3(0.85, 0.9, 1.0) * streak * (0.07 + 0.06 * fl) * (0.6 + 0.4 * hash(cell + 4.4)) * lum;',
+      '    }',
+      '  }',
+      // snow: flakes drifting down, the near ones big and soft
+      '  if (weather == 4) {',
+      '    for (int l = 0; l < 4; l++) {',
+      '      float fl = float(l), sc = 26.0 - fl * 5.0;',
+      '      vec2 sq = vec2(p.x * sc + sin(t * 0.4 + fl * 2.0 + uv.y * 3.0) * 0.8 * wind - t * 0.3 * wind, uv.y * sc + t * (0.9 + fl * 0.45));',
+      '      vec2 cell = floor(sq), f = fract(sq) - 0.5; float r = hash(cell + fl * 7.0);',
+      '      vec2 o = vec2(hash(cell + 1.7) - 0.5, hash(cell + 2.9) - 0.5) * 0.5 + vec2(sin(t * 1.1 + r * 30.0), cos(t * 0.9 + r * 20.0)) * 0.12;',
+      '      float rad = 0.05 + fl * 0.03, soft = 0.25 + fl * 0.22;',
+      '      add += vec3(1.0) * step(0.7 + fl * 0.06, r) * smoothstep(rad, rad * (1.0 - soft) * 0.4, length(f - o)) * (0.75 - fl * 0.12) * lum;',
+      '    }',
+      '  }',
+      // storms: lightning glowing inside the clouds, now and then, flickering as it dies
+      '  float glow = 0.0;',
+      '  if (weather == 3) {',
+      '    float n = floor(t / 3.7), at = fract(t / 3.7) * 3.7;',
+      '    if (hash(vec2(n, 3.0)) > 0.3) {',
+      '      float a = at - hash(vec2(n, 4.0)) * 1.5;',
+      '      if (a > 0.0) {',
+      '        float f = exp(-a * 5.0) * (0.55 + 0.45 * step(0.5, fract(a * 11.0))) + 0.6 * exp(-max(a - 0.18, 0.0) * 9.0) * step(0.18, a);',
+      // in the cloud overhead
+      '        vec2 c = vec2((0.15 + 0.7 * hash(vec2(n, 1.0))) * aspect, 0.5 + 0.35 * hash(vec2(n, 2.0)));',
+      '        float billow = smoothstep(0.25, 0.75, fbm(vec2(p.x * 3.0 + n * 7.0, uv.y * 5.0)));',
+      '        glow += f * (exp(-length((p - c) * vec2(0.8, 1.6)) * 2.2) * (0.5 + 1.2 * billow) + 0.12);',
+      '      }',
+      '    }',
+      '  }',
+      // ---- presses
+      '  float part = 0.0;',
+      '  for (int i = 0; i < 8; i++) {',
+      '    vec4 k = presses[i]; if (k.z < 0.0) continue;',
+      '    vec2 kp = vec2(k.x * aspect, k.y); float age = k.z; vec2 d = p - kp;',
+      // a storm: lightning flares in the cloud at the key, and a bolt strikes down to it
+      '    if (weather == 3 && age < 0.9) {',
+      '      float flick = 0.55 + 0.45 * step(0.5, fract(age * 16.0));',
+      '      float billow = smoothstep(0.2, 0.75, fbm(vec2(p.x * 3.2 + k.w, uv.y * 5.5 - age)));',
+      '      glow += (1.0 - smoothstep(0.0, 0.9, age)) * flick * (exp(-length(d * vec2(0.6, 1.3)) * 3.2) * (0.4 + 1.5 * billow) + 0.12);',
+      '      if (uv.y > kp.y && age < 0.35) {',
+      '        float jag = kp.x + (noise(vec2(uv.y * 9.0, k.w)) - 0.5) * 0.12 + (noise(vec2(uv.y * 40.0, k.w + 3.0)) - 0.5) * 0.03;',
+      '        float dx = abs(p.x - jag), life = (1.0 - age / 0.35) * (0.6 + 0.4 * step(0.5, fract(age * 18.0)));',
+      '        add += vec3(0.88, 0.92, 1.0) * (exp(-dx * 500.0) * 1.6 + exp(-dx * 40.0) * 0.25) * life;',
+      '      }',
+      '    }',
+      // clear and cloudy days: a soft cloud puffs up at the key, rises and thins away
+      '    if ((weather == 0 || weather == 1) && night < 0.5 && age < 5.0) {',
+      '      float grow = 1.0 - exp(-age * 2.5), rad = 0.1 + 0.14 * grow;',
+      '      vec2 c = kp + vec2(age * 0.015 * wind, age * 0.018);',
+      '      vec2 r = (p - c) / rad; r.y *= 1.35;',
+      '      float lumps = fbm(r * 1.3 + k.w + vec2(t * 0.15, 0.0));',
+      '      float body = smoothstep(1.15, 0.55, length(r) + (0.5 - lumps) * 0.9);',
+      '      float fade = smoothstep(0.0, 0.3, age) * (1.0 - smoothstep(2.0, 5.0, age));',
+      '      float thin = smoothstep(0.35 + 0.4 * smoothstep(2.0, 5.0, age), 0.8, lumps + body * 0.4);',
+      '      float a = body * thin * fade * 0.95;',
+      // lit from above, shadowed underneath, in the clouds' own light
+      '      vec3 pc = mix(mix(cloudLight * 0.7, vec3(0.55, 0.47, 0.66), dusk), mix(vec3(1.0, 0.99, 0.97), vec3(1.0, 0.76, 0.7), dusk), smoothstep(-0.8, 0.9, r.y + lumps * 0.8));',
+      '      put(acc, pc, a);',
+      '    }',
+      // night (clear or cloudy): a shooting star falls from the key
+      '    if ((weather == 0 || weather == 1) && night > 0.5 && age < 1.2) {',
+      '      vec2 dir = normalize(vec2(fract(k.w) > 0.5 ? 1.0 : -1.0, -0.45));',
+      '      vec2 head = kp + dir * age * 0.7;',
+      '      vec2 r = p - head; float along = dot(r, -dir), across = abs(dot(r, vec2(-dir.y, dir.x)));',
+      '      float trail = step(0.0, along) * exp(-along * 7.0) * exp(-across * 700.0);',
+      '      float life = smoothstep(0.0, 0.1, age) * (1.0 - smoothstep(0.7, 1.2, age));',
+      '      add += vec3(0.95, 0.97, 1.0) * (trail * 1.4 + exp(-length(r) * 90.0) * 1.2) * life;',
+      '    }',
+      // rain: drops splash onto the glass at the key, bead up catching the light,
+      // then run down the glass one by one, leaving wet trails, and dry away
+      '    if (weather == 2 && age < 6.0) {',
+      '      for (int j = 0; j < 18; j++) {',
+      '        float fj = float(j), h1 = hash(vec2(k.w, fj)), h2 = hash(vec2(fj, k.w + 5.0)), h3 = hash(vec2(fj + 9.0, k.w));',
+      '        vec2 start = kp + (vec2(h1, h2) - 0.5) * vec2(0.26, 0.2);',
+      '        float rad = 0.014 + 0.032 * h3 * h3;',
+      '        float wait = 0.25 + 1.6 * h2, run = max(age - wait, 0.0);',
+      '        vec2 c = start - vec2(sin(run * 3.0 + fj) * 0.004, run * run * (0.03 + 0.07 * h3));',
+      '        float life = smoothstep(0.0, 0.07, age) * (1.0 - smoothstep(4.0, 6.0, age));',
+      '        vec2 dq = (p - c) / vec2(1.0, 1.0 + 0.25 * smoothstep(0.0, 0.4, run));',
+      '        float dd = length(dq);',
+      '        float body = smoothstep(rad, rad * 0.82, dd);',
+      '        float rim = body - smoothstep(rad * 0.86, rad * 0.55, dd);',
+      '        float shine = exp(-length(dq - vec2(-0.32, 0.36) * rad) / (rad * 0.16));',
+      '        float trail = step(c.y, p.y) * step(p.y, start.y) * smoothstep(rad * 0.45, rad * 0.1, abs(p.x - c.x - sin((p.y - start.y) * 60.0 + fj) * 0.003)) * smoothstep(0.0, 0.3, run);',
+      // mostly clear: a thin dark edge high up, the sky's light bent into a bright
+      // crescent low in the drop, and a small glint on top
+      '        float crescent = body * smoothstep(0.1, 0.85, -dq.y / rad) * smoothstep(1.0, 0.6, dd / rad);',
+      '        float edgeTop = rim * smoothstep(-0.3, 0.6, dq.y / rad);',
+      '        put(acc, vec3(0.0), edgeTop * 0.3 * life);',
+      '        add += (cloudLight * crescent * 0.35 + vec3(1.0) * shine * 0.8 * body + cloudLight * body * 0.05 + cloudLight * trail * 0.08) * life * lum;',
+      '      }',
+      '    }',
+      // snow: a gust sweeping out of the key with the wind, each flake at its
+      // own speed and height, so it scatters rather than rings
+      '    if (weather == 4 && age < 2.2) {',
+      '      for (int j = 0; j < 22; j++) {',
+      '        float fj = float(j), h1 = hash(vec2(k.w, fj)), h2 = hash(vec2(fj, k.w + 2.0)), h3 = hash(vec2(fj + 5.0, k.w));',
+      '        float a = (h1 - 0.5) * 1.6 + 0.15, v = 0.08 + 0.28 * h2, go = age * (1.0 - 0.25 * age / 2.2);',
+      '        vec2 at = kp + vec2((h3 - 0.5) * 0.06, (h1 - 0.5) * 0.08) + vec2(cos(a), sin(a) * 0.6) * v * go + vec2(sin(age * 3.0 + fj) * 0.01, -age * age * 0.04);',
+      '        add += vec3(0.95, 0.97, 1.0) * smoothstep(0.011, 0.002, length(p - at)) * 0.85 * smoothstep(0.0, 0.1, age) * (1.0 - smoothstep(1.2, 2.2, age)) * (0.5 + 0.5 * h3) * lum;',
+      '      }',
+      '    }',
+      // fog: it parts around the key, then closes again
+      '    if (weather == 5 && age < 6.0) {',
+      '      float open = smoothstep(0.0, 0.8, age) * (1.0 - smoothstep(2.5, 6.0, age));',
+      '      float rr = 0.16 + 0.22 * smoothstep(0.0, 2.0, age);',
+      '      part = max(part, open * smoothstep(rr, rr * 0.3, length(d * vec2(1.0, 1.4)) + (fbm(p * 7.0 + k.w) - 0.5) * 0.08));',
+      '    }',
+      '  }',
+      // fog: inside the cloud, everything softened into haze that moves, thinner where a key parted it
+      '  if (weather == 5) {',
+      '    float h = 0.55 + 0.3 * fbm(vec2(p.x * 1.4 + t * 0.04 * wind, uv.y * 2.5 + t * 0.02));',
+      '    float fa = h * 0.85 * (1.0 - part);',
+      '    put(acc, mix(vec3(0.9, 0.92, 0.95), vec3(0.2, 0.22, 0.28), night), fa);',
+      '  }',
+      '  vec3 light = vec3(0.8, 0.85, 1.0) * glow;',
+      '  gl_FragColor = vec4(acc.rgb + add + light + (hash(gl_FragCoord.xy) - 0.5) / 255.0, acc.a);',
+      '}'
+    ].join('\n'),
+    // the layer's own colour is added; its cover veils what is behind
+    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    depthTest: false, depthWrite: false, transparent: true
+  });
+  var layerScene = new THREE.Scene(), layerCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  layerScene.add(new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), layer));
+  var renderer = effect.renderer, drawScene = renderer.render.bind(renderer);
+  renderer.render = function (scene, camera) {
+    drawScene(scene, camera);
+    var now = performance.now() / 1000;
+    slots.forEach(function (slot, i) { var b = presses[i]; if (b) slot.set(b.x, b.y, now - b.at, b.seed); else slot.z = -1; });
+    layer.uniforms.t.value = now;
+    layer.uniforms.skyTime.value = effect.uniforms.iTime.value;
+    var res = effect.uniforms.iResolution.value, mouse = effect.uniforms.iMouse.value;
+    if (res.x > 0) layer.uniforms.skyMouse.value.set(mouse.x / res.x, mouse.y / res.y);
+    layer.uniforms.size.value.set(innerWidth, innerHeight);
+    layer.uniforms.ratio.value = renderer.getPixelRatio();
+    var keep = renderer.autoClear; renderer.autoClear = false;
+    drawScene(layerScene, layerCamera);
+    renderer.autoClear = keep;
+  };
+  function relight() {
+    var l = look(time);
+    effect.setOptions(Object.assign(l, { speed: pace() }));
+    layer.uniforms.night.value = time === 3 ? 1 : 0;
+    layer.uniforms.weather.value = weather;
+    layer.uniforms.cloudLight.value.set(l.cloudColor);
+    layer.uniforms.under.value = under() ? 1 : 0;
+    layer.uniforms.lookAt.value = l.lookAt; layer.uniforms.swing.value = l.swing; layer.uniforms.sunHeight.value = l.sunHeight;
+    layer.uniforms.sunColor.value.set(l.sunColor); layer.uniforms.dusk.value = time === 2 ? 1 : 0;
+  }
+
+  // a new weather, time of day or wind arrives in place, so the clouds keep
+  // drifting; any other setting starts the page again with the new address
+  var startQuery = location.search;
+  window.addEventListener('ectodeck:params', function (e) {
+    var p = e.detail, now = new URLSearchParams(location.search), was = new URLSearchParams(startQuery);
+    var keys = Array.from(now.keys()).concat(Array.from(was.keys()));
+    for (var i = 0; i < keys.length; i++) if (['time', 'speed', 'weather'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
+    if (p.time !== undefined) { timeSetting = Math.round(p.time); time = timeSetting < 0 ? clockTime() : timeSetting % 4; }
+    if (p.speed !== undefined) { base = Number(p.speed); layer.uniforms.wind.value = base; }
+    if (p.weather !== undefined) weather = Math.round(p.weather) % 6;
+    relight();
+  });
+  setInterval(function () {
+    layer.uniforms.phase.value = moonPhase();
+    if (timeSetting < 0 && clockTime() !== time) { time = clockTime(); relight(); }
+  }, 60000);
+})();
+</script>
+</body>
+</html>
