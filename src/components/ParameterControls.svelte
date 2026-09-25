@@ -5,6 +5,7 @@
 	import { defaultValue, fromHex, toHex } from "$lib/isf";
 	import ChoiceMenu from "./ChoiceMenu.svelte";
 	import { createEventDispatcher } from "svelte";
+	import PlacePicker from "./PlacePicker.svelte";
 
 	export let inputs: IsfInput[];
 	export let values: Record<string, unknown>;
@@ -50,6 +51,20 @@
 			<span class="text-neutral-300">{label(input)}</span>
 			<input type="checkbox" role="switch" class="switch" checked={!!value(input)} on:change={(e) => set(input.NAME, e.currentTarget.checked)} />
 		</label>
+	{:else if input.TYPE == "place"}
+		<div class="insp-row">
+			<span class="lb {labelWidth}">{label(input)}</span>
+			<div class="flex-1 min-w-0">
+				<PlacePicker
+					label={label(input)}
+					value={String(value(input) ?? "")}
+					on:choose={(e) => {
+						values = { ...values, [input.NAME]: e.detail.name, [input.NAME + "At"]: e.detail.at };
+						dispatch("change", values);
+					}}
+				/>
+			</div>
+		</div>
 	{:else}
 		<div class="insp-row">
 			<span class="lb {labelWidth}">{label(input)}</span>

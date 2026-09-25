@@ -56,7 +56,12 @@ Some built-in backgrounds are made from open-source work, each under the MIT Lic
 
 - **Milkdrop** runs [Butterchurn](https://github.com/jberg/butterchurn) and its [preset pack](https://github.com/jberg/butterchurn-presets) by Jordan Berg, a web port of Ryan Geiss's Milkdrop, with presets by the Milkdrop community.
 - **Ink** is [WebGL Fluid Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation) by Pavel Dobryakov.
-- **Birds** and **Sky** are [Vanta](https://github.com/tengbao/vanta) effects by Teng Bao, on [three.js](https://github.com/mrdoob/three.js).
+- **Birds** and **Weather**'s clouds are [Vanta](https://github.com/tengbao/vanta) effects by Teng Bao, on [three.js](https://github.com/mrdoob/three.js).
+
+Weather also uses:
+
+- the weather in your city, from [Open-Meteo](https://open-meteo.com/) (weather data by Open-Meteo.com, under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), found with their free geocoding;
+- the full moon photographed by NASA's Goddard Space Flight Center, which is in the public domain.
 
 ## License
 

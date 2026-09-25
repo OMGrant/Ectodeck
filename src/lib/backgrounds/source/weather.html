@@ -20,9 +20,10 @@
 -->
 <script type="application/json" id="ectodeck-inputs">
 {
-  "DESCRIPTION": "Weather: Sky's sea of clouds in the weather you choose, lit for the time of day, with rain, snow, fog, lightning, and at night the stars and the moon in its real phase. A key press does something in the weather there: a cloud puffs up, rain squalls across, snow gusts out, the fog parts, lightning strikes, or at night a shooting star falls. From Vanta (MIT) on three.js (MIT).",
+  "DESCRIPTION": "Weather: Sky's sea of clouds in the weather you choose, or the live weather in your city, lit for the time of day, with rain, snow, fog, lightning, and at night the stars and the moon in its real phase. A key press does something in the weather there: a cloud puffs up, raindrops splash on the glass, snow gusts out, the fog parts, lightning strikes, or at night a shooting star falls. Weather data by Open-Meteo.com (CC BY 4.0). Clouds from Vanta (MIT) on three.js (MIT); the moon photographed by NASA's Goddard Space Flight Center.",
   "INPUTS": [
-    { "NAME": "weather", "TYPE": "long", "LABEL": "Weather", "DEFAULT": 0, "VALUES": [0, 1, 2, 3, 4, 5], "LABELS": ["Clear", "Cloudy", "Rain", "Thunderstorm", "Snow", "Fog"], "PRESET": true },
+    { "NAME": "place", "TYPE": "place", "LABEL": "City" },
+    { "NAME": "weather", "TYPE": "long", "LABEL": "Weather", "DEFAULT": 0, "VALUES": [-1, 0, 1, 2, 3, 4, 5], "LABELS": ["Automatic", "Clear", "Cloudy", "Rain", "Thunderstorm", "Snow", "Fog"] },
     { "NAME": "time", "TYPE": "long", "LABEL": "Time of day", "DEFAULT": -1, "VALUES": [-1, 0, 1, 2, 3], "LABELS": ["Automatic", "Morning", "Afternoon", "Sunset", "Night"] },
     { "NAME": "speed", "TYPE": "float", "LABEL": "Wind", "DEFAULT": 0.8, "MIN": 0.2, "MAX": 3 }
   ]
@@ -66,8 +67,16 @@
     var half = Math.acos(Math.max(-1, Math.min(1, cosH))) * 12 / Math.PI;
     return { now: now.getHours() + now.getMinutes() / 60, rise: noon - half, noon: noon, set: noon + half };
   }
-  // morning, afternoon, sunset or night, by the sun
+  // morning, afternoon, sunset or night, by the sun: the city's real sunrise and
+  // sunset once the weather report has brought them, an estimate until then
   function clockTime() {
+    if (live.rise && live.set) {
+      var now = Date.now(), hour = 36e5, noon = (live.rise + live.set) / 2;
+      if (now < live.rise - hour / 2 || now >= live.set + hour * 0.75) return 3;
+      if (now < noon - hour) return 0;
+      if (now >= live.set - hour * 1.25) return 2;
+      return 1;
+    }
     var s = sunHours(new Date());
     if (s.now < s.rise - 0.5 || s.now >= s.set + 0.75) return 3;
     if (s.now < s.noon - 1) return 0;
@@ -84,7 +93,37 @@
 
   // the weather: its colours are the time of day's, greyed, darkened and
   // cooled; the layer drawn after the clouds adds what is in the air
-  var weather = Math.round(num('weather')) % 6;
+  // Automatic: the weather in the chosen city now, from Open-Meteo (free, no account;
+  // CC BY 4.0), asked every quarter of an hour. Its report's weather code is
+  // turned into one of the six weathers, and it brings the city's sunrise and
+  // sunset. Offline, the last report stands; before the first, it is clear.
+  var weatherSetting = Math.round(num('weather'));
+  var live = { weather: 0, rise: 0, set: 0 };
+  var readPlace = function (v) { var a = Array.isArray(v) ? v : String(v || '').split(','); return a.length === 2 && isFinite(a[0]) && isFinite(a[1]) && String(a[0]) !== '' ? [Number(a[0]), Number(a[1])] : null; };
+  var placeAt = readPlace(q.get('placeAt'));
+  function fromCode(code) {
+    if (code >= 95) return 3;                                            // thunderstorm
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 4; // snow
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return 2; // drizzle, rain, showers
+    if (code === 45 || code === 48) return 5;                            // fog
+    if (code === 2 || code === 3) return 1;                              // partly cloudy, overcast
+    return 0;                                                            // clear, mainly clear
+  }
+  var chosenWeather = function () { return weatherSetting < 0 ? live.weather : ((weatherSetting % 6) + 6) % 6; };
+  var weather = chosenWeather();
+  function askLive() {
+    if (weatherSetting >= 0 || !placeAt) return;
+    fetch('https://api.open-meteo.com/v1/forecast?current=weather_code&daily=sunrise,sunset&timezone=auto&forecast_days=1&latitude=' + placeAt[0] + '&longitude=' + placeAt[1])
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        // the city's local times, made absolute with its offset from UTC
+        var at = function (local) { return Date.parse(local + ':00Z') - d.utc_offset_seconds * 1000; };
+        live = { weather: fromCode(d.current.weather_code), rise: at(d.daily.sunrise[0]), set: at(d.daily.sunset[0]) };
+        var newTime = timeSetting < 0 ? clockTime() : time;
+        if (chosenWeather() !== weather || newTime !== time) { weather = chosenWeather(); time = newTime; relight(); }
+      })
+      .catch(function () {});
+  }
   var mixHex = function (a, b, t) {
     var r = ((a >> 16) & 255) * (1 - t) + ((b >> 16) & 255) * t, g = ((a >> 8) & 255) * (1 - t) + ((b >> 8) & 255) * t, bl = (a & 255) * (1 - t) + (b & 255) * t;
     return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(bl);
@@ -508,9 +547,11 @@
     for (var i = 0; i < keys.length; i++) if (['time', 'speed', 'weather'].indexOf(keys[i]) < 0 && now.get(keys[i]) !== was.get(keys[i])) return location.reload();
     if (p.time !== undefined) { timeSetting = Math.round(p.time); time = timeSetting < 0 ? clockTime() : timeSetting % 4; }
     if (p.speed !== undefined) { base = Number(p.speed); layer.uniforms.wind.value = base; }
-    if (p.weather !== undefined) weather = Math.round(p.weather) % 6;
+    if (p.weather !== undefined) { weatherSetting = Math.round(p.weather); weather = chosenWeather(); askLive(); }
     relight();
   });
+  askLive();
+  setInterval(askLive, 15 * 60 * 1000);
   setInterval(function () {
     layer.uniforms.phase.value = moonPhase();
     if (timeSetting < 0 && clockTime() !== time) { time = clockTime(); relight(); }

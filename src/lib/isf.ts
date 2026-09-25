@@ -1,11 +1,12 @@
 // Adjustable parameters in the ISF (Interactive Shader Format) style: a list
 // of INPUTS, each with a NAME, TYPE, DEFAULT and, by type, MIN/MAX or
-// VALUES/LABELS. A shader carries them in a JSON comment at the top of its
+// VALUES/LABELS. Ectodeck adds "place": a town or city looked up by name, saved
+// as the place found (NAME) and its latitude and longitude (NAME + "At"). A shader carries them in a JSON comment at the top of its
 // source; a web page in <script type="application/json" id="ectodeck-inputs">.
 
 export type IsfInput = {
 	NAME: string;
-	TYPE: "float" | "color" | "bool" | "long" | "point2D";
+	TYPE: "float" | "color" | "bool" | "long" | "point2D" | "place";
 	LABEL?: string;
 	DEFAULT?: unknown;
 	MIN?: number | number[];
@@ -14,7 +15,7 @@ export type IsfInput = {
 	LABELS?: string[];
 };
 
-const KNOWN = ["float", "color", "bool", "long", "point2D"];
+const KNOWN = ["float", "color", "bool", "long", "point2D", "place"];
 
 function clean(header: unknown): IsfInput[] {
 	const inputs = (header as { INPUTS?: unknown[] })?.INPUTS;
@@ -58,6 +59,8 @@ export function defaultValue(input: IsfInput): unknown {
 			return input.VALUES?.[0] ?? 0;
 		case "point2D":
 			return [0, 0];
+		case "place":
+			return "";
 	}
 }
 

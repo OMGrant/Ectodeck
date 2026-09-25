@@ -309,5 +309,9 @@
 	"device_view.bg_brightness": "Brightness",
 	"inspector.no_settings": "This action has no settings.",
 	"device_view.preset": "Preset",
-	"device_view.preset.custom": "Your own settings"
+	"device_view.preset.custom": "Your own settings",
+	"parameters.place.placeholder": "Search for your city",
+	"parameters.place.finding": "Searching…",
+	"parameters.place.none": "No places match “{{name}}”.",
+	"parameters.place.offline": "Couldn’t search right now. Check your internet connection."
 }
