@@ -23,7 +23,7 @@
   "DESCRIPTION": "Weather: Sky's sea of clouds in the weather you choose, or the live weather in your city, lit for the time of day, with rain, snow, fog, lightning, and at night the stars and the moon in its real phase. A key press does something in the weather there: a cloud puffs up, raindrops splash on the glass, snow gusts out, the fog parts, lightning strikes, or at night a shooting star falls. Weather data by Open-Meteo.com (CC BY 4.0). Clouds from Vanta (MIT) on three.js (MIT); the moon photographed by NASA's Goddard Space Flight Center.",
   "INPUTS": [
     { "NAME": "place", "TYPE": "place", "LABEL": "City" },
-    { "NAME": "weather", "TYPE": "long", "LABEL": "Weather", "DEFAULT": 0, "VALUES": [-1, 0, 1, 2, 3, 6, 4, 5], "LABELS": ["Automatic", "Clear", "Cloudy", "Rain", "Thunderstorm", "Dry thunderstorm", "Snow", "Fog"] },
+    { "NAME": "weather", "TYPE": "long", "LABEL": "Weather", "DEFAULT": 0, "VALUES": [-1, 0, 1, 2, 3, 6, 4, 7, 5], "LABELS": ["Automatic", "Clear", "Cloudy", "Rain", "Thunderstorm", "Lightning", "Snow", "Blizzard", "Fog"] },
     { "NAME": "time", "TYPE": "long", "LABEL": "Time of day", "DEFAULT": -1, "VALUES": [-1, 0, 1, 2, 3], "LABELS": ["Automatic", "Morning", "Afternoon", "Sunset", "Night"] },
     { "NAME": "speed", "TYPE": "float", "LABEL": "Wind", "DEFAULT": 0.8, "MIN": 0.2, "MAX": 3 }
   ]
@@ -151,30 +151,31 @@
   // cooled; the layer drawn after the clouds adds what is in the air
   // Automatic: the weather in the chosen city now, from Open-Meteo (free, no account;
   // CC BY 4.0), asked every quarter of an hour. Its report's weather code is
-  // turned into one of the six weathers, and it brings the city's sunrise and
-  // sunset. Offline, the last report stands; before the first, it is clear.
+  // turned into one of the weathers (snow in a wind of 56 km/h, 35 mph, is a
+  // blizzard, as the US National Weather Service counts one), and it brings
+  // the city's sunrise and sunset. Offline, the last report stands; before the first, it is clear.
   var weatherSetting = Math.round(num('weather'));
   var live = { weather: 0, rise: 0, set: 0 };
   var readPlace = function (v) { var a = Array.isArray(v) ? v : String(v || '').split(','); return a.length === 2 && isFinite(a[0]) && isFinite(a[1]) && String(a[0]) !== '' ? [Number(a[0]), Number(a[1])] : null; };
   var placeAt = readPlace(q.get('placeAt'));
-  function fromCode(code) {
+  function fromCode(code, wind) {
     if (code >= 95) return 3;                                            // thunderstorm
-    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 4; // snow
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return wind >= 56 ? 7 : 4; // blizzard, snow
     if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return 2; // drizzle, rain, showers
     if (code === 45 || code === 48) return 5;                            // fog
     if (code === 2 || code === 3) return 1;                              // partly cloudy, overcast
     return 0;                                                            // clear, mainly clear
   }
-  var chosenWeather = function () { return weatherSetting < 0 ? live.weather : ((weatherSetting % 7) + 7) % 7; };
+  var chosenWeather = function () { return weatherSetting < 0 ? live.weather : ((weatherSetting % 8) + 8) % 8; };
   var weather = chosenWeather();
   function askLive() {
     if (weatherSetting >= 0 || !placeAt) return;
-    fetch('https://api.open-meteo.com/v1/forecast?current=weather_code&daily=sunrise,sunset&timezone=auto&forecast_days=1&latitude=' + placeAt[0] + '&longitude=' + placeAt[1])
+    fetch('https://api.open-meteo.com/v1/forecast?current=weather_code,wind_speed_10m,wind_gusts_10m&daily=sunrise,sunset&timezone=auto&forecast_days=1&latitude=' + placeAt[0] + '&longitude=' + placeAt[1])
       .then(function (r) { return r.json(); })
       .then(function (d) {
         // the city's local times, made absolute with its offset from UTC
         var at = function (local) { return Date.parse(local + ':00Z') - d.utc_offset_seconds * 1000; };
-        live = { weather: fromCode(d.current.weather_code), rise: at(d.daily.sunrise[0]), set: at(d.daily.sunset[0]) };
+        live = { weather: fromCode(d.current.weather_code, Math.max(d.current.wind_speed_10m || 0, d.current.wind_gusts_10m || 0)), rise: at(d.daily.sunrise[0]), set: at(d.daily.sunset[0]) };
         var newTime = timeSetting < 0 ? clockTime() : time;
         if (chosenWeather() !== weather || newTime !== time) { weather = chosenWeather(); time = newTime; relight(3000); }
       })
@@ -192,7 +193,8 @@
     { to: 0x2a2f3c, grey: 0.72, dark: 0.55 },    // thunderstorm
     { to: 0xc4ccd8, grey: 0.55, dark: 0.05 },    // snow
     { to: 0xb8bec6, grey: 0.7, dark: 0.1 },      // fog
-    { to: 0x2a2f3c, grey: 0.72, dark: 0.55 },    // dry thunderstorm
+    { to: 0x2a2f3c, grey: 0.72, dark: 0.55 },    // lightning
+    { to: 0xc4ccd8, grey: 0.55, dark: 0.05 },    // blizzard (whited out by its blown snow)
   ];
   // Clear looks up into open sky; Cloudy looks down on the sea of cloud; rain,
   // snow and storms are seen from under their clouds, which they fall out of,
@@ -206,7 +208,8 @@
     Object.assign({ clearing: -0.4, stretch: 0.68 }, BELOW),                 // thunderstorm
     Object.assign({ clearing: -0.2, stretch: 1 }, BELOW),                    // snow
     { clearing: -1.2, lookAt: -1, flip: 1, lift: 0, stretch: 1, swing: 1 },  // fog
-    Object.assign({ clearing: -0.4, stretch: 0.68 }, BELOW),                 // dry thunderstorm
+    Object.assign({ clearing: -0.4, stretch: 0.68 }, BELOW),                 // lightning
+    Object.assign({ clearing: -0.5, stretch: 1 }, BELOW),                    // blizzard
   ];
   var under = function () { return VIEWS[weather].flip < 0; };
   function look(timeIndex) {
@@ -219,8 +222,12 @@
     // the renderer's clear colour follows the sky: Vanta's default is white
     out.backgroundColor = out.skyColor;
     out.sunHeight = base.sunHeight;
-    if (weather === 4) ['cloudColor', 'sunlightColor', 'sunGlareColor', 'sunColor'].forEach(function (k) { out[k] = mixHex(mixHex(out[k], 0xcbd3de, 0.6), 0x000000, 0.14); });
+    if (weather === 4 || weather === 7) ['cloudColor', 'sunlightColor', 'sunGlareColor', 'sunColor'].forEach(function (k) { out[k] = mixHex(mixHex(out[k], 0xcbd3de, 0.6), 0x000000, 0.14); });
     else if (weather === 2 || weather === 3 || weather === 6) ['cloudColor', 'sunlightColor', 'sunGlareColor', 'sunColor'].forEach(function (k) { out[k] = mixHex(mixHex(out[k], 0x8a929c, 0.4), 0x000000, 0.35); });
+    // a snowy sunset is dusk, about half as far down as night and duskier
+    if ((weather === 4 || weather === 7) && timeIndex === 2) Object.keys(out).forEach(function (k) { if (/Color$/.test(k)) out[k] = mixHex(mixHex(out[k], 0x3a2c48, 0.3), 0x000000, 0.2); });
+    // a snowy night is still night: the whitened colours are taken most of the way down
+    if ((weather === 4 || weather === 7) && timeIndex === 3) Object.keys(out).forEach(function (k) { if (/Color$/.test(k)) out[k] = mixHex(mixHex(out[k], 0x1a2238, 0.5), 0x000000, 0.35); });
     if ((weather === 3 || weather === 6) && timeIndex === 3) Object.keys(out).forEach(function (k) { if (/Color$/.test(k)) out[k] = mixHex(mixHex(out[k], 0x1c2840, 0.5), 0x000000, 0.12); });
     Object.assign(out, VIEWS[weather]);
     // a clear sunset keeps the horizon in view, for the sun to set on
@@ -235,7 +242,7 @@
   // how fast the clouds go: Sky's clock already runs at this speed and the
   // clouds move by it again, so it is felt squared. Seen from under the
   // cloud they are nearer, so they go slower to look as calm as Sky's
-  var pace = function () { return base * [1, 1, 0.62, 0.55, 0.6, 1, 0.55][weather]; };
+  var pace = function () { return base * [1, 1, 0.62, 0.55, 0.6, 1, 0.55, 1.25][weather]; };
   var timeSetting = Math.round(num('time'));
   var time = timeSetting < 0 ? clockTime() : timeSetting % 4, base = num('speed');
   // drawn at full resolution: Sky's default of a third keeps the soft clouds
@@ -286,14 +293,14 @@
       presses: { value: slots }, wind: { value: base }, phase: { value: moonPhase() }, cloudLight: { value: new THREE.Color(look(time).cloudColor) },
       moon: { value: moonMap }, under: { value: under() ? 1 : 0 },
       sunPos: { value: new THREE.Vector2(0.5, 0.5) }, moonPos: { value: new THREE.Vector2(0.3, 0.7) }, moonUp: { value: 1 },
-      aClear: { value: 0 }, aCloudy: { value: 0 }, aRain: { value: 0 }, aSnow: { value: 0 }, aStorm: { value: 0 }, aFog: { value: 0 },
+      aClear: { value: 0 }, aCloudy: { value: 0 }, aRain: { value: 0 }, aSnow: { value: 0 }, aBlizzard: { value: 0 }, aStorm: { value: 0 }, aFog: { value: 0 },
       skyTime: { value: 0 }, skyMouse: { value: new THREE.Vector2(0.5, 0.5) }, swing: { value: look(time).swing }, lookAt: { value: look(time).lookAt }, sunHeight: { value: look(time).sunHeight },
       sunColor: { value: new THREE.Color(look(time).sunColor) }, dusk: { value: time === 2 ? 1 : 0 },
     },
     vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
     fragmentShader: [
       'uniform float t; uniform int weather; uniform float night; uniform vec2 size; uniform float ratio; uniform vec4 presses[8]; uniform float wind; uniform float phase; uniform vec3 cloudLight; uniform sampler2D moon; uniform float under;',
-      'uniform vec2 sunPos; uniform vec2 moonPos; uniform float moonUp; uniform float aClear; uniform float aCloudy; uniform float aRain; uniform float aSnow; uniform float aStorm; uniform float aFog;',
+      'uniform vec2 sunPos; uniform vec2 moonPos; uniform float moonUp; uniform float aClear; uniform float aCloudy; uniform float aRain; uniform float aSnow; uniform float aBlizzard; uniform float aStorm; uniform float aFog;',
       'uniform float skyTime; uniform vec2 skyMouse; uniform float swing; uniform float lookAt; uniform float sunHeight; uniform vec3 sunColor; uniform float dusk;',
       // Dave Hoskins' hash: no sin() and no huge multiplier, so every graphics
       // card gives a corner of the noise's grid one value; the sin() version is
@@ -541,7 +548,7 @@
       '    }',
       // snow: a gust sweeping out of the key with the wind, each flake at its
       // own speed and height, so it scatters rather than rings
-      '    if (weather == 4 && age < 2.2) {',
+      '    if ((weather == 4 || weather == 7) && age < 2.2) {',
       '      for (int j = 0; j < 22; j++) {',
       '        float fj = float(j), h1 = hash(vec2(k.w, fj)), h2 = hash(vec2(fj, k.w + 2.0)), h3 = hash(vec2(fj + 5.0, k.w));',
       '        float a = (h1 - 0.5) * 1.6 + 0.15, v = 0.08 + 0.28 * h2, go = age * (1.0 - 0.25 * age / 2.2);',
@@ -561,6 +568,29 @@
       '    float h = 0.55 + 0.3 * fbm(vec2(p.x * 1.4 + t * 0.04 * wind, uv.y * 2.5 + t * 0.02));',
       '    float fa = h * 0.85 * (1.0 - part) * aFog;',
       '    put(acc, mix(vec3(0.9, 0.92, 0.95), vec3(0.2, 0.22, 0.28), night), fa);',
+      '  }',
+      // blizzard: snow driven almost sideways by the wind, dense and fast, the
+      // near flakes drawn out into streaks by their speed, and veils of blown
+      // snow racing across, thick enough now and then to white the view out
+      '  if (aBlizzard > 0.003) {',
+      // it blows to the right and down, as Snow drifts, in gusts: the wind's
+      // strength is 0.75 + 0.25 sin(0.6t) sin(0.23t + 1), and how far it has
+      // carried the snow is that added up over time (worked out exactly), so
+      // the snow only ever goes forward, faster in a gust and slower in a lull.
+      // (Speed times the gust would run it backwards whenever the gust eased.)
+      '    vec2 dir = normalize(vec2(-1.0, 0.3)), across = vec2(-dir.y, dir.x);',
+      '    float blown = t * 0.75 + 0.125 * (sin(0.37 * t - 1.0) / 0.37 - sin(0.83 * t + 1.0) / 0.83);',
+      '    for (int l = 0; l < 6; l++) {',
+      '      float fl = float(l), sc = 44.0 - fl * 7.0;',
+      '      vec2 bq = vec2(dot(p, dir) * sc * (0.45 - fl * 0.06) + blown * (4.0 + fl * 1.6) * wind, dot(p, across) * sc + sin(t * 0.9 + fl * 1.7 + dot(p, dir) * 3.0) * 0.35);',
+      '      vec2 cell = floor(bq), f = fract(bq) - 0.5; float r = hash(cell + fl * 13.0);',
+      '      vec2 e = f - vec2((hash(cell + 1.3) - 0.5) * 0.4, (hash(cell + 3.1) - 0.5) * 0.6);',
+      // thin across the wind, soft all over, and fainter the faster (nearer) it goes
+      '      float rad = 0.045 + fl * 0.018;',
+      '      add += vec3(0.95, 0.97, 1.0) * step(0.45 + fl * 0.08, r) * smoothstep(rad, 0.0, length(e * vec2(1.0, 1.5))) * (0.75 - fl * 0.1) * lum * aBlizzard;',
+      '    }',
+      '    float veil = fbm(vec2(p.x * 1.3 - blown * 0.7 * wind, uv.y * 2.6 + t * 0.12)) * 0.65 + fbm(vec2(p.x * 3.5 - blown * 1.6 * wind, uv.y * 6.0)) * 0.35;',
+      '    put(acc, mix(mix(vec3(0.9, 0.92, 0.96), vec3(0.6, 0.55, 0.64), dusk), vec3(0.3, 0.33, 0.42), night), smoothstep(0.3, 0.8, veil) * mix(0.7, 0.45, night) * (1.0 - part) * aBlizzard);',
       '  }',
       '  vec3 light = vec3(0.8, 0.85, 1.0) * glow;',
       // a grain of up to one shade either way (two random values, the usual
@@ -695,7 +725,7 @@
   // the other where it stands. Nothing flies.
   var COLOURS = ['skyTopColor', 'skyColor', 'skyHorizonColor', 'skyGlowColor', 'cloudColor', 'cloudShadowColor', 'sunColor', 'sunGlareColor', 'sunlightColor', 'backgroundColor'];
   var SKY_NUMBERS = ['sunHeight', 'clearing', 'lookAt', 'flip', 'lift', 'stretch', 'swing'];
-  var LAYER_NUMBERS = ['aClear', 'aCloudy', 'aRain', 'aSnow', 'aStorm', 'aFog', 'night', 'dusk'];
+  var LAYER_NUMBERS = ['aClear', 'aCloudy', 'aRain', 'aSnow', 'aBlizzard', 'aStorm', 'aFog', 'night', 'dusk'];
   var rgb = function (h) { return [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255]; };
   var hexOf = function (c) { return (Math.round(c[0] * 255) << 16) | (Math.round(c[1] * 255) << 8) | Math.round(c[2] * 255); };
   function goal() {
@@ -703,7 +733,7 @@
     COLOURS.forEach(function (k) { st[k] = rgb(l[k]); });
     SKY_NUMBERS.forEach(function (k) { st[k] = l[k]; });
     // how much of each thing is in the air
-    Object.assign(st, { aClear: +(w === 0), aCloudy: +(w === 1), aRain: w === 2 ? 1 : w === 3 ? 1.3 : 0, aSnow: +(w === 4), aStorm: +(w === 3 || w === 6), aFog: +(w === 5), night: +(time === 3), dusk: +(time === 2) });
+    Object.assign(st, { aClear: +(w === 0), aCloudy: +(w === 1), aRain: w === 2 ? 1 : w === 3 ? 1.3 : 0, aSnow: +(w === 4), aBlizzard: +(w === 7), aStorm: +(w === 3 || w === 6), aFog: +(w === 5), night: +(time === 3), dusk: +(time === 2) });
     Object.assign(st, skyPositions());
     st.w = w;
     return st;
