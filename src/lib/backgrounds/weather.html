@@ -93,6 +93,52 @@
     if (s.now >= s.set - 1.25) return 2;
     return 1;
   }
+  // ---- where the sun and moon are in the sky: the standard sun position (the
+  // formula NOAA's calculator uses), and the moon along the same path, as far
+  // round from the sun as its phase. Seen facing the equator, so they rise on
+  // the left and set on the right north of it, and the other way south of it,
+  // further round in summer. The whole path, horizon to horizon, is spread
+  // across the width, and the height above the horizon up the screen, with the
+  // horizon at the bottom edge.
+  var rad = Math.PI / 180;
+  function skyPlace(ms, lat, lon, turn) {
+    var d = ms / 864e5 + 2440587.5 - 2451545.0;
+    var g = (357.529 + 0.98560028 * d) * rad, q = 280.459 + 0.98564736 * d;
+    var L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g) + turn * 360) * rad, e = (23.439 - 0.00000036 * d) * rad;
+    var ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L)), dec = Math.asin(Math.sin(e) * Math.sin(L));
+    var lst = (18.697374558 + 24.06570982441908 * d) * 15 + lon;
+    var ha = (lst * rad - ra), la = lat * rad;
+    var el = Math.asin(Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(ha));
+    var az = Math.atan2(-Math.sin(ha), Math.tan(dec) * Math.cos(la) - Math.sin(la) * Math.cos(ha)) / rad;
+    // degrees round from straight ahead, to the right: west when facing south,
+    // east when facing north
+    var fromFront = ((lat >= 0 ? az - 180 : az) + 540) % 360 - 180;
+    return { x: 0.5 + 0.45 * Math.max(-1, Math.min(1, fromFront / 115)), y: Math.min(0.82, el / rad / 62), up: el > 0 };
+  }
+  // where the deck is: the chosen city, or a guess from the time zone
+  function here() {
+    if (placeAt) return { lat: placeAt[0], lon: placeAt[1] };
+    var y = new Date().getFullYear(), jan = new Date(y, 0, 1).getTimezoneOffset(), jul = new Date(y, 6, 1).getTimezoneOffset();
+    return { lat: jan < jul ? -35 : 35, lon: -Math.max(jan, jul) / 4 };
+  }
+  // the moment the sky shows: now, on Automatic; otherwise today at a time that
+  // stands for it, in the place's own time (morning at nine, afternoon at twenty to four,
+  // the sunset as the sun meets the horizon, night at half past ten)
+  function skyMoment() {
+    if (timeSetting < 0) return Date.now();
+    var h0 = here(), shift = h0.lon / 15 * 36e5;
+    var day = Math.floor((Date.now() + shift) / 864e5) * 864e5 - shift;
+    var at = function (h) { return day + h * 36e5; };
+    if (time === 0) return at(9);
+    if (time === 1) return at(15 + 40 / 60);
+    if (time === 3) return at(22.5);
+    for (var h = 14; h < 22; h += 1 / 30) if (skyPlace(at(h), h0.lat, h0.lon, 0).y < 0.035) return at(h);
+    return at(19);
+  }
+  function skyPositions() {
+    var h0 = here(), ms = skyMoment(), sun = skyPlace(ms, h0.lat, h0.lon, 0), moon = skyPlace(ms, h0.lat, h0.lon, moonPhase());
+    return { sunX: sun.x, sunY: sun.y, moonX: moon.x, moonY: moon.y, moonUp: moon.up ? 1 : 0 };
+  }
   // the moon's phase today, 0 new to 0.5 full to 1 new again
   // (a phase in the address, from 0 to 1, shows that one instead, for previews)
   function moonPhase() {
@@ -130,7 +176,7 @@
         var at = function (local) { return Date.parse(local + ':00Z') - d.utc_offset_seconds * 1000; };
         live = { weather: fromCode(d.current.weather_code), rise: at(d.daily.sunrise[0]), set: at(d.daily.sunset[0]) };
         var newTime = timeSetting < 0 ? clockTime() : time;
-        if (chosenWeather() !== weather || newTime !== time) { weather = chosenWeather(); time = newTime; relight(20000); }
+        if (chosenWeather() !== weather || newTime !== time) { weather = chosenWeather(); time = newTime; relight(30000); }
       })
       .catch(function () {});
   }
@@ -152,7 +198,7 @@
   // sea of cloud; rain, snow and storms are seen from under the cloud, which
   // they fall out of; fog is inside it.
   var VIEWS = [
-    { clearing: 5, lookAt: 3.8, flip: 1, lift: 0, stretch: 1, swing: 0 },
+    { clearing: 5, lookAt: 3.35, flip: 1, lift: 0, stretch: 1, swing: 0 },
     { clearing: 0, lookAt: -1, flip: 1, lift: 0, stretch: 1, swing: 1 },
     { clearing: -0.3, lookAt: -1, flip: -1, lift: 0, stretch: 1, swing: 1 },
     { clearing: -0.4, lookAt: -1, flip: -1, lift: 0.9, stretch: 0.68, swing: 1 },
@@ -176,7 +222,7 @@
     if ((weather === 3 || weather === 6) && timeIndex === 3) Object.keys(out).forEach(function (k) { if (/Color$/.test(k)) out[k] = mixHex(mixHex(out[k], 0x1c2840, 0.5), 0x000000, 0.12); });
     Object.assign(out, VIEWS[weather]);
     // a clear sunset keeps the horizon in view, for the sun to set on
-    if (weather === 0 && timeIndex === 2) Object.assign(out, { lookAt: 2.4, sunHeight: 0.045, skyHorizonColor: 0xffa644, skyColor: 0xe8683a, skyTopColor: 0x4a3868, skyGlowColor: 0x8a4418 });
+    if (weather === 0 && timeIndex === 2) Object.assign(out, { sunHeight: 0.045, skyHorizonColor: 0xffa644, skyColor: 0xe8683a, skyTopColor: 0x4a3868, skyGlowColor: 0x8a4418 });
     // and a clear morning's sun is up in the sky, not on the edge of the view
     if (weather === 0 && timeIndex === 0) out.sunHeight = 0.6;
     // a clear day's sun and its round halo are drawn by the layer above; Sky's
@@ -234,6 +280,7 @@
       t: { value: 0 }, weather: { value: weather }, night: { value: time === 3 ? 1 : 0 }, size: { value: new THREE.Vector2(innerWidth, innerHeight) }, ratio: { value: 1 },
       presses: { value: slots }, wind: { value: base }, phase: { value: moonPhase() }, cloudLight: { value: new THREE.Color(look(time).cloudColor) },
       moon: { value: moonMap }, under: { value: under() ? 1 : 0 },
+      sunPos: { value: new THREE.Vector2(0.5, 0.5) }, moonPos: { value: new THREE.Vector2(0.3, 0.7) }, moonUp: { value: 1 },
       aClear: { value: 0 }, aCloudy: { value: 0 }, aRain: { value: 0 }, aSnow: { value: 0 }, aStorm: { value: 0 }, aFog: { value: 0 },
       skyTime: { value: 0 }, skyMouse: { value: new THREE.Vector2(0.5, 0.5) }, swing: { value: look(time).swing }, lookAt: { value: look(time).lookAt }, sunHeight: { value: look(time).sunHeight },
       sunColor: { value: new THREE.Color(look(time).sunColor) }, dusk: { value: time === 2 ? 1 : 0 },
@@ -241,7 +288,7 @@
     vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
     fragmentShader: [
       'uniform float t; uniform int weather; uniform float night; uniform vec2 size; uniform float ratio; uniform vec4 presses[8]; uniform float wind; uniform float phase; uniform vec3 cloudLight; uniform sampler2D moon; uniform float under;',
-      'uniform float aClear; uniform float aCloudy; uniform float aRain; uniform float aSnow; uniform float aStorm; uniform float aFog;',
+      'uniform vec2 sunPos; uniform vec2 moonPos; uniform float moonUp; uniform float aClear; uniform float aCloudy; uniform float aRain; uniform float aSnow; uniform float aStorm; uniform float aFog;',
       'uniform float skyTime; uniform vec2 skyMouse; uniform float swing; uniform float lookAt; uniform float sunHeight; uniform vec3 sunColor; uniform float dusk;',
       'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
       'float noise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y); }',
@@ -256,16 +303,11 @@
       // how much of a clear daytime sky there is: the sun fades with it
       '  float sunW = aClear * (1.0 - night);',
       '  if (sunW > 0.003) {',
-      '    float mx = skyMouse.x * 0.25 + mix(0.137, sin(skyTime * 0.1 + 3.1415) * 0.25 + 0.25, swing), my = (1.0 - skyMouse.y) * 0.33 + 0.28;',
-      '    vec3 ro = 4.0 * normalize(vec3(sin(3.0 * mx), 0.4 * my, cos(3.0 * mx)));',
-      '    vec3 cw = normalize(vec3(0.0, lookAt, 0.0) - ro), cu = normalize(cross(cw, vec3(0.0, 1.0, 0.0))), cv = normalize(cross(cu, cw));',
-      '    vec3 sd = normalize(vec3(-1.0, sunHeight, -1.0));',
-      '    vec3 local = vec3(dot(sd, cu), dot(sd, cv), dot(sd, cw));',
       '    vec2 q = (uv * 2.0 - 1.0) * vec2(aspect, 1.0);',
-      // how far above the horizon this pixel looks
-      '    float up = normalize(cu * q.x + cv * q.y + cw * 1.5).y;',
-      '    if (local.z > 0.0) {',
-      '      vec2 sp = local.xy / local.z * 1.5;',
+      // the horizon is the bottom edge; height above it rises up the screen
+      '    float up = uv.y * 0.9;',
+      '    {',
+      '      vec2 sp = (sunPos * 2.0 - 1.0) * vec2(aspect, 1.0);',
       '      vec2 dv = q - sp; float d = length(dv), px = 2.0 / size.y;',
       '      vec4 acc0 = acc; vec3 add0 = add;',
       '      if (dusk < 0.999) {',
@@ -293,9 +335,7 @@
       // edge sinking behind the land; warm light spread along
       // the horizon; streaks of cloud lit gold and orange; the land a silhouette
       '        float r = 0.3;',
-      '        float ridge = (noise(vec2(p.x * 2.5, 1.0)) - 0.5) * 0.02 + (noise(vec2(p.x * 9.0, 4.0)) - 0.5) * 0.006;',
-      '        float land = smoothstep(ridge + 0.0015, ridge - 0.0015, up);',
-      '        float sky = 1.0 - land * 0.85;',
+      '        float land = 0.0, sky = 1.0;',
       '        vec2 w = vec2(p.x * 0.8 - t * 0.005 * wind, uv.y * 8.5);',
       '        float warp = fbm(w * vec2(0.45, 1.0) + vec2(3.0, t * 0.01));',
       '        float n = fbm(w + vec2(warp * 1.6, 0.0));',
@@ -310,9 +350,6 @@
       '        add += vec3(1.0, 0.72, 0.36) * exp(-max(d - r, 0.0) * 13.0) * 0.32 * (1.0 - disc) * (1.0 - land);',
       '        put(acc, vec3(1.0, 0.92, 0.6), disc);',
       '        add += vec3(1.0, 0.92, 0.6) * disc * 0.25 * (1.0 - land);',
-      // the land: a low line of hills, dark against the glow, faintly lit near the horizon
-      '        vec3 ground = mix(vec3(0.07, 0.04, 0.05), vec3(0.3, 0.14, 0.08), exp((up - ridge) * 45.0));',
-      '        put(acc, ground, land);',
       '      }',
       '      acc = mix(accDay, acc, dusk); add = mix(addDay, add, dusk);',
       '      acc = mix(acc0, acc, sunW); add = mix(add0, add, sunW);',
@@ -328,8 +365,10 @@
       '    vec4 accN0 = acc; vec3 addN0 = add;',
       '    float clearSky = aClear / max(aClear + aCloudy, 1e-3);',
       '    float open = mix(smoothstep(0.88, 0.95, uv.y), smoothstep(0.0, 0.25, uv.y), clearSky);',
-      '    vec2 mc = vec2(0.2 * aspect, mix(0.935, 0.77, clearSky)); float mr = mix(0.05, 0.15, clearSky);',
-      '    float behind = smoothstep(mr * 0.98, mr * 1.02, length(p - mc));',
+      // one moon, where it is in the sky, the same size always; it fades with the clear sky
+      '    vec2 mc = vec2(moonPos.x * aspect, moonPos.y); float mr = 0.13;',
+      '    float moonW = aClear * moonUp;',
+      '    float behind = mix(1.0, smoothstep(mr * 0.98, mr * 1.02, length(p - mc)), moonW);',
       '    for (int l = 0; l < 3; l++) {',
       '      float fl = float(l), sc = 60.0 + fl * 55.0; vec2 g = p * sc; vec2 cell = floor(g); float r = hash(cell + fl * 13.0);',
       '      vec2 o = vec2(hash(cell + 3.1), hash(cell + 7.7)) * 0.7 + 0.15;',
@@ -348,8 +387,8 @@
       // the glow comes from the lit part: all round at full, from the bright edge of a crescent
       '    float sunSide = sin(phase * 6.28318);',
       '    float glowSide = mix(1.0, smoothstep(-0.7, 0.9, dot((p - mc) / max(md, 1e-4), vec2(sunSide > 0.0 ? 1.0 : -1.0, 0.0))), abs(sunSide));',
-      '    add += vec3(0.6, 0.68, 0.95) * (exp(-max(md - mr, 0.0) * 14.0) * 0.22 + exp(-max(md - mr, 0.0) * 3.5) * 0.08 + exp(-md * 1.2) * 0.04) * full * outside * glowSide;',
-      '    if (dot(m, m) < 1.1) {',
+      '    add += vec3(0.6, 0.68, 0.95) * (exp(-max(md - mr, 0.0) * 14.0) * 0.22 + exp(-max(md - mr, 0.0) * 3.5) * 0.08 + exp(-md * 1.2) * 0.04) * full * outside * glowSide * moonW;',
+      '    if (dot(m, m) < 1.1 && moonW > 0.003) {',
       '      float px = 1.5 / (mr * size.y);',
       '      float edge = smoothstep(1.0 + px * 1.5, 1.0 - px * 1.5, length(m));',
       '      vec3 photo = texture2D(moon, m * 0.47 + 0.5).rgb;',
@@ -363,8 +402,8 @@
       '      vec3 face = mix(photo, vec3(luma), 0.15) * vec3(0.9, 0.94, 1.04) * lit * 1.05 * (1.0 + 0.12 * smoothstep(0.75, 1.0, length(m)));',
       // the dark part still faintly there in earthshine, so the phase reads as the moon's shape
       '      vec3 dim = mix(photo, vec3(luma), 0.4) * vec3(0.55, 0.62, 0.85) * 0.09 * (1.0 - lit);',
-      '      add += (face + dim) * edge;',
-      '      put(acc, vec3(0.0), edge * 0.3 * smoothstep(1.0, 0.8, length(m)));',
+      '      add += (face + dim) * edge * moonW;',
+      '      put(acc, vec3(0.0), edge * 0.3 * smoothstep(1.0, 0.8, length(m)) * moonW);',
       '    }',
       '    acc = mix(accN0, acc, nightW); add = mix(addN0, add, nightW);',
       '  }',
@@ -529,6 +568,16 @@
   });
   var copyScene = new THREE.Scene();
   copyScene.add(new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), copyMaterial));
+  // for a dissolve between two views: the old one, laid over the new with a fading amount
+  var oldView = null;
+  var blendMaterial = new THREE.ShaderMaterial({
+    uniforms: { old: { value: null }, amount: { value: 0 } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: 'uniform sampler2D old; uniform float amount; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(old, vUv).rgb, amount); }',
+    transparent: true, depthTest: false, depthWrite: false
+  });
+  var blendScene = new THREE.Scene();
+  blendScene.add(new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), blendMaterial));
   renderer.render = function (scene, camera) {
     renderer.getDrawingBufferSize(bufferSize);
     if (!finished || finished.width !== bufferSize.x || finished.height !== bufferSize.y) {
@@ -537,8 +586,27 @@
       copyMaterial.uniforms.map.value = finished.texture;
     }
     stepEasing(performance.now());
-    renderer.setRenderTarget(finished);
-    drawScene(scene, camera);
+    if (shown.fromView) {
+      if (!oldView || oldView.width !== bufferSize.x || oldView.height !== bufferSize.y) {
+        if (oldView) oldView.dispose();
+        oldView = new THREE.WebGLRenderTarget(bufferSize.x, bufferSize.y, { depthBuffer: false });
+        blendMaterial.uniforms.old.value = oldView.texture;
+      }
+      showView(shown.fromView);
+      renderer.setRenderTarget(oldView);
+      drawScene(scene, camera);
+      showView(shown);
+      renderer.setRenderTarget(finished);
+      drawScene(scene, camera);
+      // the old view laid over the new, fading away
+      blendMaterial.uniforms.amount.value = 1 - shown.mixView;
+      var keepClear = renderer.autoClear; renderer.autoClear = false;
+      drawScene(blendScene, layerCamera);
+      renderer.autoClear = keepClear;
+    } else {
+      renderer.setRenderTarget(finished);
+      drawScene(scene, camera);
+    }
     var now = performance.now() / 1000;
     slots.forEach(function (slot, i) { var b = presses[i]; if (b) slot.set(b.x, b.y, now - b.at, b.seed); else slot.z = -1; });
     layer.uniforms.t.value = now;
@@ -556,10 +624,10 @@
   };
   // ---- changes of weather and time of day ease in: every colour and setting
   // of the sky, clouds and weather moves from where it is to where it is going.
-  // A change asked for in the settings takes a few seconds; one the clock or the
-  // weather report brings takes twenty, as weather moves in. Going from above
-  // the cloud to under it (or back) flies through it: the cloud thickens until
-  // there is only cloud, the view turns over inside it, and it thins again.
+  // A change asked for in the settings takes eight seconds; one the clock or the
+  // weather report brings takes thirty, as weather moves in. A change that moves
+  // the camera (above the cloud to under it, into fog) is a slow dissolve from
+  // one view to the other; between clear and cloudy the clouds build or clear.
   var COLOURS = ['skyTopColor', 'skyColor', 'skyHorizonColor', 'skyGlowColor', 'cloudColor', 'cloudShadowColor', 'sunColor', 'sunGlareColor', 'sunlightColor', 'backgroundColor'];
   var SKY_NUMBERS = ['sunHeight', 'clearing', 'lookAt', 'flip', 'lift', 'stretch', 'swing'];
   var LAYER_NUMBERS = ['aClear', 'aCloudy', 'aRain', 'aSnow', 'aStorm', 'aFog', 'night', 'dusk'];
@@ -571,6 +639,8 @@
     SKY_NUMBERS.forEach(function (k) { st[k] = l[k]; });
     // how much of each thing is in the air
     Object.assign(st, { aClear: +(w === 0), aCloudy: +(w === 1), aRain: w === 2 ? 1 : w === 3 ? 1.3 : 0, aSnow: +(w === 4), aStorm: +(w === 3 || w === 6), aFog: +(w === 5), night: +(time === 3), dusk: +(time === 2) });
+    Object.assign(st, skyPositions());
+    st.w = w;
     return st;
   }
   function show(st) {
@@ -592,30 +662,38 @@
     // the sun drawn in the sky sets as night comes (the clouds keep their moonlight)
     layer.uniforms.sunHeight.value = st.sunHeight + (-0.3 - st.sunHeight) * st.night;
     layer.uniforms.under.value = st.flip < 0 ? 1 : 0;
+    layer.uniforms.sunPos.value.set(st.sunX, st.sunY);
+    layer.uniforms.moonPos.value.set(st.moonX, st.moonY);
+    layer.uniforms.moonUp.value = st.moonUp;
   }
+  // Sky's view settings: the ones that move the camera or the cloud around it
+  var VIEW = ['clearing', 'lookAt', 'flip', 'lift', 'stretch', 'swing'];
+  function viewOf(st) { var v = {}; VIEW.forEach(function (k) { v[k] = st[k]; }); return v; }
+  function showView(v) { VIEW.forEach(function (k) { if (effect.uniforms[k]) effect.uniforms[k].value = v[k]; effect.options[k] = v[k]; }); }
   var ease = function (x) { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
-  function between(a, b, e, raw) {
-    var st = {};
+  function between(a, b, e, dissolving) {
+    var st = { w: b.w };
     COLOURS.forEach(function (k) { st[k] = [0, 1, 2].map(function (i) { return a[k][i] + (b[k][i] - a[k][i]) * e; }); });
-    Object.keys(b).forEach(function (k) { if (COLOURS.indexOf(k) < 0) st[k] = a[k] + (b[k] - a[k]) * e; });
-    if (a.flip !== b.flip) {
-      // through the cloud: as thick as fog in the middle, where the view turns
-      // over (any thicker and Sky's clouds shade it dark instead of white)
-      var dense = -1.2;
-      st.flip = raw < 0.5 ? a.flip : b.flip;
-      st.clearing = raw < 0.5 ? a.clearing + (dense - a.clearing) * ease(raw * 2) : dense + (b.clearing - dense) * ease(raw * 2 - 1);
-    }
+    Object.keys(b).forEach(function (k) { if (k !== 'w' && COLOURS.indexOf(k) < 0) st[k] = a[k] + (b[k] - a[k]) * e; });
+    // a new view is not flown to: the old view and the new are both drawn, and
+    // one slowly dissolves into the other
+    if (dissolving) { Object.assign(st, viewOf(b)); st.fromView = viewOf(a); st.mixView = e; }
     return st;
   }
   var shown = goal(), easing = null;
   function relight(ms) {
     layer.uniforms.weather.value = weather;
-    easing = { from: shown, to: goal(), start: performance.now(), ms: ms || 3000 };
+    // start from what is on screen: in the middle of a dissolve, the view it was heading for
+    var from = shown, to = goal();
+    delete from.fromView; delete from.mixView;
+    var builds = (from.w === 0 || from.w === 1) && (to.w === 0 || to.w === 1);
+    var moves = VIEW.some(function (k) { return from[k] !== to[k]; });
+    easing = { from: from, to: to, start: performance.now(), ms: ms || 8000, dissolving: moves && !builds };
   }
   function stepEasing(now) {
     if (!easing) return;
     var raw = Math.min(1, (now - easing.start) / easing.ms);
-    shown = between(easing.from, easing.to, ease(raw), raw);
+    shown = between(easing.from, easing.to, ease(raw), easing.dissolving && raw < 1);
     show(shown);
     if (raw >= 1) easing = null;
   }
@@ -632,13 +710,15 @@
     if (p.time !== undefined) { timeSetting = Math.round(p.time); time = timeSetting < 0 ? clockTime() : timeSetting % 4; }
     if (p.speed !== undefined) { base = Number(p.speed); layer.uniforms.wind.value = base; }
     if (p.weather !== undefined) { weatherSetting = Math.round(p.weather); weather = chosenWeather(); askLive(); }
-    relight(3000);
+    relight(8000);
   });
   askLive();
   setInterval(askLive, 15 * 60 * 1000);
   setInterval(function () {
     layer.uniforms.phase.value = moonPhase();
-    if (timeSetting < 0 && clockTime() !== time) { time = clockTime(); relight(20000); }
+    if (timeSetting < 0 && clockTime() !== time) { time = clockTime(); relight(30000); }
+    // on Automatic the sun and moon move on with the clock
+    else if (timeSetting < 0 && !easing) relight(30000);
   }, 60000);
 })();
 </script>
