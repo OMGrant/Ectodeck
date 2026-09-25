@@ -302,6 +302,9 @@ fn run_shader(
     let mut renderer = crate::shader::ShaderRenderer::new(code, PANEL_WIDTH, PANEL_HEIGHT)?;
     log::info!("Shader background running");
     let mut tap = if crate::audio::wanted_by_shader(code) { crate::audio::AudioTap::start() } else { None };
+    // a shader with a place gets the weather there, kept up to date on a thread of its own
+    let place_input = renderer.place_input().map(str::to_owned);
+    let feed = place_input.as_ref().map(|_| crate::weather::Feed::start());
     let mut clock = 0.0f32;
     let mut last = Instant::now();
     while !stop.load(Ordering::SeqCst) {
@@ -320,7 +323,12 @@ fn run_shader(
             controls.audio_bands = sound.bands;
             controls.audio_level = sound.level;
         }
-        let frame = renderer.render(clock, &values, &controls);
+        let place = place_input.as_deref().and_then(|name| crate::weather::place_in(&values, name));
+        if let Some(f) = &feed {
+            f.set_place(place);
+        }
+        let world = crate::shader::World::now(place, feed.as_ref().and_then(|f| f.report()));
+        let frame = renderer.render(clock, &values, &controls, &world);
         if let Ok(mut l) = latest.lock() {
             l.set_now(frame);
         }

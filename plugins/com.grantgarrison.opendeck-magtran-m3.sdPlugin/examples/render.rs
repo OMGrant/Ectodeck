@@ -6,11 +6,19 @@
 //!   presses: key@seconds, e.g. 7@2.0,12@4.5          (keys 0-14, row by row)
 //!   params:  settings to render with, as JSON, e.g. {"style":2}
 //!   music:   "music" plays a synthetic 120 bpm beat into iAudioBands and iAudioLevel
+//!
+//! A shader with a place input is drawn at the place in its settings (its
+//! NAME + "At"), with the weather there from Open-Meteo, or with a pretend
+//! report from RENDER_WEATHER="code,wind,sunrise,sunset" (seconds after the
+//! place's midnight), e.g. RENDER_WEATHER=73,60,25200,69000.
 #[path = "../src/shader.rs"]
 #[allow(dead_code)]
 mod shader;
+#[path = "../src/weather.rs"]
+#[allow(dead_code)]
+mod weather;
 
-use shader::{Interaction, ShaderRenderer};
+use shader::{Interaction, ShaderRenderer, World};
 
 fn key_centre(key: usize) -> (f32, f32) {
 	let (c, r) = ((key % 5) as f32, (key / 5) as f32);
@@ -34,6 +42,15 @@ fn main() {
 	let (_, mut defaults) = shader::parse_inputs(&source);
 	defaults.extend(overrides);
 	let mut renderer = ShaderRenderer::new(&source, 854, 480).expect("compile");
+	let place = renderer.place_input().and_then(|name| weather::place_in(&defaults, name));
+	let report = match std::env::var("RENDER_WEATHER") {
+		Ok(v) => {
+			let n: Vec<f32> = v.split(',').map(|x| x.trim().parse().unwrap()).collect();
+			let zone = World::now(None, None).timezone;
+			Some(weather::Report { code: n[0] as i32, wind: n[1], sunrise: n[2], sunset: n[3], offset: zone as i32 })
+		}
+		Err(_) => place.and_then(|(lat, lon)| weather::ask(lat, lon).map_err(|e| eprintln!("no weather: {e}")).ok()),
+	};
 	// step through time at the deck's 30 frames a second, so simulations and
 	// feedback buffers evolve as they would, saving the requested moments
 	let last = times.iter().cloned().fold(0.0, f32::max);
@@ -59,7 +76,7 @@ fn main() {
 			}
 			controls.audio_level = (kick * 0.8 + 0.2).min(1.0);
 		}
-		let image = renderer.render(t, &defaults, &controls);
+		let image = renderer.render(t, &defaults, &controls, &World::now(place, report));
 		if times.iter().any(|x| (x - t).abs() < 0.5 / 30.0) {
 			image.save(out.join(format!("t{:05.2}.png", t))).unwrap();
 		}

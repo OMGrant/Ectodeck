@@ -7,6 +7,11 @@
 //! `iMouse`). Channels (`iChannel0`..) are not provided. Each frame is drawn
 //! into an offscreen framebuffer at the panel's size and read back.
 //!
+//! `iDate` is Shadertoy's: the year, the month from 0, the day of the month
+//! and the seconds since midnight, in the computer's local time;
+//! `iTimezone` is that time's offset from UTC in seconds, so a shader can
+//! work out the sun and moon for any moment.
+//!
 //! Adjustable parameters follow ISF, the Interactive Shader Format: a JSON
 //! comment at the top of the source, `/*{ "INPUTS": [ ... ] }*/`, lists them
 //! with NAME, TYPE (float, color, bool, long, point2D), DEFAULT, MIN and MAX.
@@ -23,6 +28,22 @@
 //! - `iDials`: kept for older shaders, always zero. The deck's dials never
 //!   drive a background directly; the app's Background Preset action switches
 //!   a background's saved settings instead.
+//!
+//! Pictures follow ISF's IMPORTED: `"IMPORTED": { "moon": { "PATH": ... } }`
+//! makes `moon` a `sampler2D` holding the picture, upright (its bottom row at
+//! v = 0), smoothed and mipmapped; `IMG_SIZE(moon)` is its size in pixels.
+//! PATH is a `data:` address (the picture inside the source, as a built-in
+//! background carries it) or a file's full path; PNG, JPEG, WebP and BMP.
+//!
+//! An input of TYPE "place" (a city, which the app saves as its name under
+//! NAME and its latitude and longitude under NAME + "At") brings the weather
+//! there, fetched from Open-Meteo every quarter of an hour (see `weather`):
+//!
+//! - `iPlace`: latitude, longitude, the place's offset from UTC in seconds,
+//!   and 1 once a place is chosen and its weather has come (0 before).
+//! - `iWeather`: the WMO weather code (-1 until it has come), the wind or its
+//!   gusts in km/h, whichever is stronger, and sunrise and sunset in seconds
+//!   after the place's midnight.
 //!
 //! Multi-pass shaders follow ISF's PASSES: the header lists passes, each
 //! drawing into a named TARGET buffer (PERSISTENT to keep its contents from
@@ -62,6 +83,9 @@ uniform vec4 iKeyPresses[8];
 uniform vec3 iDials;
 uniform float iAudioBands[32];
 uniform float iAudioLevel;
+uniform float iTimezone;
+uniform vec4 iPlace;
+uniform vec4 iWeather;
 out vec4 ectodeckFragColor;
 ";
 
@@ -79,16 +103,19 @@ pub enum InputKind {
     Bool,
     Long,
     Point2D,
+    /// A city: not a uniform itself, it brings `iPlace` and `iWeather`.
+    Place,
 }
 
 impl InputKind {
-    fn glsl(self) -> &'static str {
+    fn glsl(self) -> Option<&'static str> {
         match self {
-            InputKind::Float => "float",
-            InputKind::Color => "vec4",
-            InputKind::Bool => "bool",
-            InputKind::Long => "int",
-            InputKind::Point2D => "vec2",
+            InputKind::Float => Some("float"),
+            InputKind::Color => Some("vec4"),
+            InputKind::Bool => Some("bool"),
+            InputKind::Long => Some("int"),
+            InputKind::Point2D => Some("vec2"),
+            InputKind::Place => None,
         }
     }
 }
@@ -114,6 +141,7 @@ pub fn parse_inputs(source: &str) -> (Vec<Input>, serde_json::Map<String, serde_
             Some("bool") => InputKind::Bool,
             Some("long") => InputKind::Long,
             Some("point2D") => InputKind::Point2D,
+            Some("place") => InputKind::Place,
             _ => continue,
         };
         if !input["DEFAULT"].is_null() {
@@ -122,6 +150,69 @@ pub fn parse_inputs(source: &str) -> (Vec<Input>, serde_json::Map<String, serde_
         inputs.push(Input { name: name.to_string(), kind });
     }
     (inputs, defaults)
+}
+
+/// The ISF header's IMPORTED pictures: each name, a plain identifier, with
+/// its PATH.
+pub fn parse_imported(source: &str) -> Vec<(String, String)> {
+    let trimmed = source.trim_start();
+    let Some(body) = trimmed.strip_prefix("/*") else { return vec![] };
+    let Some(end) = body.find("*/") else { return vec![] };
+    let Ok(header) = serde_json::from_str::<serde_json::Value>(body[..end].trim()) else { return vec![] };
+    let Some(imported) = header["IMPORTED"].as_object() else { return vec![] };
+    imported
+        .iter()
+        .filter(|(name, _)| name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !name.starts_with(|c: char| c.is_ascii_digit()))
+        .filter_map(|(name, v)| Some((name.clone(), v["PATH"].as_str()?.to_string())))
+        .collect()
+}
+
+/// A picture's pixels, from a `data:` address or a file.
+fn load_picture(path: &str) -> Result<image::RgbaImage, String> {
+    let bytes = if path.starts_with("data:") {
+        let url = data_url::DataUrl::process(path).map_err(|e| format!("{e:?}"))?;
+        url.decode_to_vec().map_err(|e| format!("{e:?}"))?.0
+    } else {
+        std::fs::read(path).map_err(|e| e.to_string())?
+    };
+    Ok(image::load_from_memory(&bytes).map_err(|e| e.to_string())?.to_rgba8())
+}
+
+/// The world outside the deck that a shader may show: the date and time,
+/// and the chosen place and its weather.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct World {
+    pub date: [f32; 4],
+    pub timezone: f32,
+    pub place: [f32; 4],
+    pub weather: [f32; 4],
+}
+
+impl World {
+    /// Now, at the place (if one is chosen) with its latest report (if one has come).
+    pub fn now(place: Option<(f32, f32)>, report: Option<crate::weather::Report>) -> World {
+        let (date, timezone) = local_date();
+        let (place, weather) = match (place, report) {
+            (Some((lat, lon)), Some(r)) => ([lat, lon, r.offset as f32, 1.0], [r.code as f32, r.wind, r.sunrise, r.sunset]),
+            (Some((lat, lon)), None) => ([lat, lon, timezone, 0.0], [-1.0, 0.0, 6.0 * 3600.0, 18.0 * 3600.0]),
+            (None, _) => ([0.0, 0.0, timezone, 0.0], [-1.0, 0.0, 6.0 * 3600.0, 18.0 * 3600.0]),
+        };
+        World { date, timezone, place, weather }
+    }
+}
+
+/// Shadertoy's iDate in the computer's local time (year, month from 0, day
+/// of the month, seconds since midnight) and that time's offset from UTC.
+fn local_date() -> ([f32; 4], f32) {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let secs = now.as_secs() as libc::time_t;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
+        let day = (now.as_secs() % 86_400) as f32;
+        return ([1970.0, 0.0, 1.0, day], 0.0);
+    }
+    let seconds = (tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec) as f32 + now.subsec_millis() as f32 / 1000.0;
+    ([(tm.tm_year + 1900) as f32, tm.tm_mon as f32, tm.tm_mday as f32, seconds], tm.tm_gmtoff as f32)
 }
 
 /// What the deck's controls are doing, for the interaction uniforms.
@@ -229,6 +320,8 @@ pub struct ShaderRenderer {
     defaults: serde_json::Map<String, serde_json::Value>,
     passes: Vec<Pass>,
     buffers: Vec<Buffer>,
+    /// the IMPORTED pictures, each a texture under its name
+    pictures: Vec<(String, glow::Texture)>,
 }
 
 impl ShaderRenderer {
@@ -279,7 +372,25 @@ impl ShaderRenderer {
         }
         unsafe {
             let buffer_names: Vec<String> = names.iter().map(|(n, ..)| n.clone()).collect();
-            let program = compile(&gl, source, &inputs, &buffer_names)?;
+            let imported = parse_imported(source);
+            let picture_names: Vec<String> = imported.iter().map(|(n, _)| n.clone()).collect();
+            let program = compile(&gl, source, &inputs, &buffer_names, &picture_names)?;
+            let mut pictures = vec![];
+            for (name, path) in &imported {
+                let picture = load_picture(path).map_err(|e| format!("picture {name}: {e}"))?;
+                // OpenGL's first row is the bottom one, so the rows go in upside down
+                let picture = image::imageops::flip_vertical(&picture);
+                let t = gl.create_texture()?;
+                gl.bind_texture(glow::TEXTURE_2D, Some(t));
+                gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
+                gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::RGBA8 as i32, picture.width() as i32, picture.height() as i32, 0, glow::RGBA, glow::UNSIGNED_BYTE, glow::PixelUnpackData::Slice(Some(picture.as_raw())));
+                gl.generate_mipmap(glow::TEXTURE_2D);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR_MIPMAP_LINEAR as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+                pictures.push((name.clone(), t));
+            }
             let float_ok = gl.supported_extensions().contains("GL_EXT_color_buffer_float");
             let mut buffers = vec![];
             for (name, float, bw, bh) in &names {
@@ -322,15 +433,20 @@ impl ShaderRenderer {
             let vao = gl.create_vertex_array()?;
             Ok(ShaderRenderer {
                 egl, display, context, surface: Some(surface), gl, program, framebuffer, renderbuffer, vao,
-                width, height, frame: 0, last_time: 0.0, inputs, defaults, passes, buffers,
+                width, height, frame: 0, last_time: 0.0, inputs, defaults, passes, buffers, pictures,
             })
         }
     }
 
+    /// The name of the shader's place input, if it has one.
+    pub fn place_input(&self) -> Option<&str> {
+        self.inputs.iter().find(|i| i.kind == InputKind::Place).map(|i| i.name.as_str())
+    }
+
     /// Draw the frame for `time` seconds since the animation started, with
-    /// the given parameter values (missing ones take their ISF default) and
-    /// the state of the deck's controls.
-    pub fn render(&mut self, time: f32, params: &serde_json::Map<String, serde_json::Value>, interaction: &Interaction) -> RgbImage {
+    /// the given parameter values (missing ones take their ISF default), the
+    /// state of the deck's controls and the world outside.
+    pub fn render(&mut self, time: f32, params: &serde_json::Map<String, serde_json::Value>, interaction: &Interaction, world: &World) -> RgbImage {
         let (w, h) = (self.width, self.height);
         let mut rgba = vec![0u8; (w * h * 4) as usize];
         unsafe {
@@ -344,7 +460,12 @@ impl ShaderRenderer {
             gl.uniform_1_i32(u("iFrame").as_ref(), self.frame);
             let m = interaction.mouse;
             gl.uniform_4_f32(u("iMouse").as_ref(), m[0], m[1], m[2], m[3]);
-            gl.uniform_4_f32(u("iDate").as_ref(), 0.0, 0.0, 0.0, seconds_today());
+            let d = world.date;
+            gl.uniform_4_f32(u("iDate").as_ref(), d[0], d[1], d[2], d[3]);
+            gl.uniform_1_f32(u("iTimezone").as_ref(), world.timezone);
+            let (p, wx) = (world.place, world.weather);
+            gl.uniform_4_f32(u("iPlace").as_ref(), p[0], p[1], p[2], p[3]);
+            gl.uniform_4_f32(u("iWeather").as_ref(), wx[0], wx[1], wx[2], wx[3]);
             let mut presses = [0.0f32; 32];
             for i in 0..8 {
                 let (x, y, age, key) = interaction.presses.get(i).copied().unwrap_or((0.0, 0.0, 1e6, -1.0));
@@ -367,6 +488,7 @@ impl ShaderRenderer {
                         gl.uniform_4_f32(loc.as_ref(), n(0), n(1), n(2), a)
                     }
                     InputKind::Point2D => gl.uniform_2_f32(loc.as_ref(), n(0), n(1)),
+                    InputKind::Place => {}
                 }
             }
             gl.bind_vertex_array(Some(self.vao));
@@ -377,6 +499,13 @@ impl ShaderRenderer {
                     gl.active_texture(glow::TEXTURE0 + unit as u32);
                     gl.bind_texture(glow::TEXTURE_2D, Some(b.textures[b.read]));
                     gl.uniform_1_i32(u(&b.name).as_ref(), unit as i32);
+                }
+                // and the pictures on the units after them
+                for (i, (name, t)) in self.pictures.iter().enumerate() {
+                    let unit = self.buffers.len() + i;
+                    gl.active_texture(glow::TEXTURE0 + unit as u32);
+                    gl.bind_texture(glow::TEXTURE_2D, Some(*t));
+                    gl.uniform_1_i32(u(name).as_ref(), unit as i32);
                 }
                 let written = pass.target.as_ref().and_then(|t| self.buffers.iter().position(|b| &b.name == t));
                 let (pw, ph) = match written {
@@ -419,6 +548,9 @@ impl Drop for ShaderRenderer {
     fn drop(&mut self) {
         unsafe {
             self.gl.delete_vertex_array(self.vao);
+            for (_, t) in &self.pictures {
+                self.gl.delete_texture(*t);
+            }
             for b in &self.buffers {
                 for i in 0..2 {
                     self.gl.delete_framebuffer(b.framebuffers[i]);
@@ -468,15 +600,16 @@ fn open_display(egl: &Egl) -> Result<egl::Display, String> {
     }
 }
 
-unsafe fn compile(gl: &glow::Context, body: &str, inputs: &[Input], buffers: &[String]) -> Result<glow::Program, String> {
+unsafe fn compile(gl: &glow::Context, body: &str, inputs: &[Input], buffers: &[String], pictures: &[String]) -> Result<glow::Program, String> {
     unsafe {
         let program = gl.create_program()?;
         let mut shaders = vec![];
-        let mut declarations: String = inputs.iter().map(|i| format!("uniform {} {};\n", i.kind.glsl(), i.name)).collect();
+        let mut declarations: String = inputs.iter().filter_map(|i| Some(format!("uniform {} {};\n", i.kind.glsl()?, i.name))).collect();
         declarations.push_str("uniform int PASSINDEX;\nuniform vec2 RENDERSIZE;\n");
         declarations.push_str("#define IMG_NORM_PIXEL(image, uv) texture(image, uv)\n#define IMG_PIXEL(image, px) texture(image, (px) / iResolution.xy)\n");
         declarations.push_str("#define IMG_THIS_PIXEL(image) texture(image, gl_FragCoord.xy / RENDERSIZE)\n#define IMG_THIS_NORM_PIXEL(image) IMG_THIS_PIXEL(image)\n");
-        for b in buffers {
+        declarations.push_str("#define IMG_SIZE(image) vec2(textureSize(image, 0))\n");
+        for b in buffers.iter().chain(pictures) {
             declarations.push_str(&format!("uniform sampler2D {b};\n"));
         }
         for (kind, src) in [(glow::VERTEX_SHADER, VERTEX.to_string()), (glow::FRAGMENT_SHADER, format!("{PRELUDE}{declarations}{body}{EPILOGUE}"))] {
@@ -501,11 +634,6 @@ unsafe fn compile(gl: &glow::Context, body: &str, inputs: &[Input], buffers: &[S
     }
 }
 
-fn seconds_today() -> f32 {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-    (now % 86_400) as f32
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,6 +651,53 @@ mod tests {
         assert_eq!(sized[0].scale, (0.25, 0.5));
         // a header whose last pass draws a buffer still gets a pass to show
         assert_eq!(parse_passes(r#"/*{ "PASSES": [ { "TARGET": "a" } ] }*/"#).len(), 2);
+    }
+
+    #[test]
+    fn reads_imported_pictures_and_places() {
+        let src = r#"/*{ "IMPORTED": { "moon": { "PATH": "data:image/png;base64,AAAA" }, "bad name": { "PATH": "x" }, "nopath": {} },
+            "INPUTS": [ { "NAME": "place", "TYPE": "place" } ] }*/ x"#;
+        assert_eq!(parse_imported(src), vec![("moon".to_string(), "data:image/png;base64,AAAA".to_string())]);
+        assert_eq!(parse_inputs(src).0, vec![Input { name: "place".into(), kind: InputKind::Place }]);
+        assert!(parse_imported("void mainImage(out vec4 c, in vec2 p) {}").is_empty());
+    }
+
+    #[test]
+    fn knows_the_local_date() {
+        let (d, zone) = local_date();
+        assert!(d[0] >= 2024.0 && (0.0..12.0).contains(&d[1]) && (1.0..32.0).contains(&d[2]) && (0.0..86_401.0).contains(&d[3]));
+        assert!(zone.abs() <= 14.0 * 3600.0);
+    }
+
+    /// Draws on the graphics card: `cargo test --release -- --ignored`.
+    #[test]
+    #[ignore]
+    fn draws_pictures_upright_and_the_world() {
+        // a 1x2 picture, red on top and blue below, as a PNG inside the source
+        let mut picture = image::RgbaImage::new(1, 2);
+        picture.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
+        picture.put_pixel(0, 1, image::Rgba([0, 0, 255, 255]));
+        let mut png = vec![];
+        picture.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        use base64::Engine;
+        let data = base64::engine::general_purpose::STANDARD.encode(&png);
+        let src = format!(
+            r#"/*{{ "IMPORTED": {{ "pic": {{ "PATH": "data:image/png;base64,{data}" }} }}, "INPUTS": [ {{ "NAME": "place", "TYPE": "place" }} ] }}*/
+            void mainImage(out vec4 c, in vec2 p) {{
+                vec2 uv = p / iResolution.xy;
+                // the left half shows the picture; the right half the world, as tests
+                if (uv.x < 0.5) c = texture(pic, vec2(0.5, uv.y));
+                else c = vec4(iDate.x > 2023.0 ? 1.0 : 0.0, iWeather.x == 3.0 ? 1.0 : 0.0, iPlace.x == 27.5 && IMG_SIZE(pic).y == 2.0 ? 1.0 : 0.0, 1.0);
+            }}"#
+        );
+        let mut r = ShaderRenderer::new(&src, 8, 8).unwrap();
+        assert_eq!(r.place_input(), Some("place"));
+        let report = crate::weather::Report { code: 3, wind: 10.0, sunrise: 0.0, sunset: 0.0, offset: 0 };
+        let frame = r.render(0.0, &serde_json::Map::new(), &Interaction::default(), &World::now(Some((27.5, -82.0)), Some(report)));
+        // the image's rows run top to bottom: red at the top, blue at the bottom
+        assert_eq!(frame.get_pixel(1, 0).0, [255, 0, 0]);
+        assert_eq!(frame.get_pixel(1, 7).0, [0, 0, 255]);
+        assert_eq!(frame.get_pixel(6, 4).0, [255, 255, 255]);
     }
 
     #[test]
