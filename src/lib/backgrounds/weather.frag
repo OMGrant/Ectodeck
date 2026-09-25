@@ -442,6 +442,15 @@ vec3 softClouds(vec2 frag) {
 float hash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float noise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y); }
 float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + 17.1; a *= 0.5; } return v; }
+// the lumps lightning lights up in the cloud: three layers of noise, each
+// turned against the last, since a bright flash shows the square grid the
+// noise is built on, which the finer layers of fbm leave in it
+float billowNoise(vec2 p) {
+    float v = 0.0, a = 0.5;
+    mat2 turn = mat2(0.8, 0.6, -0.6, 0.8);
+    for (int i = 0; i < 3; i++) { v += a * noise(p); p = turn * p * 2.03 + 17.1; a *= 0.5; }
+    return v / 0.875;
+}
 // lays a colour over what the layer holds so far, as much as a covers
 void put(inout vec4 acc, vec3 c, float a) { acc = vec4(c * a, a) + acc * (1.0 - a); }
 
@@ -592,7 +601,7 @@ vec3 drawPicture(vec2 frag) {
             if (a > 0.0) {
                 float f = exp(-a * 5.0) * (0.55 + 0.45 * step(0.5, fract(a * 11.0))) + 0.6 * exp(-max(a - 0.18, 0.0) * 9.0) * step(0.18, a);
                 vec2 c = vec2((0.15 + 0.7 * hash(vec2(n, 1.0))) * aspect, 0.5 + 0.35 * hash(vec2(n, 2.0)));
-                float billow = smoothstep(0.25, 0.75, fbm(vec2(p.x * 3.0 + n * 7.0, uv.y * 5.0)));
+                float billow = smoothstep(0.25, 0.75, billowNoise(vec2(p.x * 3.0 + n * 7.0, uv.y * 5.0)));
                 glow += f * (exp(-length((p - c) * vec2(0.8, 1.6)) * 2.2) * (0.5 + 1.2 * billow) + 0.12) * aStorm;
             }
         }
@@ -609,7 +618,7 @@ vec3 drawPicture(vec2 frag) {
         // a storm: lightning flares in the cloud at the key, and a bolt strikes down to it
         if ((W == 3 || W == 6) && age < 0.9) {
             float flick = 0.55 + 0.45 * step(0.5, fract(age * 16.0));
-            float billow = smoothstep(0.2, 0.75, fbm(vec2(p.x * 3.2 + k.w, uv.y * 5.5 - age)));
+            float billow = smoothstep(0.2, 0.75, billowNoise(vec2(p.x * 3.2 + k.w, uv.y * 5.5 - age)));
             glow += (1.0 - smoothstep(0.0, 0.9, age)) * flick * (exp(-length(d * vec2(0.6, 1.3)) * 3.2) * (0.4 + 1.5 * billow) + 0.12);
             if (uv.y > kp.y && age < 0.35) {
                 float jag = kp.x + (noise(vec2(uv.y * 9.0, k.w)) - 0.5) * 0.12 + (noise(vec2(uv.y * 40.0, k.w + 3.0)) - 0.5) * 0.03;
