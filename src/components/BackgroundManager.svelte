@@ -33,6 +33,7 @@
 	import warp from "$lib/backgrounds/warp.frag?raw";
 	import spectrum from "$lib/backgrounds/spectrum.frag?raw";
 	import weather from "$lib/backgrounds/weather.frag?raw";
+	import ink from "$lib/backgrounds/ink.frag?raw";
 	type Group = "scenes" | "abstract" | "music";
 	const builtinShaders: { id: string; name: string; source: string; group: Group }[] = [
 		{ id: "synthwave", name: "Synthwave", source: synthwave, group: "scenes" },
@@ -40,6 +41,7 @@
 		{ id: "weather", name: "Weather", source: weather, group: "scenes" },
 		{ id: "aurora", name: "Aurora", source: aurora, group: "abstract" },
 		{ id: "nebula", name: "Nebula", source: nebula, group: "abstract" },
+		{ id: "ink", name: "Ink", source: ink, group: "abstract" },
 		{ id: "ember", name: "Ember", source: ember, group: "abstract" },
 		{ id: "lava", name: "Lava Lamp", source: lava, group: "abstract" },
 		{ id: "spectrum", name: "Spectrum", source: spectrum, group: "music" },
@@ -53,7 +55,6 @@
 		{ id: "aquarium", name: "Aquarium", file: "aquarium.html", group: "scenes", load: page("aquarium.html") },
 		{ id: "birds", name: "Birds", file: "birds.html", group: "scenes", load: page("birds.html") },
 		{ id: "blob", name: "Blob", file: "blob.html", group: "abstract", load: page("blob.html") },
-		{ id: "ink", name: "Ink", file: "ink.html", group: "abstract", load: page("ink.html") },
 		{ id: "milkdrop", name: "Milkdrop", file: "milkdrop.html", group: "music", load: page("milkdrop.html") },
 	];
 
@@ -297,12 +298,14 @@
 		keyStyle = await invoke<KeyStyle>("get_device_key_style", { device: device.id });
 		animated = await invoke<AnimatedBackground | null>("get_device_animated_background", { device: device.id });
 		// Weather took Sky's place: a deck on Sky moves to Weather's cloudy sea,
-		// which is Sky's clouds, keeping its time of day and wind. And Weather,
-		// once a web page, is now drawn by the deck's own renderer: a deck on
-		// the page moves to it, keeping its city and settings
-		if (animated?.kind == "web" && (animated.name == "Sky" || animated.name == "Weather")) {
+		// which is Sky's clouds, keeping its time of day and wind. And the
+		// built-ins that were web pages and are now drawn by the deck's own
+		// renderer: a deck on the page moves to the shader, keeping its settings
+		const nowNative: Record<string, string> = { Sky: "Weather", Weather: "Weather", Ink: "Ink" };
+		if (animated?.kind == "web" && nowNative[animated.name]) {
+			const shader = builtinShaders.find((b) => b.name == nowNative[animated!.name])!;
 			const params = { ...(animated.params ?? {}), ...(animated.name == "Sky" ? { weather: 1 } : {}) };
-			await setAnimated({ kind: "shader", name: "Weather", source: weather, params });
+			await setAnimated({ kind: "shader", name: shader.name, source: shader.source, params });
 		}
 		// bring a built-in chosen under an older version up to date: a page
 		const current = animated;
