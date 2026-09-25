@@ -693,14 +693,75 @@ vec3 drawPicture(vec2 frag) {
                 add += (cloudLight * crescent * 0.35 + vec3(1.0) * shine * 0.8 * body + cloudLight * body * 0.05 + cloudLight * trail * 0.08) * life * lum;
             }
         }
-        // snow: a gust sweeping out of the key with the wind, each flake at its
-        // own speed and height, so it scatters rather than rings
-        if ((W == 4 || W == 7) && age < 2.2) {
-            for (int j = 0; j < 22; j++) {
-                float fj = float(j), h1 = hash(vec2(k.w, fj)), h2 = hash(vec2(fj, k.w + 2.0)), h3 = hash(vec2(fj + 5.0, k.w));
-                float a = (h1 - 0.5) * 1.6 + 0.15, v = 0.08 + 0.28 * h2, go = age * (1.0 - 0.25 * age / 2.2);
-                vec2 at = kp + vec2((h3 - 0.5) * 0.06, (h1 - 0.5) * 0.08) + vec2(cos(a), sin(a) * 0.6) * v * go + vec2(sin(age * 3.0 + fj) * 0.01, -age * age * 0.04);
-                add += vec3(0.95, 0.97, 1.0) * smoothstep(0.011, 0.002, length(p - at)) * 0.85 * smoothstep(0.0, 0.1, age) * (1.0 - smoothstep(1.2, 2.2, age)) * (0.5 + 0.5 * h3) * lum;
+        // snow: a snowball thrown at the screen by someone out of view. It
+        // flies in from past the edge, growing as it comes at you, and smacks
+        // into the screen at the key: a packed, crumbly core with bits of snow
+        // sprayed out from it in streaks and clumps, which slips a little down
+        // the glass and melts away
+        if ((W == 4 || W == 7) && age < 7.0) {
+            float fly = 0.42, side = kp.x < aspect * 0.5 ? -1.0 : 1.0;
+            // packed snow, white in the day's light and dimmer at night
+            float bright = min(1.0, 0.5 + 0.6 * lum);
+            vec3 snowLit = vec3(1.0) * bright, snowShade = vec3(0.74, 0.8, 0.9) * bright;
+            if (age < fly) {
+                float e = age / fly;
+                // from past the nearer side edge, a little above, dropping as it comes
+                vec2 from = vec2(side > 0.0 ? aspect + 0.25 : -0.25, kp.y + 0.2 + 0.15 * fract(k.w * 3.7));
+                vec2 at = mix(from, kp, e) + vec2(0.0, 0.12 * e * (1.0 - e));
+                // it comes at you, so it grows, faster as it nears
+                float r = mix(0.035, 0.095, e * e);
+                vec2 q = (p - at) / r;
+                float lumpy = length(q) + (noise(q * 2.2 + k.w) - 0.5) * 0.22;
+                float ball = smoothstep(1.0, 0.9, lumpy);
+                vec3 n = normalize(vec3(q, sqrt(max(1.0 - dot(q, q), 0.0))));
+                float light = clamp(0.5 + 0.5 * dot(n, normalize(vec3(-0.4, 0.6, 0.7))), 0.0, 1.0);
+                vec3 c = mix(snowShade, snowLit, light) * (0.88 + 0.12 * fbm(q * 3.0 + k.w));
+                put(acc, c, ball);
+            } else {
+                float since = age - fly;
+                // it slips a little down the glass, and melts away
+                float slip = 0.03 * (1.0 - exp(-since * 0.6)) + 0.003 * since;
+                vec2 c = kp - vec2(0.0, slip);
+                vec2 q = p - c;
+                float r = length(q);
+                vec2 dir = q / max(r, 1e-4);
+                float burst = mix(0.75, 1.0, smoothstep(0.0, 0.08, since));
+                float melt = 1.0 - smoothstep(2.0, 6.5, since);
+                float s = 1.0 / burst;
+                // the packed core, an irregular round clump
+                float wob = (noise(dir * 2.5 + k.w) - 0.5) * 0.06 + (noise(dir * 6.0 + k.w + 5.0) - 0.5) * 0.025;
+                float core = 1.0 - smoothstep(0.08, 0.19, r * s + wob * 1.4);
+                // short smears where it spread across the glass as it hit
+                float smear = pow(noise(dir * 4.0 + k.w + 9.0), 2.0) * (1.0 - smoothstep(0.1, 0.25, r * s));
+                // the grain packed snow breaks into, strongest at the edge
+                vec2 g = q / burst;
+                float grain = fbm(g * 22.0 + k.w * 3.0), fine = noise(g * 90.0 + k.w);
+                float density = core * 1.15 + smear * 0.7 - (1.0 - grain) * 0.75 - (1.0 - fine) * 0.12;
+                float snow = smoothstep(0.3, 0.42, density);
+                // loose flecks round it, fewer further out
+                vec2 fc = g * 55.0, cell = floor(fc);
+                float fh = hash(cell + k.w), fleck = step(1.0 - 0.5 * (1.0 - smoothstep(0.12, 0.34, r * s)), fh);
+                vec2 fo = vec2(hash(cell + 1.7 + k.w), hash(cell + 2.9 + k.w)) * 0.6 + 0.2;
+                float fleckA = fleck * smoothstep(0.22 + 0.2 * hash(cell + 4.1), 0.05, length(fract(fc) - fo)) * (1.0 - core) * (1.0 - snow);
+                // lumps catching the light from above: the grain's slope as relief
+                float slope = (fbm(g * 22.0 + k.w * 3.0 + vec2(-0.03, 0.03)) - grain) * 12.0;
+                float thick = smoothstep(0.35, 0.9, density);
+                vec3 col = mix(snowShade, snowLit, clamp(0.55 + 0.3 * thick + slope, 0.0, 1.0));
+                put(acc, col, snow * mix(0.8, 1.0, thick) * melt);
+                put(acc, snowLit * 0.97, fleckA * 0.9 * melt);
+                // a puff of powder as it bursts, spreading and fading fast
+                float puff = exp(-r * s * 9.0) * (1.0 - smoothstep(0.0, 0.35, since)) * smoothstep(0.0, 0.03, since);
+                add += snowLit * puff * 0.35 * fbm(q * 12.0 - since * 3.0 + k.w);
+                // bits flung off as it bursts, slowing and falling away
+                if (since < 0.8) {
+                    for (int j = 0; j < 14; j++) {
+                        float fj = float(j), h1 = hash(vec2(fj + 11.0, k.w)), h2 = hash(vec2(k.w + 4.0, fj)), h3 = hash(vec2(fj, k.w + 13.0));
+                        float a = h1 * 6.2832, go = (0.12 + 0.22 * h2) * (1.0 - exp(-since * 8.0));
+                        vec2 bit = kp + vec2(cos(a), sin(a)) * go - vec2(0.0, since * since * 0.6);
+                        float fr = 0.004 + 0.008 * h3;
+                        add += snowLit * smoothstep(fr, fr * 0.3, length(p - bit)) * (1.0 - smoothstep(0.3, 0.8, since)) * 0.85;
+                    }
+                }
             }
         }
         // fog: it parts around the key, then closes again
