@@ -38,7 +38,7 @@ const int SKY_TOP = 0, SKY = 3, HORIZON = 6, GLOW = 9, CLOUD = 12, SHADOW = 15, 
 // and the numbers
 const int SUN_HEIGHT = 27, CLEARING = 28, LOOK_AT = 29, FLIP = 30, LIFT = 31, STRETCH = 32, SWING = 33, PACE = 34;
 const int A_CLEAR = 35, A_CLOUDY = 36, A_RAIN = 37, A_SNOW = 38, A_BLIZZARD = 39, A_STORM = 40, A_FOG = 41, NIGHT = 42, DUSK = 43;
-const int SUN_X = 44, SUN_Y = 45, MOON_X = 46, MOON_Y = 47, MOON_UP = 48;
+const int SUN_X = 44, SUN_Y = 45, MOON_X = 46, MOON_Y = 47, MOON_UP = 48, MOMENT = 49;
 const int VALUES = 52;
 // pixels: what is shown, what it is changing from, and the rest
 const int SHOWN = 0, FROM = 13, META = 26, CLOCK = 27, PINNED = 28, LIGHT = 29;
@@ -100,7 +100,11 @@ vec3 skyPlace(float whole, float part, float lat, float lon, float turn) {
     float el = asin(sin(la) * sin(dec) + cos(la) * cos(dec) * cos(ha));
     float az = atan(-sin(ha), tan(dec) * cos(la) - sin(la) * cos(ha)) / RAD;
     float fromFront = mod((lat >= 0.0 ? az - 180.0 : az) + 540.0, 360.0) - 180.0;
-    return vec3(0.5 + 0.45 * clamp(fromFront / 115.0, -1.0, 1.0), min(0.82, el / RAD / 62.0), el > 0.0 ? 1.0 : 0.0);
+    // the height eases toward the top of the view rather than stopping at it,
+    // so a sun passing high overhead arcs over instead of running flat
+    float y = el / RAD / 62.0;
+    if (y > 0.66) y = 0.66 + 0.16 * (1.0 - exp(-(y - 0.66) / 0.16));
+    return vec3(0.5 + 0.45 * clamp(fromFront / 115.0, -1.0, 1.0), y, el > 0.0 ? 1.0 : 0.0);
 }
 // the moon's phase today, 0 new to 0.5 full to 1 new again
 float moonPhase() {
@@ -137,7 +141,7 @@ int chosenTime() { return time < 0 ? clockTime() : time % 4; }
 // today at a time that stands for it, in the place's own time (morning at
 // nine, afternoon at twenty to four, the sunset as the sun meets the
 // horizon, night at half past ten)
-void skyPositions(int T, out vec3 sun, out vec3 moon) {
+void skyPositions(int T, out vec3 sun, out vec3 moon, out float moment) {
     vec2 at = here();
     float whole, part;
     daysNow(whole, part);
@@ -154,6 +158,7 @@ void skyPositions(int T, out vec3 sun, out vec3 moon) {
     }
     sun = skyPlace(whole, part, at.x, at.y, 0.0);
     moon = skyPlace(whole, part, at.x, at.y, moonPhase());
+    moment = part;
 }
 
 // ---- the look of each weather at each time of day: its colours are the
@@ -226,9 +231,10 @@ void goals(out float g[VALUES]) {
     g[A_SNOW] = W == 4 ? 1.0 : 0.0; g[A_BLIZZARD] = W == 7 ? 1.0 : 0.0; g[A_STORM] = (W == 3 || W == 6) ? 1.0 : 0.0; g[A_FOG] = W == 5 ? 1.0 : 0.0;
     g[NIGHT] = T == 3 ? 1.0 : 0.0; g[DUSK] = T == 2 ? 1.0 : 0.0;
     vec3 sun, moon;
-    skyPositions(T, sun, moon);
+    float moment;
+    skyPositions(T, sun, moon, moment);
     g[SUN_X] = sun.x; g[SUN_Y] = sun.y; g[MOON_X] = moon.x; g[MOON_Y] = moon.y; g[MOON_UP] = moon.z;
-    g[49] = 0.0; g[50] = 0.0; g[51] = 0.0;
+    g[MOMENT] = moment; g[50] = 0.0; g[51] = 0.0;
 }
 
 // ---- Sky's camera, from its own sums: it looks from a point on a circle
@@ -295,6 +301,16 @@ vec4 drawState(ivec2 px) {
     for (int i = 0; i < VALUES; i++) {
         from[i] = first ? g[i] : changed ? stored(SHOWN * 4 + i) : stored(FROM * 4 + i);
         shown[i] = viewOf(i) && dissolveNow ? g[i] : mix(from[i], g[i], e);
+    }
+    // a new time of day moves the moment the sky shows, so the sun and moon
+    // travel their real path through the sky (up over noon from morning to
+    // afternoon), rather than straight across the screen
+    if (!first && abs(from[MOMENT] - g[MOMENT]) > 1e-6) {
+        vec2 at = here();
+        float whole, part;
+        daysNow(whole, part);
+        vec3 sun = skyPlace(whole, shown[MOMENT], at.x, at.y, 0.0), moon = skyPlace(whole, shown[MOMENT], at.x, at.y, moonPhase());
+        shown[SUN_X] = sun.x; shown[SUN_Y] = sun.y; shown[MOON_X] = moon.x; shown[MOON_Y] = moon.y; shown[MOON_UP] = mix(from[MOON_UP], g[MOON_UP], e);
     }
     if (id < FROM) {
         int b = id * 4;
