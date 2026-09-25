@@ -248,7 +248,7 @@ async fn send_preview(id: &str, background: &RgbImage) {
     use base64::Engine;
     let small = imageops::resize(background, PREVIEW_WIDTH, PREVIEW_HEIGHT, imageops::FilterType::Triangle);
     let mut jpeg = std::io::Cursor::new(Vec::new());
-    if image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 70).encode_image(&small).is_err() {
+    if image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85).encode_image(&small).is_err() {
         return;
     }
     let url = format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(jpeg.into_inner()));

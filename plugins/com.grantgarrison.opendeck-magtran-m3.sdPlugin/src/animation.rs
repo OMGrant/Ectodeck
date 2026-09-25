@@ -382,10 +382,12 @@ impl ChromeHandle {
     }
 
     fn start_screencast(&mut self) -> std::io::Result<u64> {
-        // the page runs at 60; every second frame gives the 30 we send
+        // the page runs at 60; every second frame gives the 30 we send. At
+        // quality 100, near lossless: the frame is compressed again for the
+        // deck, and two ordinary JPEG passes show blocks in smooth skies
         self.send(
             "Page.startScreencast",
-            serde_json::json!({ "format": "jpeg", "quality": 85, "maxWidth": PANEL_WIDTH, "maxHeight": PANEL_HEIGHT, "everyNthFrame": (60 / self.fps).max(1) }),
+            serde_json::json!({ "format": "jpeg", "quality": 100, "maxWidth": PANEL_WIDTH, "maxHeight": PANEL_HEIGHT, "everyNthFrame": (60 / self.fps).max(1) }),
             true,
         )
     }

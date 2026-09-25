@@ -37,7 +37,9 @@ pub const PANEL_HEIGHT: u32 = 480;
 const CHUNK: usize = 1024;
 
 /// Key icons are small text and thin lines; the default 75 smears them.
-const JPEG_QUALITY: u8 = 88;
+// high, for smooth gradients: a frame is about 56 KB, 8 ms of the deck's
+// 8 MB/s link, so 30 a second use about a quarter of it
+const JPEG_QUALITY: u8 = 95;
 
 /// Scale to cover `w` x `h` preserving aspect ratio, then crop the overflow
 /// equally from both sides.
