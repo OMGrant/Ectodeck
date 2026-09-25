@@ -6,7 +6,8 @@ with a /*NAME*/ comment inside an empty <script>. This fills those in from
 third_party/ and writes the self-contained page to src/lib/backgrounds/,
 since the renderer opens a background as a single file. A page's own
 pictures, named as ectodeck-asset:folder/file.webp, are inlined the same way
-from beside it.
+from beside it. A source shader (.frag) has only its pictures inlined, as
+data: addresses in its ISF IMPORTED list.
 """
 
 import base64
@@ -48,6 +49,20 @@ def clouds(script: str) -> str:
 
 PATCHES = {"FLUID": fluid, "VANTA_CLOUDS": clouds}
 
+def inline(source: Path, text: str) -> str:
+	def one(match: re.Match) -> str:
+		asset = source.parent / match.group(1)
+		kind = {".webp": "image/webp", ".png": "image/png", ".jpg": "image/jpeg"}[asset.suffix]
+		return f"data:{kind};base64,{base64.b64encode(asset.read_bytes()).decode()}"
+	return re.sub(r"ectodeck-asset:([\w./-]+)", one, text)
+
+
+for source in sorted((ROOT / "src/lib/backgrounds/source").glob("*.frag")):
+	shader = inline(source, source.read_text())
+	out = ROOT / "src/lib/backgrounds" / source.name
+	out.write_text(shader)
+	print(f"{out.relative_to(ROOT)}: {len(shader) // 1024} KB")
+
 for source in sorted((ROOT / "src/lib/backgrounds/source").glob("*.html")):
 	page = source.read_text()
 	for name, path in LIBRARIES.items():
@@ -56,11 +71,7 @@ for source in sorted((ROOT / "src/lib/backgrounds/source").glob("*.html")):
 			library = (ROOT / path).read_text()
 			library = PATCHES.get(name, lambda x: x)(library).replace("</script", "<\\/script")
 			page = page.replace(marker, f"<script>\n{library}\n</script>")
-	def inline(match: re.Match) -> str:
-		asset = source.parent / match.group(1)
-		kind = {".webp": "image/webp", ".png": "image/png", ".jpg": "image/jpeg"}[asset.suffix]
-		return f"data:{kind};base64,{base64.b64encode(asset.read_bytes()).decode()}"
-	page = re.sub(r"ectodeck-asset:([\w./-]+)", inline, page)
+	page = inline(source, page)
 	out = ROOT / "src/lib/backgrounds" / source.name
 	out.write_text(page)
 	print(f"{out.relative_to(ROOT)}: {len(page) // 1024} KB")

@@ -11,6 +11,9 @@
 //! NAME + "At"), with the weather there from Open-Meteo, or with a pretend
 //! report from RENDER_WEATHER="code,wind,sunrise,sunset" (seconds after the
 //! place's midnight), e.g. RENDER_WEATHER=73,60,25200,69000.
+//!
+//! RENDER_CHANGE="seconds:json" changes settings part-way, as the app does,
+//! e.g. RENDER_CHANGE='2:{"weather":2}', to look at a transition.
 #[path = "../src/shader.rs"]
 #[allow(dead_code)]
 mod shader;
@@ -54,6 +57,10 @@ fn main() {
 	// step through time at the deck's 30 frames a second, so simulations and
 	// feedback buffers evolve as they would, saving the requested moments
 	let last = times.iter().cloned().fold(0.0, f32::max);
+	let change: Option<(f32, serde_json::Map<String, serde_json::Value>)> = std::env::var("RENDER_CHANGE").ok().and_then(|v| {
+		let (at, json) = v.split_once(':')?;
+		Some((at.parse().ok()?, serde_json::from_str(json).ok()?))
+	});
 	let mut frame = 0;
 	let mut t = 0.0f32;
 	while t <= last + 1e-3 {
@@ -75,6 +82,11 @@ fn main() {
 				*b = (low + high + 0.2 * (t * 1.3 + i as f32 * 0.4).sin().abs() * (1.0 - i as f32 / 32.0)).min(1.0);
 			}
 			controls.audio_level = (kick * 0.8 + 0.2).min(1.0);
+		}
+		if let Some((at, values)) = &change {
+			if t >= *at {
+				defaults.extend(values.clone());
+			}
 		}
 		let image = renderer.render(t, &defaults, &controls, &World::now(place, report));
 		if times.iter().any(|x| (x - t).abs() < 0.5 / 30.0) {
