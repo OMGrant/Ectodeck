@@ -237,14 +237,14 @@
   // cloud, and a view from under the cloud as well as over it
   var cloudMesh = effect.scene.children.filter(function (o) { return o.material && o.material.fragmentShader; })[0];
   var edits = [
-    ['uniform vec3 backgroundColor;', 'uniform vec3 backgroundColor;\nuniform vec3 skyTopColor;\nuniform vec3 skyHorizonColor;\nuniform vec3 skyGlowColor;\nuniform float clearing;\nuniform float lookAt;\nuniform float flip;\nuniform float sunHeight;\nuniform float lift;\nuniform float stretch;\nuniform float swing;'],
+    ['uniform vec3 backgroundColor;', 'uniform vec3 backgroundColor;\nuniform vec3 sunDirection;\nuniform vec3 skyTopColor;\nuniform vec3 skyHorizonColor;\nuniform vec3 skyGlowColor;\nuniform float clearing;\nuniform float lookAt;\nuniform float flip;\nuniform float sunHeight;\nuniform float lift;\nuniform float stretch;\nuniform float swing;'],
     ['vec4 col = vec4( mix( vec3(1.0,0.95,0.8), cloudShadowColor, den ), den );', 'vec4 col = vec4( mix( mix(vec3(1.0,0.95,0.8), vec3(0.86,0.9,0.98), step(flip, 0.0)), cloudShadowColor, den ), den );'],
     [/return clamp\( 1\.5 - p\.y - 2\.0 \+ 1\.75\*f, 0\.0, 1\.0 \);/g, 'return clamp( 1.5 - p.y - 2.0 + 1.75*f - clearing, 0.0, 1.0 );'],
     [/vec3 q = p - speed1\*\(iTime \+ constantTime\);/g, 'vec3 q = p * vec3(stretch, 1.0, stretch) - speed1*(iTime + constantTime);'],
-    ['vec3 sundir = normalize( vec3(-1.0,0.0,-1.0) );', '#define sundir normalize(vec3(-1.0, sunHeight, -1.0))'],
+    ['vec3 sundir = normalize( vec3(-1.0,0.0,-1.0) );', '#define sundir sunDirection'],
     ['vec3 col = skyColor - rd.y*0.2*vec3(1.0,0.5,1.0) + 0.15*0.5;',
      'float up = rd.y * flip;\n    vec3 col = mix(skyHorizonColor, skyColor, smoothstep(-0.03, 0.22, up));\n    col = mix(col, skyTopColor, smoothstep(0.2, 0.75, up));\n    col = mix(col, skyHorizonColor * 0.6 + skyTopColor * 0.25, smoothstep(0.0, -0.45, up));\n    col += skyGlowColor * (0.3 * pow(sun, 16.0) + 0.14 * pow(sun, 4.0)) * (1.0 - smoothstep(0.0, 0.35, abs(up - sundir.y)));'],
-    ['col += 0.2*sunColor*pow( sun, 8.0 );', 'float ownSun = (1.0 - step(2.0, clearing)) * step(0.0, flip);\n    col += (0.3*sunColor*pow( sun, 120.0 ) + 0.12*sunGlareColor*pow( sun, 14.0 )) * ownSun;'],
+    ['col += 0.2*sunColor*pow( sun, 8.0 );', 'float ownSun = (1.0 - pow(clamp(clearing / 5.0, 0.0, 1.0), 3.0)) * step(0.0, flip);\n    col += (0.3*sunColor*pow( sun, 120.0 ) + 0.12*sunGlareColor*pow( sun, 14.0 )) * ownSun;'],
     ['col += 0.2*sunGlareColor*pow( sun, 3.0 );',
      'col += (0.08*sunGlareColor*pow( sun, 30.0 ) + (sunColor * 1.6 * smoothstep(0.99955, 0.9998, sun) + sunColor * 0.45 * pow(sun, 400.0)) * (1.0 - res.w)) * ownSun;'],
     // Sky's camera swings slowly side to side to show off its clouds; with a clear
@@ -256,6 +256,9 @@
   var src = cloudMesh.material.fragmentShader;
   edits.forEach(function (e) { var was = src; src = src.replace(e[0], e[1]); if (src === was) console.error('weather: Sky shader edit did not apply', String(e[0])); });
   cloudMesh.material.fragmentShader = src;
+  // Sky's sun is where the sun (or at night the moon) drawn in the sky is, so
+  // there is one sun whichever way the camera looks, and it lights the clouds
+  cloudMesh.material.uniforms.sunDirection = { value: new THREE.Vector3(-0.7, 0.2, -0.7) };
   cloudMesh.material.needsUpdate = true;
 
   // ---- the weather in the air, drawn by the clouds' renderer straight after
@@ -698,9 +701,42 @@
     // the sun drawn in the sky sets as night comes (the clouds keep their moonlight)
     layer.uniforms.sunHeight.value = st.sunHeight + (-0.3 - st.sunHeight) * st.night;
     layer.uniforms.under.value = st.flip < 0 ? 1 : 0;
-    layer.uniforms.sunPos.value.set(st.sunX, st.sunY);
-    layer.uniforms.moonPos.value.set(st.moonX, st.moonY);
+    var sun = pinned(st.sunX, st.sunY, st), moon = pinned(st.moonX, st.moonY, st);
+    var light = [0, 1, 2].map(function (i) { var s = skyDirection(st.sunX, st.sunY), m = skyDirection(st.moonX, st.moonY); return s[i] + (m[i] - s[i]) * st.night; });
+    // kept just above the horizon, so the clouds are lit from above as before
+    light[1] = Math.max(light[1], 0.03); light = unit(light);
+    cloudMesh.material.uniforms.sunDirection.value.set(light[0], light[1], light[2]);
+    layer.uniforms.sunPos.value.set(sun[0], sun[1]);
+    layer.uniforms.moonPos.value.set(moon[0], moon[1]);
     layer.uniforms.moonUp.value = st.moonUp;
+  }
+  // The sun and moon are placed on the screen of a clear sky; as the camera
+  // tilts down onto the cloud tops they are kept where they are in the sky,
+  // like the clouds, by working out Sky's camera (its own sums, from its
+  // shader) for the clear view and for the view shown now.
+  function skyCamera(v) {
+    var u = effect.uniforms, res = u.iResolution.value, mouse = u.iMouse.value;
+    var my = (1 - mouse.y / res.y) * 0.33 + 0.28;
+    var mx = mouse.x / res.x * 0.25 + 0.137 + (Math.sin(u.iTime.value * 0.1 + 3.1415) * 0.25 + 0.25 - 0.137) * v.swing;
+    var o = [Math.sin(3 * mx), 0.4 * my, Math.cos(3 * mx)], ol = Math.hypot(o[0], o[1], o[2]);
+    o = [4 * o[0] / ol, 4 * o[1] / ol + v.lift, 4 * o[2] / ol];
+    var w = unit([-o[0], v.lookAt - o[1], -o[2]]), side = unit([-w[2], 0, w[0]]);
+    var up = [side[1] * w[2] - side[2] * w[1], side[2] * w[0] - side[0] * w[2], side[0] * w[1] - side[1] * w[0]];
+    return { side: side, up: up, w: w, aspect: res.x / res.y };
+  }
+  function unit(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+  function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  // the direction in the sky of a place on a clear sky's screen
+  function skyDirection(x, y) {
+    var a = skyCamera(VIEWS[0]), px = (2 * x - 1) * a.aspect, py = 2 * y - 1;
+    return unit([0, 1, 2].map(function (i) { return px * a.side[i] + py * a.up[i] + 1.5 * a.w[i]; }));
+  }
+  function pinned(x, y, st) {
+    var clear = VIEWS[0];
+    if (st.flip < 0 || ['lookAt', 'lift', 'swing'].every(function (k) { return st[k] === clear[k]; })) return [x, y];
+    var b = skyCamera(st), d = skyDirection(x, y), z = dot(d, b.w);
+    if (z <= 0.01) return [x, 9];
+    return [(1.5 * dot(d, b.side) / z / b.aspect + 1) / 2, (1.5 * dot(d, b.up) / z + 1) / 2];
   }
   // Sky's view settings: the ones that move the camera or the cloud around it
   var VIEW = ['clearing', 'lookAt', 'flip', 'lift', 'stretch', 'swing'];
@@ -722,11 +758,13 @@
     // start from what is on screen: in the middle of a dissolve, the view it was heading for
     var from = shown, to = goal();
     delete from.fromView; delete from.mixView;
-    // a new view is cross-faded in place, never flown to: blending the camera
-    // swings the whole sky, and Sky's own sun rides across it on the way. The
-    // cloud's shape is a scale of the whole cloud field, so a new shape is too.
+    // clear and cloudy are one sky seen two ways, so the camera tilts between
+    // them (the sun and moon stay pinned to the sky as it does); any other new
+    // view is cross-faded in place, never flown to. The cloud's shape is a
+    // scale of the whole cloud field, so a new shape is cross-faded too.
+    var builds = (from.w === 0 || from.w === 1) && (to.w === 0 || to.w === 1);
     var moves = ['lookAt', 'flip', 'lift', 'swing', 'stretch'].some(function (k) { return from[k] !== to[k]; });
-    easing = { from: from, to: to, start: performance.now(), ms: ms || 3000, dissolving: moves };
+    easing = { from: from, to: to, start: performance.now(), ms: ms || 3000, dissolving: moves && !builds };
   }
   function stepEasing(now) {
     if (!easing) return;
