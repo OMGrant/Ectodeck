@@ -481,6 +481,11 @@ fn run_web(
             // without these Chrome renders WebGL in software, on every core
             "--enable-gpu",
             "--ignore-gpu-blocklist",
+            // and on the graphics card by Vulkan: started from the desktop's
+            // autostart there is no display in the environment, and Chrome's
+            // default OpenGL path then falls back to software (SwiftShader),
+            // which runs a WebGL background at a few frames a second
+            "--use-angle=vulkan",
             "--disable-background-timer-throttling",
             "--disable-renderer-backgrounding",
             "--disable-backgrounding-occluded-windows",
