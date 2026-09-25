@@ -722,11 +722,11 @@
     // start from what is on screen: in the middle of a dissolve, the view it was heading for
     var from = shown, to = goal();
     delete from.fromView; delete from.mixView;
-    var builds = (from.w === 0 || from.w === 1) && (to.w === 0 || to.w === 1);
-    // the cloud's shape is a scale of the whole cloud field, so a new shape is
-    // cross-faded in place too rather than blended, which would move the clouds
+    // a new view is cross-faded in place, never flown to: blending the camera
+    // swings the whole sky, and Sky's own sun rides across it on the way. The
+    // cloud's shape is a scale of the whole cloud field, so a new shape is too.
     var moves = ['lookAt', 'flip', 'lift', 'swing', 'stretch'].some(function (k) { return from[k] !== to[k]; });
-    easing = { from: from, to: to, start: performance.now(), ms: ms || 3000, dissolving: moves && !builds };
+    easing = { from: from, to: to, start: performance.now(), ms: ms || 3000, dissolving: moves };
   }
   function stepEasing(now) {
     if (!easing) return;
