@@ -10,7 +10,9 @@
 //! A shader with a place input is drawn at the place in its settings (its
 //! NAME + "At"), with the weather there from Open-Meteo, or with a pretend
 //! report from RENDER_WEATHER="code,wind,sunrise,sunset" (seconds after the
-//! place's midnight), e.g. RENDER_WEATHER=73,60,25200,69000.
+//! place's midnight), e.g. RENDER_WEATHER=73,60,25200,69000, then optionally cloud cover,
+//! rain, showers, snow, steady wind, wind from, visibility, temperature, PM2.5, dust,
+//! optical depth and the warning (see the Report fields).
 //!
 //! RENDER_FPS sets the frames a second stepped through (30 by default; the
 //! deck runs at the fps in its settings, and a simulation that steps a fixed
@@ -54,7 +56,14 @@ fn main() {
 		Ok(v) => {
 			let n: Vec<f32> = v.split(',').map(|x| x.trim().parse().unwrap()).collect();
 			let zone = World::now(None, None).timezone;
-			Some(weather::Report { code: n[0] as i32, wind: n[1], sunrise: n[2], sunset: n[3], offset: zone as i32 })
+			// then, optionally: cloud cover (0-1), rain, showers, snow (mm an hour), steady wind (km/h),
+			// wind from (degrees), visibility (km), temperature (C), PM2.5, dust, optical depth, warning
+			let at = |i: usize, d: f32| n.get(i).copied().unwrap_or(d);
+			Some(weather::Report {
+				code: n[0] as i32, wind: n[1], sunrise: n[2], sunset: n[3], offset: zone as i32,
+				cloud: at(4, -1.0), rain: at(5, 0.0), showers: at(6, 0.0), snow: at(7, 0.0), wind_speed: at(8, n[1]), wind_from: at(9, 270.0),
+				visibility: at(10, 20.0), temperature: at(11, 15.0), pm25: at(12, 5.0), dust: at(13, 0.0), haze: at(14, 0.1), air_known: n.len() > 12, alert: at(15, 0.0) as i32,
+			})
 		}
 		Err(_) => place.and_then(|(lat, lon)| weather::ask(lat, lon).map_err(|e| eprintln!("no weather: {e}")).ok()),
 	};
