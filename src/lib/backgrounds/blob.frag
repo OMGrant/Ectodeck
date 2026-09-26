@@ -295,8 +295,18 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             c += (hash(fragCoord) - 0.5) * (2.0 / 255.0);
             rgb = c; cover = 1.0;
         } else {
-            // the lit body, a dark fill lit at the rim; slime is wet, glass is not
-            vec3 n = normalize(rot * skinNormal(o, 0.02)), v = normalize(-(q));
+            // the lit body, a dark fill lit at the rim; slime is wet, glass is not.
+            // A press dents it as it dents the deep body: the dent's and the
+            // ripple's slopes tilt the skin into the light, lower skin a little
+            // darker and raised skin a little lighter
+            vec3 n = normalize(rot * skinNormal(o, 0.02));
+            vec2 e = 2.0 / iResolution.xy;
+            vec2 slope = vec2(pokeHeight(ndc + vec2(e.x, 0.0)) - pokeHeight(ndc - vec2(e.x, 0.0)),
+                              pokeHeight(ndc + vec2(0.0, e.y)) - pokeHeight(ndc - vec2(0.0, e.y))) / (2.0 * e);
+            n = normalize(n - vec3(slope, 0.0) * 0.4);
+            float lift = clamp(pokeHeight(ndc) / 0.45, -1.0, 1.0);
+            q += d * dot(n * pokeHeight(ndc) * scale, d);
+            vec3 v = normalize(-q);
             float fres = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 2.4);
             vec3 L = normalize(vec3(0.6, 0.9, 0.8));
             float diff = max(dot(n, L), 0.0);
@@ -305,6 +315,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
                 c += mix(vec3(1.0), LIME, 0.37) * pow(max(dot(n, normalize(L + v)), 0.0), 60.0) * 0.9;
                 c += DEEP * diff * 0.5;
             }
+            c *= 1.0 + lift * 0.24;
             float alpha = mode == SLIME ? 0.95 : 0.55;
             rgb = c * alpha; cover = alpha;
         }
