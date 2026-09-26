@@ -865,11 +865,17 @@ void drawPuffed(inout vec3 col, Fish f, vec2 px, float rot, float light, float h
     float c = cos(rot), s = sin(rot);
     vec2 centre = f.p + mat2(c, s, -s, c) * (middle * vec2(sx, 1.0));
     vec2 uv = toLocal(px, centre, rot, size * vec2(sx, 1.0)) + 0.5;
-    // the body swells out from the face; the face itself stays as it is
-    float swell = 0.5 * f.puff;
+    // the body swells out from the face into a ball: far more in height than
+    // in length, so the long fish rounds out; the face itself stays as it is
+    vec2 swell = vec2(0.35, 1.05) * f.puff;
     vec2 fromEye = (uv - PUFFED_EYE) * vec2(1.0, aspect);
-    float body = smoothstep(0.2, 0.5, length(fromEye));
-    vec2 src = PUFFED_EYE + (uv - PUFFED_EYE) / (1.0 + swell * body);
+    float body = smoothstep(0.18, 0.5, length(fromEye));
+    // swollen about the middle of the body, a little behind the eye, so it
+    // balloons up and down evenly
+    vec2 middle_ = vec2(PUFFED_EYE.x + 0.28, 0.48);
+    vec2 src = uv;
+    src.x = PUFFED_EYE.x + (uv.x - PUFFED_EYE.x) / (1.0 + swell.x * body);
+    src.y = middle_.y + (uv.y - middle_.y) / (1.0 + swell.y * body);
     if (!inside(src)) return;
     vec4 k = textureLod(puffed, src, lod);
     if (k.a < 0.03) return;
