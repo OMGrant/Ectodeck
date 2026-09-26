@@ -227,7 +227,7 @@ void goals(out float g[VALUES]) {
     else if (W == WINDY) { to = hex(0x9aa4b0); grey = 0.22; dark = 0.04; }
     else if (W == HAZE) { to = hex(0xb8a58a); grey = 0.5; dark = 0.08; }
     // a hurricane seen from above: sunlit cloud tops, a little greyer than Cloudy's
-    else if (W == HURRICANE) { to = hex(0x8e98a6); grey = 0.3; dark = 0.06; }
+    else if (W == HURRICANE) { to = hex(0xdfe4ea); grey = 0.35; dark = 0.0; }
     else if (W == TORNADO) { to = hex(0x2f3d35); grey = 0.76; dark = 0.5; }
     for (int k = 0; k < 9; k++) {
         vec3 x = grey > 0.0 ? mix(c[k], to, (k == 6 || k == 7) ? grey * 0.8 : grey) : c[k];
@@ -290,7 +290,7 @@ void goals(out float g[VALUES]) {
         if (live && cover >= 0.0) clearing = mix(1.05, 0.45, smoothstep(0.15, 0.75, cover));
         if (W == WINDY) stretch = 0.8;
     }
-    if (W == HURRICANE) { flip = 1.0; lift = 4.0; lookAt = -4.0; swing = 0.0; clearing = 0.45; whirl = 1.0; stretch = 1.0; }
+    if (W == HURRICANE) { flip = 1.0; lift = 6.0; lookAt = -7.0; swing = 0.0; clearing = 0.45; whirl = 1.0; stretch = 1.0; base = -0.9; }
     g[CLEARING] = clearing; g[LOOK_AT] = lookAt; g[FLIP] = flip; g[LIFT] = lift; g[STRETCH] = stretch; g[SWING] = swing;
     g[CLOUD_BASE] = base; g[SPIRAL] = whirl;
     // how strong the wind is: the Wind setting, or on Automatic the real wind
@@ -466,7 +466,7 @@ vec4 drawState(ivec2 px) {
 
 // ---- 2. Sky's clouds
 vec3 sundir;
-float clearing, flip, stretch, lookAtNow, cloudCover, cloudBase, spiral;
+float clearing, flip, stretch, lookAtNow, cloudCover, cloudBase, spiral, spin;
 vec3 skyTopColor, skyColor, skyHorizonColor, skyGlowColor, cloudColor, cloudShadowColor, sunColor, sunGlareColor, sunlightColor;
 float cloudClock;
 
@@ -480,7 +480,7 @@ float noise3(vec3 x) {
 }
 const float constantTime = 1000.0;
 // a hurricane's scale in the cloud's own units (its eye about a third of this across)
-const float HURRICANE_SIZE = 2.2;
+const float HURRICANE_SIZE = 3.0;
 float mapCloud(vec3 p, int octaves) {
     vec3 speed1 = vec3(0.5, 0.01, 1.0) * 0.5;
     // A hurricane, as satellite pictures show one: a big bright central dense
@@ -489,25 +489,35 @@ float mapCloud(vec3 p, int octaves) {
     // spiral bands curling out beyond the core, with lower cloud between them;
     // and past them the ordinary broken cloud of the region. The whole storm
     // turns slowly, as one, so the bands never wind up tighter
-    float whirl = 0.0, smooth_ = 0.0;
+    float whirl = 0.0, smooth_ = 0.0, fine = 1.0, lumpy = 0.0;
     if (spiral > 0.001) {
         vec2 c = p.xz / HURRICANE_SIZE;
+        c.y *= spin;
         float r = length(c);
-        float a = spiral * (1.6 / (r + 0.45) + cloudClock * 0.12);
-        vec2 d = mat2(cos(a), sin(a), -sin(a), cos(a)) * p.xz;
+        // turning counterclockwise seen from above north of the equator (clockwise south)
+        float a = spiral * (1.1 / (r + 0.5) + cloudClock * 0.1);
+        vec2 d = mat2(cos(a), sin(a), -sin(a), cos(a)) * c;
         float theta = atan(c.y, c.x) - a;
-        float band = sin(3.0 * theta + 5.0 * log(r + 0.1));
-        float eyeR = 0.075 + 0.07 * clamp(p.y + 0.7, 0.0, 1.5);
-        float core = smoothstep(0.95, 0.45, r);
-        whirl = spiral * (0.75 * core
-                        + (1.1 * smoothstep(-0.1, 0.8, band) - 0.75) * smoothstep(0.6, 1.1, r) * (1.0 - smoothstep(2.6, 3.4, r))
+        // the bands: ragged-edged arms of lumpy cloud, open ocean between them,
+        // wound into a log spiral and fading out into the region's scattered cloud
+        float ragged = noise3(vec3(d * 4.0, 3.0)) + 0.4 * noise3(vec3(d * 11.0, 7.0));
+        float thin = 0.25 * clamp(r - 0.9, 0.0, 2.0);
+        float band = smoothstep(-0.8 + thin, 0.2 + thin, sin(3.0 * theta + 6.0 * log(r + 0.05) + 0.8 * ragged));
+        float arms = smoothstep(0.55, 0.95, r) * (1.0 - smoothstep(1.9, 3.0, r));
+        float eyeR = 0.07 + 0.015 * clamp(p.y + 0.7, 0.0, 1.5);
+        float core = smoothstep(1.0, 0.5, r);
+        whirl = spiral * (1.0 * core
+                        + (1.15 * band - 0.85) * arms
                         - 4.0 * smoothstep(eyeR + 0.035, eyeR, r)
-                        + 0.45 * exp(-(r - eyeR - 0.05) * (r - eyeR - 0.05) / 0.003)
-                        - 0.45 * smoothstep(2.8, 3.6, r));
-        smooth_ = spiral * core * smoothstep(eyeR + 0.08, eyeR + 0.25, r);
-        p.xz = mix(p.xz, d, spiral * smoothstep(0.12, 0.35, r));
+                        - 0.9 * smoothstep(2.2, 3.4, r));
+        lumpy = spiral * arms * band;
+        smooth_ = spiral * core * smoothstep(eyeR + 0.04, eyeR + 0.14, r);
+        vec2 dw = d * HURRICANE_SIZE; dw.y *= spin;
+        p.xz = mix(p.xz, dw, spiral * smoothstep(0.08, 0.3, r));
+        // a hurricane is vast: its cloud is fine-grained against it
+        fine = mix(1.0, 2.0, spiral);
     }
-    vec3 q = p * vec3(stretch, 1.0, stretch) - speed1 * (cloudClock * (1.0 - 0.9 * spiral) + constantTime);
+    vec3 q = p * vec3(stretch * fine, fine, stretch * fine) - speed1 * (cloudClock * (1.0 - 0.9 * spiral) + constantTime);
     float f = 0.5 * noise3(q); q = q * 2.02;
     f += 0.25 * noise3(q); q = q * 2.03;
     if (octaves > 2) { f += 0.125 * noise3(q); q = q * 2.01; }
@@ -515,12 +525,20 @@ float mapCloud(vec3 p, int octaves) {
     if (octaves > 4) f += 0.03125 * noise3(q);
     // the cirrus shield over the core is smooth, the lumps only faint under it
     f = mix(f, 0.5 + (f - 0.5) * 0.35, smooth_);
+    // seen from this high the bands' towers are low against their spread (tall
+    // lumps would lean out from the middle of the view in the perspective)
+    f = 0.5 + (f - 0.5) * (1.0 - 0.45 * lumpy);
     // the cloud's base: below it there is no cloud, so where the tops dip under
     // it the layer breaks and the world beneath shows through the gaps
-    return clamp(1.5 - p.y - 2.0 + 1.75 * f - clearing + whirl, 0.0, 1.0) * smoothstep(cloudBase, cloudBase + 0.22, p.y);
+    float top = -0.5 + 1.75 * f - clearing + whirl;
+    // (a hurricane's cloud is flat against its size: its tops rise half as far over the base)
+    top = mix(top, cloudBase + (top - cloudBase) * 0.5, spiral);
+    return clamp((top - p.y) * (1.0 + 1.5 * spiral), 0.0, 1.0) * smoothstep(cloudBase, cloudBase + 0.22, p.y);
 }
 vec4 integrate(vec4 sum, float dif, float den, vec3 bgcol, float t) {
     vec3 lin = cloudColor * 1.4 + sunlightColor * dif;
+    // a hurricane's tops by moonlight, as the night satellite pictures show them
+    lin += spiral * vec3(0.55, 0.62, 0.8) * clamp(1.0 - 2.0 * length(sunlightColor), 0.0, 1.0);
     vec4 col = vec4(mix(mix(vec3(1.0, 0.95, 0.8), vec3(0.86, 0.9, 0.98), step(flip, 0.0)), cloudShadowColor, den), den);
     col.xyz *= lin;
     col.xyz = mix(col.xyz, bgcol, 1.0 - exp(-0.003 * t * t));
@@ -532,7 +550,11 @@ vec4 raymarch(vec3 ro, vec3 rd, vec3 bgcol) {
     vec4 sum = vec4(0.0);
     // looking steeply down on a hurricane, each pixel starts its march a little
     // differently, which breaks up the bands the fixed steps leave
-    float t = spiral > 0.001 ? hash1(dot(gl_FragCoord.xy, vec2(1.0, 57.0))) * 0.075 * spiral : 0.0;
+    float t = spiral > 0.001 ? hash1(dot(gl_FragCoord.xy, vec2(1.0, 57.0))) * 0.03 * spiral : 0.0;
+    // a camera high above the cloud starts its march at the top of the cloud,
+    // not at the camera, and steps finely through it
+    if (ro.y > 1.0 && rd.y < 0.0) t += (ro.y - 1.0) / -rd.y;
+    float fineStep = 1.0 - 0.6 * spiral;
     // four stretches, the nearer drawn in more detail
     for (int s = 0; s < 4; s++) {
         int steps = s == 0 ? 20 : s == 1 ? 25 : s == 2 ? 30 : 40, octaves = 5 - s;
@@ -546,7 +568,7 @@ vec4 raymarch(vec3 ro, vec3 rd, vec3 bgcol) {
                 float dif = clamp((den - mapCloud(pos + 0.3 * sundir, octaves)) / 0.6, 0.0, 1.0);
                 sum = integrate(sum, dif, den, bgcol, t);
             }
-            t += max(0.075, 0.02 * t);
+            t += max(0.075, 0.02 * t) * fineStep;
         }
     }
     return clamp(sum, 0.0, 1.0);
@@ -557,6 +579,8 @@ vec3 skyRender(vec3 ro, vec3 rd) {
     vec3 col = mix(skyHorizonColor, skyColor, smoothstep(-0.03, 0.22, up));
     col = mix(col, skyTopColor, smoothstep(0.2, 0.75, up));
     col = mix(col, skyHorizonColor * 0.6 + skyTopColor * 0.25, smoothstep(0.0, -0.45, up));
+    // under a hurricane, far below, the dark ocean
+    col = mix(col, vec3(0.04, 0.1, 0.19) * (0.4 + 0.6 * length(sunlightColor)), spiral * smoothstep(-0.05, -0.35, up));
     col += skyGlowColor * (0.3 * pow(sun, 16.0) + 0.14 * pow(sun, 4.0)) * (1.0 - smoothstep(0.0, 0.35, abs(up - sundir.y)));
     // Sky's own sun, over the cloud; looking up, the sun drawn in the sky is the sun
     // the sun is the one drawn in the sky over the cloud (Sky's own would be a second)
@@ -585,6 +609,7 @@ vec4 drawClouds(vec2 frag) {
     vec4 clockPx = stateAt(CLOCK);
     cloudClock = clockPx.x;
     cloudBase = stored(CLOUD_BASE); spiral = stored(SPIRAL);
+    spin = here().x >= 0.0 ? 1.0 : -1.0;
     // the picture of the sky, and how much of it is cloud (for the sun, moon and
     // stars drawn in the sky to hide behind)
     vec3 now = skyView(frag, stored(CLEARING), stored(LOOK_AT), stored(FLIP), stored(LIFT), stored(STRETCH), stored(SWING));
