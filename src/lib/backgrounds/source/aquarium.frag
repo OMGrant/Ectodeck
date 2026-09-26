@@ -23,6 +23,7 @@
     "anthias": { "PATH": "ectodeck-asset:aquarium/anthias.webp" },
     "pufferTex": { "PATH": "ectodeck-asset:aquarium/puffer.webp" },
     "puffed": { "PATH": "ectodeck-asset:aquarium/puffed.webp" },
+    "ballTex": { "PATH": "ectodeck-asset:aquarium/ball.webp" },
     "anemoneTex": { "PATH": "ectodeck-asset:aquarium/anemone.webp" },
     "crabBody": { "PATH": "ectodeck-asset:aquarium/crab-body.webp" },
     "clawLeft": { "PATH": "ectodeck-asset:aquarium/crab-claw-left.webp" },
@@ -499,7 +500,7 @@ Fish stepFish(int me) {
         if (t > f.nextPuff) { f.puffUntil = t + 3.5; f.nextPuff = t + rnd(35.0, 70.0, float(me) + 90.0); }
         float goal = t < f.puffUntil ? 1.0 : 0.0;
         f.puff += (goal - f.puff) * min(1.0, dt * (goal > 0.5 ? 5.0 : 0.9));
-        f.swap = clamp((f.puff - 0.25) / 0.5, 0.0, 1.0);
+        f.swap = clamp((f.puff - 0.15) / 0.3, 0.0, 1.0);
         // with music it swells rounder on each beat and relaxes between
         float breath = grooving(m) ? exp(-(t - m.lastBeat) * 5.0) : 0.0;
         f.bulge = 1.3 * f.puff + 0.7 * E * breath * (1.0 - f.puff);
@@ -843,43 +844,39 @@ void drawStrip(inout vec3 col, vec2 q, int kind, bool puffedPic, float alpha, fl
         x0 = x1; top0 = top1; bot0 = bot1; side0 = side1;
     }
 }
-// The pufferfish blown up: a ball of a body with the face kept the calm fish's
-// size and where the calm fish's face was. The puffed picture is drawn at the
-// size that makes its eye the calm fish's eye, anchored on that eye, and the
-// body around it swells out from the face, up to half as big again, while
-// the eye and mouth stay as they are, as a real puffer's do. In a turn it
-// narrows to its edge and flips.
-const vec2 CALM_EYE = vec2(0.125, 0.633), PUFFED_EYE = vec2(0.244, 0.715);
-const float PUFFED_GROW = 0.76;
-void drawPuffed(inout vec3 col, Fish f, vec2 px, float rot, float light, float haze, vec3 tint, float lod) {
-    vec2 ps = IMG_SIZE(puffed);
-    float calmAspect = aspectOf(PUFFER), aspect = ps.y / ps.x;
+// The pufferfish blowing up, in pictures: the calm fish, then the spiky
+// half-puffed one, then a round balloon for the full puff, each fading into the
+// next. Every picture is drawn at the size that makes its eye the calm fish's
+// eye (the eye is about a ninth of each picture's width) and placed so its eye
+// lands where the calm fish's eye is, so the face keeps its size and place while
+// the body grows round it. The body also swells a little more, evenly, out from
+// the face. In a turn the blown-up fish narrows to its edge and flips.
+const vec2 CALM_EYE = vec2(0.125, 0.65), PUFFED_EYE = vec2(0.25, 0.736), BALL_EYE = vec2(0.25, 0.72);
+const float PUFFED_GROW = 1.0, BALL_GROW = 0.965;
+void drawBlownUp(inout vec3 col, Fish f, vec2 px, float rot, float light, float haze, vec3 tint, float lod, bool ball, float alpha, float swell) {
+    if (alpha <= 0.0) return;
+    vec2 ps = ball ? IMG_SIZE(ballTex) : IMG_SIZE(puffed);
+    vec2 eye = ball ? BALL_EYE : PUFFED_EYE;
+    float grow = ball ? BALL_GROW : PUFFED_GROW, aspect = ps.y / ps.x;
     float turnFacing = f.turnT < 1.0 ? f.from * cos(3.14159 * f.turnT) : f.dir;
     float sx = -turnFacing;                     // the picture faces left; going right it is mirrored
     if (abs(sx) < 0.02) return;
     // where the calm fish's eye is, from its middle, in the fish's own terms
-    vec2 eyeAt = (CALM_EYE - 0.5) * vec2(f.len, f.len * calmAspect);
-    vec2 size = vec2(f.len * PUFFED_GROW, f.len * PUFFED_GROW * aspect);
-    // the puffed picture placed so its eye lands there
-    vec2 middle = eyeAt - (PUFFED_EYE - 0.5) * size;
+    vec2 eyeAt = (CALM_EYE - 0.5) * vec2(f.len, f.len * aspectOf(PUFFER));
+    vec2 size = vec2(f.len * grow, f.len * grow * aspect);
+    // the picture placed so its eye lands there
+    vec2 middle = eyeAt - (eye - 0.5) * size;
     float c = cos(rot), s = sin(rot);
     vec2 centre = f.p + mat2(c, s, -s, c) * (middle * vec2(sx, 1.0));
     vec2 uv = toLocal(px, centre, rot, size * vec2(sx, 1.0)) + 0.5;
-    // the body swells out from the face into a ball: far more in height than
-    // in length, so the long fish rounds out; the face itself stays as it is
-    vec2 swell = vec2(0.35, 1.05) * f.puff;
-    vec2 fromEye = (uv - PUFFED_EYE) * vec2(1.0, aspect);
-    float body = smoothstep(0.18, 0.5, length(fromEye));
-    // swollen about the middle of the body, a little behind the eye, so it
-    // balloons up and down evenly
-    vec2 middle_ = vec2(PUFFED_EYE.x + 0.28, 0.48);
-    vec2 src = uv;
-    src.x = PUFFED_EYE.x + (uv.x - PUFFED_EYE.x) / (1.0 + swell.x * body);
-    src.y = middle_.y + (uv.y - middle_.y) / (1.0 + swell.y * body);
+    // the body swells out from the face; the face itself stays as it is
+    vec2 fromEye = (uv - eye) * vec2(1.0, aspect);
+    float body = smoothstep(0.2, 0.5, length(fromEye));
+    vec2 src = eye + (uv - eye) / (1.0 + swell * body);
     if (!inside(src)) return;
-    vec4 k = textureLod(puffed, src, lod);
+    vec4 k = ball ? textureLod(ballTex, src, lod) : textureLod(puffed, src, lod);
     if (k.a < 0.03) return;
-    over(col, lit(mix(k.rgb * light, WATER, haze), tint, px), k.a * f.swap);
+    over(col, lit(mix(k.rgb * light, WATER, haze), tint, px), k.a * alpha);
 }
 void drawFish(inout vec3 col, int i, vec2 px, vec3 tint) {
     Fish f = fishAt(i);
@@ -900,7 +897,12 @@ void drawFish(inout vec3 col, int i, vec2 px, vec3 tint) {
     float lod = log2(max(360.0 / f.len, 1.0));
     ampU = f.amp; bulgeU = f.bulge;
     drawStrip(col, toLocal(px, f.p, rot, scale), f.kind, false, 1.0 - f.swap, light, haze, tint, px, lod);
-    if (f.kind == PUFFER && f.swap > 0.0) drawPuffed(col, f, px, rot, light, haze, tint, lod);
+    if (f.kind == PUFFER && f.puff > 0.1) {
+        // the half-puffed picture as it swells, the balloon at the full puff
+        float toBall = smoothstep(0.62, 0.9, f.puff);
+        drawBlownUp(col, f, px, rot, light, haze, tint, lod, false, f.swap * (1.0 - toBall), 0.2 * f.puff);
+        drawBlownUp(col, f, px, rot, light, haze, tint, lod, true, toBall, 0.3 * f.puff);
+    }
 }
 
 // ---- the crab in its parts: body, and two claws that swing up from the shoulder,
