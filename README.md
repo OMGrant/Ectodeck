@@ -52,13 +52,11 @@ Ectodeck exists because of [OpenDeck](https://github.com/nekename/OpenDeck) by [
 
 Please report problems with Ectodeck's additions here, not to OpenDeck.
 
-Some built-in backgrounds are made from open-source work, each under the MIT License, with its licence kept beside it in [third_party](third_party):
+Every built-in background is drawn by the deck's own renderer. Some are made from open-source work, kept with its licence in [third_party](third_party); each is under the MIT License unless said otherwise:
 
-- **Milkdrop** runs [Butterchurn](https://github.com/jberg/butterchurn) and its [preset pack](https://github.com/jberg/butterchurn-presets) by Jordan Berg, a web port of Ryan Geiss's Milkdrop, with presets by the Milkdrop community.
-- **Ink** is [WebGL Fluid Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation) by Pavel Dobryakov.
-- **Birds** and **Weather**'s clouds are [Vanta](https://github.com/tengbao/vanta) effects by Teng Bao, on [three.js](https://github.com/mrdoob/three.js).
-
-The MagTran M3 plugin builds [projectM](https://github.com/projectM-visualizer/projectm) (libprojectM 4.1.7, by the projectM team, under the GNU Lesser General Public License 2.1, kept in [third_party/libprojectM](third_party/libprojectM)) to draw Milkdrop on the deck's own renderer, with the original Milkdrop files of the same Butterchurn preset pack.
+- **Weather**'s clouds are after the clouds in [Vanta](https://github.com/tengbao/vanta) by Teng Bao.
+- **Ink** is after [WebGL Fluid Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation) by Pavel Dobryakov.
+- **Milkdrop** is drawn by [projectM](https://github.com/projectM-visualizer/projectm) (libprojectM 4.1.7, by the projectM team, under the GNU Lesser General Public License 2.1, kept in [third_party/libprojectM](third_party/libprojectM)), a re-creation of Ryan Geiss's Milkdrop, with the presets of Jordan Berg's [Butterchurn preset pack](https://github.com/jberg/butterchurn-presets), by the Milkdrop community.
 
 Weather also uses:
 

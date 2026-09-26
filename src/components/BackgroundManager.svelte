@@ -54,30 +54,7 @@
 		{ id: "spectrum", name: "Spectrum", source: spectrum, group: "music" },
 		{ id: "milkdrop", name: "Milkdrop", source: milkdrop, group: "music" },
 	];
-	// Built-in web pages, written to the configuration directory when chosen,
-	// since the page renderer opens files rather than the app's own assets.
-	// Some carry whole libraries, so each is loaded only when it is needed.
-	const pageSources = import.meta.glob("$lib/backgrounds/*.html", { query: "?raw", import: "default" }) as Record<string, () => Promise<string>>;
-	const page = (file: string) => pageSources[`/src/lib/backgrounds/${file}`];
-	const builtinPages: { id: string; name: string; file: string; group: Group; load: () => Promise<string> }[] = [
-	];
-
-	// A built-in page's address carries a fingerprint of its contents, so a
-	// newer version of the page is a different address: the renderer loads
-	// it afresh instead of keeping the copy written when it was first chosen.
-	function fingerprint(text: string): string {
-		let h = 2166136261;
-		for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
-		return (h >>> 0).toString(36);
-	}
-	async function writeBuiltinPage(page: (typeof builtinPages)[number]): Promise<string> {
-		const html = await page.load();
-		const path = await invoke<string>("save_background_page", { name: page.file, contents: html });
-		return path + "#" + fingerprint(html);
-	}
-	const isBuiltin = (a: AnimatedBackground | null) =>
-		!!a &&
-		((a.kind == "shader" && builtinShaders.some((s) => s.name == a.name)) || (a.kind == "web" && builtinPages.some((p) => p.name == a.name)));
+	const isBuiltin = (a: AnimatedBackground | null) => !!a && a.kind == "shader" && builtinShaders.some((s) => s.name == a.name);
 
 	// The current animation's adjustable parameters, from its ISF inputs.
 	let inputs: IsfInput[] = [];
@@ -86,8 +63,6 @@
 	async function readSource(a: AnimatedBackground | null): Promise<string> {
 		if (!a) return "";
 		if (a.kind == "shader") return a.source;
-		const builtin = builtinPages.find((p) => p.name == a.name);
-		if (builtin) return await builtin.load();
 		// a page kept on disk can be read back through the local file server
 		if (a.url.startsWith("/")) {
 			try {
@@ -186,7 +161,6 @@
 		...(["scenes", "abstract", "music"] as Group[]).map((group) => ({
 			heading: $t("device_view.animation.group." + group),
 			items: [
-				...builtinPages.filter((p) => p.group == group).map((p) => ({ id: "page:" + p.id, label: p.name, selected: animated?.kind == "web" && animated.name == p.name })),
 				...builtinShaders.filter((s) => s.group == group).map((s) => ({ id: "builtin:" + s.id, label: s.name, selected: animated?.kind == "shader" && animated.name == s.name })),
 			].sort((a, b) => a.label.localeCompare(b.label)),
 		})),
@@ -253,14 +227,6 @@
 		else if (id.startsWith("builtin:")) {
 			const shader = builtinShaders.find((s) => "builtin:" + s.id == id);
 			if (shader) await setAnimated({ kind: "shader", name: shader.name, source: shader.source, params: await remembered(shader.name) });
-		} else if (id.startsWith("page:")) {
-			const page = builtinPages.find((p) => "page:" + p.id == id);
-			if (!page) return;
-			try {
-				await setAnimated({ kind: "web", name: page.name, url: await writeBuiltinPage(page), params: await remembered(page.name) });
-			} catch (error) {
-				animationError = String(error);
-			}
 		} else if (id == "url") {
 			url = animated?.kind == "web" && !animated.url.startsWith("/") ? animated.url : "";
 			enteringUrl = true;
@@ -311,13 +277,8 @@
 			const params = { ...(animated.params ?? {}), ...(animated.name == "Sky" ? { weather: 1 } : {}) };
 			await setAnimated({ kind: "shader", name: shader.name, source: shader.source, params });
 		}
-		// bring a built-in chosen under an older version up to date: a page
+		// bring a built-in shader saved with older code up to date
 		const current = animated;
-		const page = current?.kind == "web" ? builtinPages.find((p) => p.name == current.name) : undefined;
-		if (current?.kind == "web" && page && !current.url.endsWith("#" + fingerprint(await page.load()))) {
-			await setAnimated({ ...current, url: await writeBuiltinPage(page) });
-		}
-		// and a built-in shader saved with older code
 		const shader = current?.kind == "shader" ? builtinShaders.find((b) => b.name == current.name) : undefined;
 		if (current?.kind == "shader" && shader && current.source != shader.source) {
 			await setAnimated({ ...current, source: shader.source });
