@@ -43,7 +43,7 @@ const int SUN_X = 44, SUN_Y = 45, MOON_X = 46, MOON_Y = 47, MOON_UP = 48, MOMENT
 const int A_PARTLY = 50, A_DRIZZLE = 51, A_HEAVY = 52, A_SHOWERS = 53, A_SLEET = 54, A_HAIL = 55, A_WINDY = 56, A_HAZE = 57, A_HURRICANE = 58, A_TORNADO = 59;
 // the wind across the screen (-1 leftward to 1 rightward) and how strong it is,
 // frost and heat shimmer on the glass, and how much of the haze is dust (not smoke)
-const int WIND_X = 60, GUST = 61, FROST = 62, HEAT = 63, HAZE_DUST = 64;
+const int WIND_X = 60, GUST = 61, FROST = 62, HEAT = 63, HAZE_DUST = 64, CLOUD_BASE = 65, SPIRAL = 66;
 const int VALUES = 68;
 // pixels: what is shown, what it is changing from, and the rest
 const int SHOWN = 0, FROM = 17, META = 34, CLOCK = 35, PINNED = 36, LIGHT = 37, DRIFT = 40;
@@ -53,8 +53,8 @@ const int CLEAR = 0, CLOUDY = 1, RAIN = 2, THUNDER = 3, SNOW = 4, FOG = 5, LIGHT
 const int HEAVY = 10, SHOWERS = 11, SLEET = 12, HAIL = 13, WINDY = 14, HAZE = 15, HURRICANE = 16, TORNADO = 17, WEATHERS = 18;
 // looking up into the open sky, rather than down on the cloud or up from under it
 bool upView(int w) { return w == CLEAR || w == HAZE; }
-// looking up from under broken cloud, with the sun and sky between
-bool brokenCloud(int w) { return w == PARTLY || w == WINDY || w == SHOWERS; }
+// seen from above the cloud: dry weather, as weather maps and apps show it
+bool aboveCloud(int w) { return w == CLOUDY || w == PARTLY || w == WINDY || w == HURRICANE; }
 bool stormy(int w) { return w == THUNDER || w == LIGHTNING || w == HAIL || w == HURRICANE || w == TORNADO; }
 bool snowy(int w) { return w == SNOW || w == BLIZZARD || w == SLEET; }
 
@@ -226,7 +226,8 @@ void goals(out float g[VALUES]) {
     else if (W == HAIL) { to = hex(0x2c3a38); grey = 0.72; dark = 0.5; }
     else if (W == WINDY) { to = hex(0x9aa4b0); grey = 0.22; dark = 0.04; }
     else if (W == HAZE) { to = hex(0xb8a58a); grey = 0.5; dark = 0.08; }
-    else if (W == HURRICANE) { to = hex(0x242a33); grey = 0.82; dark = 0.6; }
+    // a hurricane seen from above: sunlit cloud tops, a little greyer than Cloudy's
+    else if (W == HURRICANE) { to = hex(0x8e98a6); grey = 0.3; dark = 0.06; }
     else if (W == TORNADO) { to = hex(0x2f3d35); grey = 0.76; dark = 0.5; }
     for (int k = 0; k < 9; k++) {
         vec3 x = grey > 0.0 ? mix(c[k], to, (k == 6 || k == 7) ? grey * 0.8 : grey) : c[k];
@@ -238,7 +239,7 @@ void goals(out float g[VALUES]) {
         if (k == 5) continue;
         if (W == SNOW || W == BLIZZARD) c[k] = mix(mix(c[k], hex(0xcbd3de), 0.6), vec3(0.0), 0.14);
         else if (W == SLEET) c[k] = mix(mix(c[k], hex(0xb0b8c4), 0.5), vec3(0.0), 0.2);
-        else if (greyed) c[k] = mix(mix(c[k], hex(0x8a929c), 0.4), vec3(0.0), W == HEAVY || W == HURRICANE ? 0.45 : 0.35);
+        else if (greyed && W != HURRICANE) c[k] = mix(mix(c[k], hex(0x8a929c), 0.4), vec3(0.0), W == HEAVY ? 0.45 : 0.35);
     }
     for (int k = 0; k < 9; k++) {
         // a snowy sunset is dusk, about half as far down as night and duskier
@@ -254,7 +255,7 @@ void goals(out float g[VALUES]) {
     if (sunlitUp && T == 0) sunHeight = 0.6;
     // a day's sun and its halo are drawn over the clouds; Sky's own glow lies
     // in a band along the horizon and would stretch it sideways
-    if ((upView(W) || brokenCloud(W)) && T < 2) c[3] = vec3(0.0);
+    if ((upView(W) || W == PARTLY || W == WINDY) && T < 2) c[3] = vec3(0.0);
     for (int k = 0; k < 9; k++) { g[k * 3] = c[k].r; g[k * 3 + 1] = c[k].g; g[k * 3 + 2] = c[k].b; }
     g[SUN_HEIGHT] = sunHeight;
     // the live weather's measurements, where there is a report
@@ -268,15 +269,10 @@ void goals(out float g[VALUES]) {
     // the cloud
     float clearing = 0.0, lookAt = -1.0, flip = -1.0, lift = 0.9, stretch = 1.0, swing = 1.0;
     if (upView(W)) { clearing = 5.0; lookAt = 3.35; flip = 1.0; lift = 0.0; swing = 0.0; }
-    else if (brokenCloud(W)) {
-        clearing = W == PARTLY ? 2.6 : W == WINDY ? 2.4 : 2.0;
-        // on Automatic, as much cloud as the sky has
-        if (live && cover >= 0.0 && W != SHOWERS) clearing = mix(3.1, 2.1, smoothstep(0.15, 0.75, cover));
-        if (live && cover >= 0.0 && W == SHOWERS) clearing = mix(2.4, 1.4, smoothstep(0.3, 1.0, cover));
-    }
     else if (W == CLOUDY) { flip = 1.0; lift = 0.0; }
     else if (W == FOG) { clearing = -1.2; flip = 1.0; lift = 0.0; }
     else if (W == RAIN || W == SLEET) clearing = -0.3;
+    else if (W == SHOWERS) clearing = -0.05;
     else if (W == THUNDER || W == LIGHTNING || W == TORNADO) { clearing = -0.4; stretch = 0.68; }
     else if (W == HAIL) { clearing = -0.45; stretch = 0.68; }
     else if (W == SNOW) clearing = -0.2;
@@ -284,7 +280,19 @@ void goals(out float g[VALUES]) {
     else if (W == HEAVY) { clearing = -0.55; stretch = 0.85; }
     else if (W == HURRICANE) { clearing = -0.6; stretch = 0.7; }
     else clearing = -0.5;
+    float base = -9.0, whirl = 0.0;
+    // Partly cloudy and windy are Cloudy's view with the layer broken: the cloud
+    // has a base, and its tops dip under it into gaps (on Automatic, as much
+    // cloud as the sky has); windy's cloud races past
+    if (W == PARTLY || W == WINDY) {
+        flip = 1.0; lift = 0.0; lookAt = -1.0; base = -0.9;
+        clearing = W == PARTLY ? 0.8 : 0.6;
+        if (live && cover >= 0.0) clearing = mix(1.05, 0.45, smoothstep(0.15, 0.75, cover));
+        if (W == WINDY) stretch = 0.8;
+    }
+    if (W == HURRICANE) { flip = 1.0; lift = 4.0; lookAt = -4.0; swing = 0.0; clearing = 0.45; whirl = 1.0; stretch = 1.0; }
     g[CLEARING] = clearing; g[LOOK_AT] = lookAt; g[FLIP] = flip; g[LIFT] = lift; g[STRETCH] = stretch; g[SWING] = swing;
+    g[CLOUD_BASE] = base; g[SPIRAL] = whirl;
     // how strong the wind is: the Wind setting, or on Automatic the real wind
     // (the setting then scales it); and which way it blows across the screen:
     // the view faces the equator, so screen right is west north of it
@@ -332,7 +340,7 @@ void goals(out float g[VALUES]) {
     float moment;
     skyPositions(T, sun, moon, moment);
     g[SUN_X] = sun.x; g[SUN_Y] = sun.y; g[MOON_X] = moon.x; g[MOON_Y] = moon.y; g[MOON_UP] = moon.z;
-    g[MOMENT] = moment; g[65] = 0.0; g[66] = 0.0; g[67] = 0.0;
+    g[MOMENT] = moment; g[67] = 0.0;
 }
 
 // ---- Sky's camera, from its own sums: it looks from a point on a circle
@@ -386,7 +394,7 @@ vec4 drawState(ivec2 px) {
     float dissolving = meta.w;
     if (changed && !first) {
         int was = int(meta.x);
-        bool builds = (upView(was) || was == CLOUDY) && (upView(W) || W == CLOUDY);
+        bool builds = (upView(was) || aboveCloud(was)) && (upView(W) || aboveCloud(W));
         bool moves = false;
         for (int i = LOOK_AT; i <= SWING; i++) if (abs(stored(SHOWN * 4 + i) - g[i]) > 1e-4) moves = true;
         if (abs(stored(SHOWN * 4 + STRETCH) - g[STRETCH]) > 1e-4) moves = true;
@@ -459,7 +467,7 @@ vec4 drawState(ivec2 px) {
 
 // ---- 2. Sky's clouds
 vec3 sundir;
-float clearing, flip, stretch, lookAtNow, cloudCover;
+float clearing, flip, stretch, lookAtNow, cloudCover, cloudBase, spiral;
 vec3 skyTopColor, skyColor, skyHorizonColor, skyGlowColor, cloudColor, cloudShadowColor, sunColor, sunGlareColor, sunlightColor;
 float cloudClock;
 
@@ -472,15 +480,39 @@ float noise3(vec3 x) {
                mix(mix(hash1(n + 113.0), hash1(n + 114.0), f.x), mix(hash1(n + 170.0), hash1(n + 171.0), f.x), f.y), f.z);
 }
 const float constantTime = 1000.0;
+// a hurricane's scale in the cloud's own units (its eye about a third of this across)
+const float HURRICANE_SIZE = 2.2;
 float mapCloud(vec3 p, int octaves) {
     vec3 speed1 = vec3(0.5, 0.01, 1.0) * 0.5;
-    vec3 q = p * vec3(stretch, 1.0, stretch) - speed1 * (cloudClock + constantTime);
+    // A hurricane: the cloud field twisted into spiral bands round an eye, the
+    // whole storm turning slowly (as one, so the bands never wind up tighter)
+    float whirl = 0.0;
+    if (spiral > 0.001) {
+        vec2 c = p.xz / HURRICANE_SIZE;
+        float r = length(c);
+        float a = spiral * (2.0 / (r + 0.4) + cloudClock * 0.12);
+        vec2 d = mat2(cos(a), sin(a), -sin(a), cos(a)) * p.xz;
+        float theta = atan(c.y, c.x) - a;
+        // spiral bands with clear gaps between them, a round clear eye ringed
+        // by a dense bright eyewall, and the storm fading out at its edge
+        // (the bands trail out long past the storm's dense core, and beyond it
+        // the ordinary broken cloud of the region)
+        float band = sin(2.0 * theta + 4.0 * log(r + 0.1));
+        whirl = spiral * (0.85 * band * smoothstep(0.35, 1.0, r)
+                        + (0.9 * smoothstep(0.2, 0.9, band) - 1.1) * smoothstep(1.3, 2.2, r) * (1.0 - smoothstep(3.2, 4.2, r))
+                        - 3.5 * smoothstep(0.26, 0.14, r) + 1.0 * exp(-(r - 0.36) * (r - 0.36) / 0.008)
+                        - 0.55 * smoothstep(3.2, 4.2, r));
+        p.xz = mix(p.xz, d, spiral * smoothstep(0.2, 0.45, r));
+    }
+    vec3 q = p * vec3(stretch, 1.0, stretch) - speed1 * (cloudClock * (1.0 - 0.9 * spiral) + constantTime);
     float f = 0.5 * noise3(q); q = q * 2.02;
     f += 0.25 * noise3(q); q = q * 2.03;
     if (octaves > 2) { f += 0.125 * noise3(q); q = q * 2.01; }
     if (octaves > 3) { f += 0.0625 * noise3(q); q = q * 2.02; }
     if (octaves > 4) f += 0.03125 * noise3(q);
-    return clamp(1.5 - p.y - 2.0 + 1.75 * f - clearing, 0.0, 1.0);
+    // the cloud's base: below it there is no cloud, so where the tops dip under
+    // it the layer breaks and the world beneath shows through the gaps
+    return clamp(1.5 - p.y - 2.0 + 1.75 * f - clearing + whirl, 0.0, 1.0) * smoothstep(cloudBase, cloudBase + 0.22, p.y);
 }
 vec4 integrate(vec4 sum, float dif, float den, vec3 bgcol, float t) {
     vec3 lin = cloudColor * 1.4 + sunlightColor * dif;
@@ -493,14 +525,17 @@ vec4 integrate(vec4 sum, float dif, float den, vec3 bgcol, float t) {
 }
 vec4 raymarch(vec3 ro, vec3 rd, vec3 bgcol) {
     vec4 sum = vec4(0.0);
-    float t = 0.0;
+    // looking steeply down on a hurricane, each pixel starts its march a little
+    // differently, which breaks up the bands the fixed steps leave
+    float t = spiral > 0.001 ? hash1(dot(gl_FragCoord.xy, vec2(1.0, 57.0))) * 0.075 * spiral : 0.0;
     // four stretches, the nearer drawn in more detail
     for (int s = 0; s < 4; s++) {
         int steps = s == 0 ? 20 : s == 1 ? 25 : s == 2 ? 30 : 40, octaves = 5 - s;
         for (int i = 0; i < 40; i++) {
             if (i >= steps) break;
             vec3 pos = ro + t * rd;
-            if (pos.y < -3.0 || pos.y > 2.0 || sum.a > 0.99) break;
+            // (a camera above the cloud, looking down, starts out above it)
+            if (pos.y < -3.0 || (pos.y > 2.0 && rd.y > 0.0) || sum.a > 0.99) break;
             float den = mapCloud(pos, octaves);
             if (den > 0.01) {
                 float dif = clamp((den - mapCloud(pos + 0.3 * sundir, octaves)) / 0.6, 0.0, 1.0);
@@ -543,6 +578,7 @@ vec4 drawClouds(vec2 frag) {
     sundir = stateAt(LIGHT).xyz;
     vec4 clockPx = stateAt(CLOCK);
     cloudClock = clockPx.x;
+    cloudBase = stored(CLOUD_BASE); spiral = stored(SPIRAL);
     // the picture of the sky, and how much of it is cloud (for the sun, moon and
     // stars drawn in the sky to hide behind)
     vec3 now = skyView(frag, stored(CLEARING), stored(LOOK_AT), stored(FLIP), stored(LIFT), stored(STRETCH), stored(SWING));
@@ -675,105 +711,96 @@ void hailstones(inout vec4 acc, inout vec3 add, vec2 p, vec2 uv, float t, float 
     }
 }
 
-// Leaves blown past in a strong wind, tumbling as they go, and the odd streak
-// of wind; `blown` is how far the gusting wind has carried them
-void blownLeaves(inout vec4 acc, inout vec3 add, vec2 p, vec2 uv, float t, float blown, float side, float amount, float lum) {
-    for (int l = 0; l < 2; l++) {
-        float fl = float(l), sc = 7.0 - fl * 2.5;
-        vec2 lq = vec2((p.x - side * blown * (0.9 + fl * 0.6)) * sc, uv.y * sc + sin(blown * 1.3 + fl * 2.0 + p.x * 3.0) * 0.4);
-        vec2 cell = floor(lq), f = fract(lq) - 0.5; float r = hash(cell + fl * 17.0 + 80.0);
-        if (r < 0.78) continue;
-        vec2 o = vec2(hash(cell + 6.1) - 0.5, hash(cell + 6.7) - 0.5) * 0.5;
-        float a = hash(cell + 7.3) * 6.28 + t * (2.0 + 3.0 * hash(cell + 7.9)) * side;
-        vec2 q = mat2(cos(a), sin(a), -sin(a), cos(a)) * (f - o);
-        q.x /= max(abs(cos(t * 3.0 + r * 20.0)), 0.25);
-        float size = 0.07 + 0.06 * fl;
-        float leaf = smoothstep(1.0, 0.8, length(q / vec2(size, size * 0.42)) + abs(q.x / size) * 0.2);
-        vec3 tone = mix(mix(vec3(0.25, 0.32, 0.12), vec3(0.5, 0.36, 0.14), hash(cell + 8.8)), vec3(0.62, 0.52, 0.18), step(0.8, hash(cell + 9.9)));
-        put(acc, tone * (0.5 + 0.6 * lum), leaf * 0.92 * amount);
-    }
-    vec2 wq = vec2((p.x - side * blown * 3.2) * 1.5, uv.y * 40.0), wc = floor(wq);
-    float streak = step(0.93, hash(wc + 90.0)) * smoothstep(0.35, 0.0, abs(fract(wq.y) - 0.5)) * smoothstep(0.0, 0.2, fract(wq.x)) * smoothstep(0.8, 0.4, fract(wq.x));
-    add += vec3(0.9, 0.93, 1.0) * streak * 0.05 * amount * lum;
+// The land at the horizon under a storm: dark, flat, a treeline along its top
+// softened by the distance and the rain; it takes the storm's own light
+float horizonLand(vec2 p, vec2 uv) {
+    float edge = 0.075 + 0.006 * fbm(vec2(p.x * 9.0, 2.0)) + 0.009 * pow(fbm(vec2(p.x * 24.0, 5.0)), 2.0) * 2.0;
+    return smoothstep(0.003, -0.002, uv.y - edge);
 }
 
-// A flat Florida horizon: the ground, and palm trees on it, bending with the
-// wind (`bend`, toward `side`): each trunk a gentle curve, tapering; each
-// frond a feathered blade that droops under its own weight, and in a strong
-// wind streams out downwind and thrashes
-float landscape(vec2 p, vec2 uv, float aspect, float bend, float side, float t) {
-    float cover = smoothstep(0.004, 0.0, uv.y - 0.07 - 0.012 * noise(vec2(p.x * 3.0, 1.0)));
-    for (int i = 0; i < 6; i++) {
-        float fi = float(i);
-        if (hash(vec2(fi, 1.0)) < 0.2) continue;
-        float x0 = aspect * (0.05 + fi * 0.18 + 0.06 * hash(vec2(fi, 3.0))), h = 0.15 + 0.17 * hash(vec2(fi, 4.0)), base = 0.065;
-        float sway = sin(t * (1.3 + 0.4 * hash(vec2(fi, 5.0))) + fi * 2.0);
-        float lean = side * (bend * 0.13 + 0.015) + (hash(vec2(fi, 6.0)) - 0.5) * 0.04 + 0.012 * sway * bend;
-        float s = (uv.y - base) / h;
-        if (s > -0.05 && s < 1.0) {
-            float tx = x0 + lean * s * s;
-            float wdt = mix(0.011, 0.006, clamp(s, 0.0, 1.0));
-            cover = max(cover, smoothstep(wdt + 0.0015, wdt - 0.0015, abs(p.x - tx)));
-        }
-        vec2 top = vec2(x0 + lean, base + h);
-        vec2 q0 = p - top;
-        if (dot(q0, q0) > 0.03) continue;
-        for (int k = 0; k < 7; k++) {
-            float fk = float(k);
-            // the fronds fan out; in a wind they stream downwind
-            float a = mix(-1.9, 1.9, fk / 6.0) + (hash(vec2(fi, fk + 9.0)) - 0.5) * 0.3;
-            a = mix(a, side * (1.5 + (fk - 3.0) * 0.1), clamp(bend * 0.9, 0.0, 0.92)) + sin(t * 7.0 + fk * 1.3 + fi) * 0.1 * bend;
-            vec2 dir = vec2(sin(a), cos(a)), perp = vec2(-dir.y, dir.x);
-            float len = 0.085 + 0.03 * hash(vec2(fi, fk));
-            float along = dot(q0, dir);
-            // drooping: the frond's line falls away the further out it goes
-            float droop = 7.0 * (1.0 - 0.75 * bend);
-            vec2 q = q0 + vec2(0.0, droop * along * along);
-            float across = dot(q, perp);
-            float blade = 0.012 * sin(3.14159 * clamp(along / len, 0.0, 1.0)) * (0.55 + 0.45 * abs(sin(along * 140.0))) + 0.0012;
-            if (along > 0.0 && along < len) cover = max(cover, smoothstep(blade, blade * 0.5, abs(across)));
-        }
-    }
-    return cover;
-}
-
-// A tornado: a funnel reaching down from the cloud base to the ground, narrow
-// at the bottom, turning faster where it is narrow, its axis weaving; and a
-// cloud of dust and debris churning at its foot
-void funnel(inout vec4 acc, vec2 p, vec2 uv, float t, float aspect, float amount, float lum) {
-    float top = 0.9, ground = 0.07;
+// A tornado, drawn to match the storm it hangs from: a condensation funnel in
+// the cloud's own colours, lit from one side, its edge soft and ragged, faint
+// striations turning round it faster where it narrows, lowering from a wall
+// cloud to the ground, where a dust cloud churns; rain curtains beside it
+void tornado(inout vec4 acc, vec2 p, vec2 uv, float t, float aspect, float amount, vec3 lit, vec3 shade, float drift) {
+    float top = 0.93, ground = 0.075;
+    float cx0 = aspect * (0.6 + 0.05 * sin(t * 0.04));
+    // grey rain curtains either side, drifting
+    float curtain = fbm(vec2(p.x * 2.2 - drift * 0.05, uv.y * 0.6)) * smoothstep(0.95, 0.4, uv.y);
+    float away = smoothstep(0.08, 0.3, abs(p.x - cx0));
+    put(acc, mix(shade, lit, 0.35), smoothstep(0.5, 0.75, curtain) * 0.35 * away * amount);
     float s = (uv.y - ground) / (top - ground);
-    float cx0 = aspect * (0.6 + 0.07 * sin(t * 0.05));
-    float cx = cx0 + 0.13 * s * s - 0.06 * s + 0.035 * sin(s * 5.0 + t * 0.6) * (1.0 - s);
-    if (s > -0.08 && s < 1.05) {
-        float w = mix(0.028, 0.3, pow(clamp(s, 0.0, 1.0), 2.0));
+    if (s > -0.1 && s < 1.1) {
+        float sc = clamp(s, 0.0, 1.0);
+        float cx = cx0 + 0.1 * sc * sc - 0.04 * sc + 0.02 * sin(sc * 6.0 + t * 0.5) * (1.0 - sc);
+        // narrow and roped low down, flaring into the wall cloud at the top
+        float w = 0.022 + 0.05 * sc + 0.34 * pow(sc, 5.0) + 0.006 * sin(sc * 23.0 + t);
         float u = (p.x - cx) / w;
-        if (abs(u) < 1.3) {
-            float body = smoothstep(1.05, 0.72, abs(u)) * smoothstep(-0.08, 0.04, s);
-            float a = asin(clamp(u, -1.0, 1.0)) + t * 2.2 / (w * 5.0 + 0.3);
-            float tex = fbm(vec2(a * 2.2, s * 9.0 - t * 0.9));
-            vec3 c = mix(vec3(0.09, 0.1, 0.1), vec3(0.27, 0.29, 0.28), clamp(0.5 + 0.5 * u + (tex - 0.5), 0.0, 1.0)) * (0.6 + 0.6 * lum);
-            put(acc, c, body * (0.78 + 0.22 * tex) * amount * smoothstep(1.05, 0.85, s));
+        float ragged = (fbm(vec2(u * 1.5 + t * 0.3, sc * 7.0 - t * 0.4)) - 0.5) * 0.45;
+        float body = smoothstep(1.0, 0.55, abs(u) + ragged) * smoothstep(-0.06, 0.05, s);
+        if (body > 0.0) {
+            float spin = t * 1.6 / (w * 9.0 + 0.4);
+            float stria = fbm(vec2(asin(clamp(u, -1.0, 1.0)) * 1.8 + spin, sc * 26.0));
+            float light = clamp(0.45 - 0.35 * u, 0.0, 1.0);
+            vec3 c = mix(shade * 0.85, lit * 0.8, light) * (0.88 + 0.24 * stria);
+            // near the ground the funnel is dust as much as cloud
+            c = mix(c, vec3(0.3, 0.26, 0.21) * (0.6 + 0.6 * light), smoothstep(0.25, 0.0, sc) * 0.6);
+            put(acc, c, body * amount * (0.82 + 0.18 * stria) * smoothstep(1.08, 0.9, s));
         }
     }
-    vec2 foot = vec2(cx0 + 0.0, ground + 0.035);
-    vec2 d = (p - foot) / vec2(0.2, 0.075);
+    // the debris cloud: billowing dust churning round the funnel's foot
+    vec2 d = (p - vec2(cx0, ground + 0.03)) / vec2(0.15, 0.07);
     float r = length(d);
-    if (r < 1.3) {
-        float swirl = fbm(vec2(atan(d.y, d.x) * 2.0 - t * 2.5, r * 4.0 - t * 0.7) + 5.0);
-        float dust = smoothstep(1.1, 0.4, r + (swirl - 0.5) * 0.6);
-        put(acc, vec3(0.3, 0.26, 0.2) * (0.6 + 0.6 * lum), dust * 0.75 * amount);
+    if (r < 1.4) {
+        float swirl = fbm(vec2(atan(d.y, d.x) * 1.6 - t * 1.8, r * 3.0 - t * 0.5) + 3.0);
+        float billow = smoothstep(1.05, 0.45, r + (swirl - 0.5) * 0.8);
+        put(acc, mix(vec3(0.24, 0.21, 0.17), mix(shade, lit, 0.5) * 0.9, 0.35) * (0.8 + 0.3 * swirl), billow * 0.8 * amount);
     }
 }
 
-// Frost creeping in from the edges of the glass in the cold, feathered like ice
-void frostOnGlass(inout vec4 acc, vec2 p, vec2 uv, float aspect, float amount, float night) {
+// Ice crystals on the glass in the cold: six-armed dendrites, each arm
+// branching, scattered across the glass and thicker toward its edges, with a
+// fine frost haze at the very edges; they catch the light at their rims
+float crystal(vec2 q, float size) {
+    float r = length(q);
+    if (r > size) return 0.0;
+    float a = atan(q.y, q.x);
+    a = mod(a + 3.14159 / 6.0, 3.14159 / 3.0) - 3.14159 / 6.0;
+    vec2 k = vec2(cos(a), sin(abs(a))) * r;
+    float line = smoothstep(size * 0.035, 0.0, k.y) * smoothstep(size, size * 0.85, k.x);
+    // side branches off the arm, at sixty degrees, shorter toward the tip
+    for (int i = 1; i <= 3; i++) {
+        float at = size * (0.2 + 0.22 * float(i)), len = (size - at) * 0.55;
+        vec2 b = k - vec2(at, 0.0);
+        float along = dot(b, vec2(0.5, 0.866));
+        float off = abs(dot(b, vec2(-0.866, 0.5)));
+        line = max(line, smoothstep(size * 0.028, 0.0, off) * step(0.0, along) * smoothstep(len, len * 0.7, along));
+    }
+    return line * smoothstep(size, size * 0.3, r) + smoothstep(size * 0.12, 0.0, r) * 0.6;
+}
+void iceOnGlass(inout vec4 acc, inout vec3 add, vec2 p, vec2 uv, float aspect, float amount, float night, float lum) {
     float e = min(min(uv.x, 1.0 - uv.x) * aspect, min(uv.y, 1.0 - uv.y));
-    float reach = 0.05 + 0.2 * amount;
-    float crystal = fbm(p * 16.0) * 0.6 + fbm(p * 55.0 + 3.0) * 0.4;
-    float veins = smoothstep(0.55, 0.62, fbm(p * 30.0 + 9.0));
-    float mask = smoothstep(reach, reach * 0.25, e + (crystal - 0.5) * 0.14);
-    put(acc, vec3(0.86, 0.92, 1.0) * mix(1.0, 0.45, night), clamp(mask * (0.55 + 0.35 * veins), 0.0, 1.0) * 0.8 * min(amount * 1.5, 1.0));
+    // the frost grows in from the edges: crystals crowd there, overlapping,
+    // and thin out toward the middle, where only the odd small one forms
+    float reach = 0.1 + 0.18 * amount;
+    float edgeness = smoothstep(reach, 0.0, e + (fbm(p * 6.0) - 0.5) * 0.08);
+    float ice = 0.0;
+    for (int l = 0; l < 3; l++) {
+        float fl = float(l), cs = 0.09 - fl * 0.025;
+        vec2 g = p / cs + fl * 7.3, cell = floor(g);
+        float h = hash(cell + fl * 3.0 + 200.0);
+        if (h > amount * (0.015 + 0.95 * edgeness)) continue;
+        vec2 o = vec2(hash(cell + 1.9), hash(cell + 2.7)) * 0.5 + 0.25;
+        float rot = hash(cell + 3.3) * 1.05;
+        vec2 q = (fract(g) - o) * cs;
+        q = mat2(cos(rot), sin(rot), -sin(rot), cos(rot)) * q;
+        ice = max(ice, crystal(q, cs * (0.35 + 0.4 * hash(cell + 4.4)) * (0.6 + 0.4 * amount)) * (0.5 + 0.5 * hash(cell + 5.1)));
+    }
+    // a frosted film along the very edge, where the crystals have grown together
+    float film = edgeness * smoothstep(0.35, 0.8, fbm(p * 22.0 + 4.0)) * 0.55 + smoothstep(reach * 0.35, 0.0, e) * 0.35;
+    vec3 tone = vec3(0.88, 0.94, 1.0) * mix(1.0, 0.45, night) * (0.6 + 0.5 * lum);
+    put(acc, tone, clamp(ice * 0.5 + film, 0.0, 0.85) * min(amount * 1.4, 1.0));
+    add += tone * ice * 0.1;
 }
 
 vec3 drawPicture(vec2 frag) {
@@ -798,7 +825,7 @@ vec3 drawPicture(vec2 frag) {
     vec2 shimmer = heat > 0.003 ? vec2(noise(vec2(frag.x * 0.02, frag.y * 0.08 - t * 3.0)) - 0.5, noise(vec2(frag.y * 0.05 + t * 2.0, frag.x * 0.03)) - 0.5) * heat * 6.0 * smoothstep(0.55, 0.0, uv.y) : vec2(0.0);
     vec4 skyPicture = softClouds(frag + shimmer);
     // how much of the view is open sky, where the sun, moon and stars can be seen
-    float skyOpen = clamp(aClear + aPartly + aWindy + aShowers * 0.8 + aHaze, 0.0, 1.0);
+    float skyOpen = clamp(aClear + aHaze, 0.0, 1.0);
     // a clear sky's sun, drawn sharp at full size where Sky's camera sees it;
     // it fades with the clear sky, faster than the cloud forms, so it is
     // never drawn over cloud
@@ -901,6 +928,11 @@ vec3 drawPicture(vec2 frag) {
     // the sun, moon and stars are behind the clouds, and dimmed through haze or smoke
     acc *= 1.0 - skyPicture.a; add *= 1.0 - skyPicture.a;
     if (aHaze > 0.003 && night > 0.001) add *= mix(vec3(1.0), vec3(0.75, 0.55, 0.42), clamp(aHaze, 0.0, 1.0) * night);
+    // windy: high streaks of cirrus racing over, drawn out long by the wind
+    if (aWindy > 0.003) {
+        float w = fbm(vec2(p.x * 0.9 - drift.z * 0.6, p.y * 14.0)) * fbm(vec2(p.x * 2.4 - drift.z * 0.9, p.y * 22.0 + 3.0));
+        put(acc, vec3(0.95, 0.96, 1.0) * dim, smoothstep(0.2, 0.45, w) * smoothstep(0.5, 0.85, uv.y) * 0.6 * aWindy);
+    }
     // cloudy: high wisps drifting over, in the strip of sky above the cloud
     if (aCloudy > 0.003) {
         float w = fbm(vec2(p.x * 2.2 + drift.x * 0.03, p.y * 7.0 + t * 0.01)) * fbm(vec2(p.x * 5.0 - drift.x * 0.02, p.y * 12.0));
@@ -932,13 +964,7 @@ vec3 drawPicture(vec2 frag) {
         add += rainTone * rainLayers(p, uv, t, aSleet * 0.9, slant, 80.0, 9.0, 16.0, 0.12, 0.12, 0.1, 0.9);
         icePellets(add, p, uv, t, aSleet, slant, lum);
     }
-    // a hurricane: rain driven almost flat by the wind, spray racing across, water streaming down the glass
-    if (aHurricane > 0.003) {
-        add += rainTone * rainLayers(p, uv, t, aHurricane * 1.8, side * 2.4, 55.0, 3.5, 26.0, 0.45, 0.35, 0.13, 1.3);
-        float spray = fbm(vec2(p.x * 1.1 - side * drift.z * 2.5, uv.y * 2.2 + t * 0.3)) * 0.6 + fbm(vec2(p.x * 3.0 - side * drift.z * 4.0, uv.y * 5.0)) * 0.4;
-        put(acc, mix(vec3(0.5, 0.54, 0.6), vec3(0.12, 0.14, 0.18), night), smoothstep(0.35, 0.8, spray) * 0.5 * aHurricane);
-        glassWater(acc, add, p, t * 1.4, aHurricane, cloudLight, lum);
-    }
+
     // snow: flakes drifting down, the near ones big and soft
     if (aSnow > 0.003) {
         for (int l = 0; l < 4; l++) {
@@ -1146,20 +1172,16 @@ vec3 drawPicture(vec2 frag) {
         float thick = (0.28 + 0.34 * smoothstep(0.9, 0.05, uv.y)) * (0.85 + 0.15 * fbm(vec2(p.x * 1.1 + drift.x * 0.02, uv.y * 2.0)));
         put(acc, tone, clamp(thick * aHaze, 0.0, 0.85));
     }
-    // a tornado, and the land it touches
-    if (aTornado > 0.003) funnel(acc, p, uv, t, aspect, aTornado, lum);
-    // the horizon, with palm trees bending in the wind, under a hurricane or tornado
-    float land = aHurricane + aTornado;
-    if (land > 0.003) {
-        float bend = clamp(aHurricane * 0.9 + aTornado * 0.35, 0.0, 1.0);
-        put(acc, vec3(0.02, 0.025, 0.03) + vec3(0.8, 0.85, 1.0) * glow * 0.05, landscape(p, uv, aspect, bend, side, t) * min(land, 1.0));
+    // a tornado over the land at the horizon, in the storm's own light
+    if (aTornado > 0.003) {
+        vec3 shade = shownColour(SHADOW), litCloud = cloudLight;
+        tornado(acc, p, uv, t, aspect, aTornado, litCloud, shade, drift.x);
+        put(acc, mix(shade * 0.35, litCloud * 0.2, 0.3) + vec3(0.8, 0.85, 1.0) * glow * 0.06, horizonLand(p, uv) * aTornado);
     }
     // leaves in a strong wind, and the hail
-    if (aWindy > 0.003) blownLeaves(acc, add, p, uv, t, drift.z, side, aWindy, lum);
-    if (aHurricane > 0.003) blownLeaves(acc, add, p, uv, t, drift.z * 2.0, side, aHurricane * 0.7, lum * 0.6);
     if (aHail > 0.003) hailstones(acc, add, p, uv, t, aHail, slant, lum, aspect);
     // frost on the glass
-    if (frost > 0.003) frostOnGlass(acc, p, uv, aspect, frost, night);
+    if (frost > 0.003) iceOnGlass(acc, add, p, uv, aspect, frost, night, lum);
     vec3 light = vec3(0.8, 0.85, 1.0) * glow;
     // the weather laid over the clouds: its own light added, its cover veiling them
     vec3 sky = skyPicture.rgb;
