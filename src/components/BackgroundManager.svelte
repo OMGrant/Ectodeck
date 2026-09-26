@@ -36,11 +36,13 @@
 	import ink from "$lib/backgrounds/ink.frag?raw";
 	import blob from "$lib/backgrounds/blob.frag?raw";
 	import birds from "$lib/backgrounds/birds.frag?raw";
+	import aquarium from "$lib/backgrounds/aquarium.frag?raw";
 	type Group = "scenes" | "abstract" | "music";
 	const builtinShaders: { id: string; name: string; source: string; group: Group }[] = [
 		{ id: "synthwave", name: "Synthwave", source: synthwave, group: "scenes" },
 		{ id: "warp", name: "Warp", source: warp, group: "scenes" },
 		{ id: "birds", name: "Birds", source: birds, group: "scenes" },
+		{ id: "aquarium", name: "Aquarium", source: aquarium, group: "scenes" },
 		{ id: "weather", name: "Weather", source: weather, group: "scenes" },
 		{ id: "aurora", name: "Aurora", source: aurora, group: "abstract" },
 		{ id: "nebula", name: "Nebula", source: nebula, group: "abstract" },
@@ -56,7 +58,6 @@
 	const pageSources = import.meta.glob("$lib/backgrounds/*.html", { query: "?raw", import: "default" }) as Record<string, () => Promise<string>>;
 	const page = (file: string) => pageSources[`/src/lib/backgrounds/${file}`];
 	const builtinPages: { id: string; name: string; file: string; group: Group; load: () => Promise<string> }[] = [
-		{ id: "aquarium", name: "Aquarium", file: "aquarium.html", group: "scenes", load: page("aquarium.html") },
 		{ id: "milkdrop", name: "Milkdrop", file: "milkdrop.html", group: "music", load: page("milkdrop.html") },
 	];
 
@@ -303,7 +304,7 @@
 		// which is Sky's clouds, keeping its time of day and wind. And the
 		// built-ins that were web pages and are now drawn by the deck's own
 		// renderer: a deck on the page moves to the shader, keeping its settings
-		const nowNative: Record<string, string> = { Sky: "Weather", Weather: "Weather", Ink: "Ink", Blob: "Blob", Birds: "Birds" };
+		const nowNative: Record<string, string> = { Sky: "Weather", Weather: "Weather", Ink: "Ink", Blob: "Blob", Birds: "Birds", Aquarium: "Aquarium" };
 		if (animated?.kind == "web" && nowNative[animated.name]) {
 			const shader = builtinShaders.find((b) => b.name == nowNative[animated!.name])!;
 			const params = { ...(animated.params ?? {}), ...(animated.name == "Sky" ? { weather: 1 } : {}) };
