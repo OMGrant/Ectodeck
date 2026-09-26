@@ -500,10 +500,13 @@ Fish stepFish(int me) {
         if (t > f.nextPuff) { f.puffUntil = t + 3.5; f.nextPuff = t + rnd(35.0, 70.0, float(me) + 90.0); }
         float goal = t < f.puffUntil ? 1.0 : 0.0;
         f.puff += (goal - f.puff) * min(1.0, dt * (goal > 0.5 ? 5.0 : 0.9));
-        f.swap = clamp((f.puff - 0.15) / 0.3, 0.0, 1.0);
+        // the calm fish swells round in its own picture until its outline is the
+        // balloon's; only then does the balloon picture take over, in one frame,
+        // which reads as the spines springing up (a fade shows the tank through him)
+        f.swap = step(0.55, f.puff);
         // with music it swells rounder on each beat and relaxes between
         float breath = grooving(m) ? exp(-(t - m.lastBeat) * 5.0) : 0.0;
-        f.bulge = 1.3 * f.puff + 0.7 * E * breath * (1.0 - f.puff);
+        f.bulge = 0.85 * smoothstep(0.0, 0.55, f.puff) + 0.7 * E * breath * (1.0 - f.puff);
     }
     if (meta(M_DISCO).z > 0.5) f.hasPlace = 1.0;
     return f;
@@ -844,13 +847,13 @@ void drawStrip(inout vec3 col, vec2 q, int kind, bool puffedPic, float alpha, fl
         x0 = x1; top0 = top1; bot0 = bot1; side0 = side1;
     }
 }
-// The pufferfish blowing up, in pictures: the calm fish, then the spiky
-// half-puffed one, then a round balloon for the full puff, each fading into the
-// next. Every picture is drawn at the size that makes its eye the calm fish's
-// eye (the eye is about a ninth of each picture's width) and placed so its eye
-// lands where the calm fish's eye is, so the face keeps its size and place while
-// the body grows round it. The body also swells a little more, evenly, out from
-// the face. In a turn the blown-up fish narrows to its edge and flips.
+// The pufferfish blowing up: the calm fish's belly swells round (its head and
+// tail keeping their size) until its outline is the balloon's, then the round
+// balloon picture takes over in one frame and swells a little
+// more. The balloon is drawn at the size that makes its eye the calm fish's eye
+// (the eye is about a ninth of the picture's width) and placed so its eye lands
+// where the calm fish's eye is, so the face keeps its size and place while the
+// body grows round it. In a turn the blown-up fish narrows to its edge and flips.
 const vec2 CALM_EYE = vec2(0.125, 0.65), PUFFED_EYE = vec2(0.25, 0.736), BALL_EYE = vec2(0.25, 0.72);
 const float PUFFED_GROW = 1.0, BALL_GROW = 0.965;
 void drawBlownUp(inout vec3 col, Fish f, vec2 px, float rot, float light, float haze, vec3 tint, float lod, bool ball, float alpha, float swell) {
@@ -897,12 +900,8 @@ void drawFish(inout vec3 col, int i, vec2 px, vec3 tint) {
     float lod = log2(max(360.0 / f.len, 1.0));
     ampU = f.amp; bulgeU = f.bulge;
     drawStrip(col, toLocal(px, f.p, rot, scale), f.kind, false, 1.0 - f.swap, light, haze, tint, px, lod);
-    if (f.kind == PUFFER && f.puff > 0.1) {
-        // the half-puffed picture as it swells, the balloon at the full puff
-        float toBall = smoothstep(0.62, 0.9, f.puff);
-        drawBlownUp(col, f, px, rot, light, haze, tint, lod, false, f.swap * (1.0 - toBall), 0.2 * f.puff);
-        drawBlownUp(col, f, px, rot, light, haze, tint, lod, true, toBall, 0.3 * f.puff);
-    }
+    // the balloon, once it has taken over, swelling a little more to the full puff
+    if (f.kind == PUFFER && f.swap > 0.0) drawBlownUp(col, f, px, rot, light, haze, tint, lod, true, f.swap, 0.35 * smoothstep(0.5, 1.0, f.puff));
 }
 
 // ---- the crab in its parts: body, and two claws that swing up from the shoulder,
