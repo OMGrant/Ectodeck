@@ -184,6 +184,26 @@ pub async fn set_background_preview(device: String, on: bool) -> Result<(), anyh
 	Ok(())
 }
 
+/// A key pressed in the window: the plugin passes it to the live background as
+/// a press of that key on the deck, so the background reacts as it would.
+pub async fn press_background(device: String, key: u8) -> Result<(), anyhow::Error> {
+	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
+		send_to_plugin(
+			plugin,
+			&SetImageEvent {
+				event: "setImage",
+				device,
+				controller: Some("BackgroundPress".to_owned()),
+				position: Some(key),
+				image: None,
+			},
+		)
+		.await?;
+	}
+
+	Ok(())
+}
+
 pub async fn clear_screen(device: String) -> Result<(), anyhow::Error> {
 	if let Some(plugin) = DEVICE_NAMESPACES.read().await.get(&device[..2]) {
 		send_to_plugin(

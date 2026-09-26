@@ -87,6 +87,13 @@
 		if (event instanceof MouseEvent && event.ctrlKey) return;
 		inspect();
 	}
+	// clicking a key also presses it for the live background, which reacts as it
+	// would to the key on the deck
+	function click(event: MouseEvent) {
+		select(event);
+		if (event.ctrlKey || !active || !context || context.controller != "Keypad") return;
+		invoke("press_device_background", { device: context.device, key: context.position }).catch(() => {});
+	}
 
 	function onfocus() {
 		inspect();
@@ -247,7 +254,7 @@
 		on:dragenter={(e) => active && context && e.dataTransfer && fits(e.dataTransfer, context.controller) && (dropping = true)}
 		on:dragleave={() => (dropping = false)}
 		on:drop={() => (dropping = false)}
-		on:click|stopPropagation={select}
+		on:click|stopPropagation={click}
 		on:dblclick|stopPropagation={triggerVirtualPress}
 		on:keydown={(e) => {
 			if (!active || !context) return;

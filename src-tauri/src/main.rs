@@ -81,6 +81,7 @@ async fn main() {
 			frontend::devices::set_device_animated_background,
 			frontend::devices::save_background_page,
 			frontend::devices::set_background_preview,
+			frontend::devices::press_device_background,
 			frontend::get_port_base,
 			frontend::get_categories,
 			frontend::get_localisations,

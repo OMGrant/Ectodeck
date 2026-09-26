@@ -105,6 +105,13 @@ pub async fn save_background_page(name: String, contents: String) -> Result<Stri
 	Ok(path.to_string_lossy().into_owned())
 }
 
+/// A key selected in the device view presses it for the live background too.
+#[command]
+pub async fn press_device_background(device: String, key: u8) -> Result<(), Error> {
+	crate::events::outbound::devices::press_background(device, key).await?;
+	Ok(())
+}
+
 /// Turn preview frames of the live background on while the device view is
 /// visible, and off when it is not.
 #[command]

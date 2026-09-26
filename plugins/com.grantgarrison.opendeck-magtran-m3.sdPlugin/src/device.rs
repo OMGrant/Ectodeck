@@ -294,6 +294,20 @@ pub async fn handle_animated_background(device_id: &str, evt: SetImageEvent) -> 
     Ok(())
 }
 
+/// A key pressed in the window ("BackgroundPress" controller, the key as its
+/// position): passed to the live background as a press and release of that
+/// key on the deck, so it reacts just as it would to the deck itself.
+pub async fn handle_background_press(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {
+    let Some(key) = evt.position else { return Ok(()) };
+    crate::frame::input(device_id, crate::animation::Input::Key { index: key, down: true, x: 0.0, y: 0.0 }).await;
+    let id = device_id.to_string();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        crate::frame::input(&id, crate::animation::Input::Key { index: key, down: false, x: 0.0, y: 0.0 }).await;
+    });
+    Ok(())
+}
+
 /// The window asking for preview frames ("on") or no longer ("BackgroundPreview"
 /// controller, no image).
 pub async fn handle_background_preview(device_id: &str, evt: SetImageEvent) -> Result<(), MirajazzError> {
