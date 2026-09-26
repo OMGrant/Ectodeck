@@ -58,6 +58,8 @@ Some built-in backgrounds are made from open-source work, each under the MIT Lic
 - **Ink** is [WebGL Fluid Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation) by Pavel Dobryakov.
 - **Birds** and **Weather**'s clouds are [Vanta](https://github.com/tengbao/vanta) effects by Teng Bao, on [three.js](https://github.com/mrdoob/three.js).
 
+The MagTran M3 plugin builds [projectM](https://github.com/projectM-visualizer/projectm) (libprojectM 4.1.7, by the projectM team, under the GNU Lesser General Public License 2.1, kept in [third_party/libprojectM](third_party/libprojectM)) to draw Milkdrop on the deck's own renderer, with the original Milkdrop files of the same Butterchurn preset pack.
+
 Weather also uses:
 
 - the weather in your city, from [Open-Meteo](https://open-meteo.com/) (weather data by Open-Meteo.com, under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), found with their free geocoding;

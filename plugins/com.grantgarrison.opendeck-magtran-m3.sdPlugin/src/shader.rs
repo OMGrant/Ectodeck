@@ -323,7 +323,7 @@ struct Buffer {
     read: usize,
 }
 
-type Egl = egl::DynamicInstance<egl::EGL1_4>;
+pub(crate) type Egl = egl::DynamicInstance<egl::EGL1_4>;
 
 pub struct ShaderRenderer {
     egl: Egl,
@@ -596,7 +596,7 @@ impl Drop for ShaderRenderer {
 
 /// The default display works on Mesa and on NVIDIA; the device platform is
 /// the fallback for drivers whose default display needs a window system.
-fn open_display(egl: &Egl) -> Result<egl::Display, String> {
+pub(crate) fn open_display(egl: &Egl) -> Result<egl::Display, String> {
     if let Some(d) = unsafe { egl.get_display(egl::DEFAULT_DISPLAY) } {
         if egl.initialize(d).is_ok() {
             return Ok(d);

@@ -150,6 +150,12 @@ impl Animation {
             .name("animation".into())
             .spawn(move || {
                 match source {
+                    // a shader that asks for projectM is Milkdrop
+                    Source::Shader { code, .. } if crate::milkdrop::wanted_by(&code) => {
+                        if let Err(e) = run_milkdrop(&pr, &ia, &l, &s, &p, &rate) {
+                            log::error!("Milkdrop background stopped: {e}");
+                        }
+                    }
                     Source::Shader { code, .. } => {
                         if let Err(e) = run_shader(&code, &pr, &ia, &l, &s, &p, &rate) {
                             log::error!("Shader background stopped: {e}");
@@ -288,6 +294,44 @@ impl Drop for Animation {
             let _ = t.join();
         }
     }
+}
+
+fn run_milkdrop(
+    params: &Mutex<Params>,
+    interaction: &Mutex<Interaction>,
+    latest: &Mutex<FrameSlot>,
+    stop: &AtomicBool,
+    paused: &AtomicBool,
+    fps: &AtomicU32,
+) -> Result<(), String> {
+    let folder = crate::milkdrop::preset_folder().ok_or("no Milkdrop presets beside the plugin")?;
+    let mut renderer = crate::milkdrop::MilkdropRenderer::new(PANEL_WIDTH, PANEL_HEIGHT, &folder, crate::milkdrop::Sound::Speakers)?;
+    log::info!("Milkdrop background running");
+    let mut clock = 0.0f32;
+    let mut last = Instant::now();
+    while !stop.load(Ordering::SeqCst) {
+        let now = Instant::now();
+        if paused.load(Ordering::SeqCst) {
+            last = now;
+            std::thread::sleep(Duration::from_millis(100));
+            continue;
+        }
+        let dt = (now - last).as_secs_f32();
+        clock += dt;
+        last = now;
+        let values = params.lock().map(|p| p.clone()).unwrap_or_default();
+        let controls = interaction.lock().map(|i| i.snapshot()).unwrap_or_default();
+        let frame = renderer.render(clock, dt, &values, &controls);
+        if let Ok(mut l) = latest.lock() {
+            l.set_now(frame);
+        }
+        let period = Duration::from_secs_f64(1.0 / fps.load(Ordering::SeqCst) as f64);
+        let spent = now.elapsed();
+        if spent < period {
+            std::thread::sleep(period - spent);
+        }
+    }
+    Ok(())
 }
 
 fn run_shader(
