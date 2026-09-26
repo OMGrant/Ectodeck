@@ -309,7 +309,20 @@ fn run_milkdrop(
     log::info!("Milkdrop background running");
     let mut clock = 0.0f32;
     let mut last = Instant::now();
+    // how it is keeping up, logged every ten seconds
+    let (mut drawn, mut draw_time, mut slowest, mut since) = (0u32, Duration::ZERO, Duration::ZERO, Instant::now());
     while !stop.load(Ordering::SeqCst) {
+        if since.elapsed() >= Duration::from_secs(10) {
+            if drawn > 0 {
+                log::info!(
+                    "Milkdrop: {:.1} frames a second drawn, {:.1} ms a frame, slowest {:.1} ms",
+                    drawn as f64 / since.elapsed().as_secs_f64(),
+                    draw_time.as_secs_f64() * 1000.0 / drawn as f64,
+                    slowest.as_secs_f64() * 1000.0
+                );
+            }
+            (drawn, draw_time, slowest, since) = (0, Duration::ZERO, Duration::ZERO, Instant::now());
+        }
         let now = Instant::now();
         if paused.load(Ordering::SeqCst) {
             last = now;
@@ -322,6 +335,10 @@ fn run_milkdrop(
         let values = params.lock().map(|p| p.clone()).unwrap_or_default();
         let controls = interaction.lock().map(|i| i.snapshot()).unwrap_or_default();
         let frame = renderer.render(clock, dt, &values, &controls);
+        let took = now.elapsed();
+        drawn += 1;
+        draw_time += took;
+        slowest = slowest.max(took);
         if let Ok(mut l) = latest.lock() {
             l.set_now(frame);
         }

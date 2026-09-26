@@ -106,10 +106,10 @@ fn bgcle_command() -> Vec<u8> {
 /// The panel's native framebuffer is portrait, 480 wide by 854 tall, mounted
 /// rotated in the housing, so pictures are rotated 90 degrees counter-clockwise
 /// and declared at their portrait size.
-fn encode(picture: &RgbImage) -> Result<Vec<u8>, MirajazzError> {
+pub fn encode(picture: &RgbImage, quality: u8) -> Result<Vec<u8>, MirajazzError> {
     let rotated = imageops::rotate270(picture);
     let mut out = Cursor::new(Vec::new());
-    let encoder = JpegEncoder::new_with_quality(&mut out, JPEG_QUALITY);
+    let encoder = JpegEncoder::new_with_quality(&mut out, quality);
     rotated.write_with_encoder(encoder)?;
     Ok(out.into_inner())
 }
@@ -127,8 +127,17 @@ pub fn portrait_rect(x: u32, y: u32, w: u32, h: u32) -> (u16, u16, u16, u16) {
 /// (`x`, `y`), leaving the rest of the layer as it was. A whole-panel frame
 /// is the case x = y = 0 at 854x480.
 pub async fn send_region(device: &Device, picture: &RgbImage, x: u32, y: u32) -> Result<usize, MirajazzError> {
-    let jpeg = encode(picture)?;
-    let (px, py, pw, ph) = portrait_rect(x, y, picture.width(), picture.height());
+    let jpeg = encode(picture, JPEG_QUALITY)?;
+    send_jpeg(device, &jpeg, x, y, picture.width(), picture.height()).await
+}
+
+/// The best quality, used for everything but a busy animation that would not
+/// otherwise reach the deck in time.
+pub const BEST_QUALITY: u8 = JPEG_QUALITY;
+
+/// Paint an already compressed picture of `w` by `h` into the layer at landscape (`x`, `y`).
+pub async fn send_jpeg(device: &Device, jpeg: &[u8], x: u32, y: u32, w: u32, h: u32) -> Result<usize, MirajazzError> {
+    let (px, py, pw, ph) = portrait_rect(x, y, w, h);
 
     let mut cmd = bgpic_command(jpeg.len(), px, py, pw, ph);
     device.write_extended_data(&mut cmd).await?;
@@ -187,7 +196,7 @@ mod tests {
 
     #[test]
     fn layer_frame_is_portrait_on_the_wire() {
-        let jpeg = encode(&RgbImage::new(PANEL_WIDTH, PANEL_HEIGHT)).unwrap();
+        let jpeg = encode(&RgbImage::new(PANEL_WIDTH, PANEL_HEIGHT), JPEG_QUALITY).unwrap();
         let d = image::load_from_memory(&jpeg).unwrap();
         assert_eq!((d.width(), d.height()), (PANEL_HEIGHT, PANEL_WIDTH));
     }

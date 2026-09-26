@@ -277,9 +277,39 @@ async fn animate(id: String, frame: Arc<Mutex<Frame>>) {
     let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / fps as f64));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut count = 0u32;
+    // how it is keeping up, logged every ten seconds: frames sent, and the time
+    // spent sending to the deck and preparing the window's preview
+    let (mut sent_n, mut send_time, mut preview_time, mut slowest, mut since, mut bytes) = (0u32, Duration::ZERO, Duration::ZERO, Duration::ZERO, std::time::Instant::now(), 0usize);
+    let (mut encode_time, mut quality_sum) = (Duration::ZERO, 0u32);
+    // The deck takes about 8 MB a second, so a busy picture (Milkdrop's can be
+    // over 200 KB at the best quality) takes longer to send than a frame lasts.
+    // Each frame is compressed on a worker while the one before it is sent, so
+    // sending has the whole frame's time, and the quality is set so a frame fits
+    // that time at the speed the deck is taking them: busy pictures, which hide
+    // compression well, drop a little; smooth ones, which are small, stay at the
+    // best quality, where their skies do not band.
+    let mut pending: Option<tokio::task::JoinHandle<(Result<Vec<u8>, mirajazz::error::MirajazzError>, Duration, u8)>> = None;
+    let mut quality = crate::background::BEST_QUALITY;
+    let mut bytes_per_ms = 0.0f64;
     loop {
         ticker.tick().await;
         count = count.wrapping_add(1);
+        if since.elapsed() >= Duration::from_secs(10) {
+            if sent_n > 0 {
+                log::info!(
+                    "Background: {:.1} frames a second sent (of {fps}), {:.1} ms a frame sending {} KB at quality {}, {:.1} ms compressing alongside, slowest {:.1} ms, {:.1} ms on the preview",
+                    sent_n as f64 / since.elapsed().as_secs_f64(),
+                    send_time.as_secs_f64() * 1000.0 / sent_n as f64,
+                    bytes / 1024 / sent_n as usize,
+                    quality_sum / sent_n,
+                    encode_time.as_secs_f64() * 1000.0 / sent_n as f64,
+                    slowest.as_secs_f64() * 1000.0,
+                    preview_time.as_secs_f64() * 1000.0 / sent_n as f64
+                );
+            }
+            (sent_n, send_time, preview_time, slowest, since, bytes) = (0, Duration::ZERO, Duration::ZERO, Duration::ZERO, std::time::Instant::now(), 0);
+            (encode_time, quality_sum) = (Duration::ZERO, 0);
+        }
         let lay = layout();
         let (picture, clear_windows, preview) = {
             let mut f = frame.lock().await;
@@ -302,19 +332,65 @@ async fn animate(id: String, frame: Arc<Mutex<Frame>>) {
             let picture = render_with(&mut f, &lay, Some(background));
             (picture, !f.windows_cleared, preview)
         };
+        let started = std::time::Instant::now();
         if let Some(bg) = preview {
             send_preview(&id, &bg).await;
         }
+        preview_time += started.elapsed();
+        // this frame is compressed while the one before it goes to the deck
+        let q = quality;
+        let (width, height) = picture.dimensions();
+        let next = tokio::task::spawn_blocking(move || {
+            let started = std::time::Instant::now();
+            let jpeg = crate::background::encode(&picture, q);
+            (jpeg, started.elapsed(), q)
+        });
+        let Some(previous) = pending.replace(next) else { continue };
+        let Ok((jpeg, took_encoding, used)) = previous.await else { continue };
+        let jpeg = match jpeg {
+            Ok(j) => j,
+            Err(e) => {
+                frame.lock().await.animating = false;
+                handle_error(&id, e).await;
+                return;
+            }
+        };
+        encode_time += took_encoding;
+        quality_sum += used as u32;
+        let started = std::time::Instant::now();
         let _write = WRITE_GUARD.lock().await;
         let result = {
             let devices = DEVICES.read().await;
             let Some(device) = devices.get(&id) else { continue };
-            let sent = crate::background::send_region(device, &picture, 0, 0).await;
+            let sent = crate::background::send_jpeg(device, &jpeg, 0, 0, width, height).await;
+            if let Ok(n) = sent {
+                bytes += n;
+            }
             match sent {
                 Ok(_) if clear_windows => device.clear_all_button_images().await.and(device.flush().await).map(|_| true),
                 other => other.map(|_| false),
             }
         };
+        let took = started.elapsed();
+        send_time += took;
+        slowest = slowest.max(took);
+        sent_n += 1;
+        // how fast the deck is taking frames, and so the quality for the next:
+        // down in proportion when a frame is too big for its time, up a step
+        // at a time when there is room, never below 60
+        let ms = took.as_secs_f64() * 1000.0;
+        if ms > 1.0 {
+            let speed = jpeg.len() as f64 / ms;
+            bytes_per_ms = if bytes_per_ms == 0.0 { speed } else { bytes_per_ms * 0.8 + speed * 0.2 };
+            let budget = bytes_per_ms * 1000.0 / fps as f64 * 0.9;
+            let size = jpeg.len() as f64;
+            if size > budget && quality > 60 {
+                let step = (((size / budget) - 1.0) * 25.0).clamp(1.0, 10.0) as u8;
+                quality = quality.saturating_sub(step).max(60);
+            } else if size < budget * 0.75 && quality < crate::background::BEST_QUALITY {
+                quality += 1;
+            }
+        }
         match result {
             Ok(cleared) => {
                 let mut f = frame.lock().await;
