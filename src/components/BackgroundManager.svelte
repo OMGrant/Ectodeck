@@ -34,6 +34,7 @@
 	import spectrum from "$lib/backgrounds/spectrum.frag?raw";
 	import weather from "$lib/backgrounds/weather.frag?raw";
 	import ink from "$lib/backgrounds/ink.frag?raw";
+	import blob from "$lib/backgrounds/blob.frag?raw";
 	type Group = "scenes" | "abstract" | "music";
 	const builtinShaders: { id: string; name: string; source: string; group: Group }[] = [
 		{ id: "synthwave", name: "Synthwave", source: synthwave, group: "scenes" },
@@ -42,6 +43,7 @@
 		{ id: "aurora", name: "Aurora", source: aurora, group: "abstract" },
 		{ id: "nebula", name: "Nebula", source: nebula, group: "abstract" },
 		{ id: "ink", name: "Ink", source: ink, group: "abstract" },
+		{ id: "blob", name: "Blob", source: blob, group: "abstract" },
 		{ id: "ember", name: "Ember", source: ember, group: "abstract" },
 		{ id: "lava", name: "Lava Lamp", source: lava, group: "abstract" },
 		{ id: "spectrum", name: "Spectrum", source: spectrum, group: "music" },
@@ -54,7 +56,6 @@
 	const builtinPages: { id: string; name: string; file: string; group: Group; load: () => Promise<string> }[] = [
 		{ id: "aquarium", name: "Aquarium", file: "aquarium.html", group: "scenes", load: page("aquarium.html") },
 		{ id: "birds", name: "Birds", file: "birds.html", group: "scenes", load: page("birds.html") },
-		{ id: "blob", name: "Blob", file: "blob.html", group: "abstract", load: page("blob.html") },
 		{ id: "milkdrop", name: "Milkdrop", file: "milkdrop.html", group: "music", load: page("milkdrop.html") },
 	];
 
@@ -301,7 +302,7 @@
 		// which is Sky's clouds, keeping its time of day and wind. And the
 		// built-ins that were web pages and are now drawn by the deck's own
 		// renderer: a deck on the page moves to the shader, keeping its settings
-		const nowNative: Record<string, string> = { Sky: "Weather", Weather: "Weather", Ink: "Ink" };
+		const nowNative: Record<string, string> = { Sky: "Weather", Weather: "Weather", Ink: "Ink", Blob: "Blob" };
 		if (animated?.kind == "web" && nowNative[animated.name]) {
 			const shader = builtinShaders.find((b) => b.name == nowNative[animated!.name])!;
 			const params = { ...(animated.params ?? {}), ...(animated.name == "Sky" ? { weather: 1 } : {}) };
