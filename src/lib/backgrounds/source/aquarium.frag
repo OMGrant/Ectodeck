@@ -852,7 +852,12 @@ void drawFish(inout vec3 col, int i, vec2 px, vec3 tint) {
     turnU = f.turnT < 1.0 ? f.turnT : 0.0; phaseU = f.phase;
     // lit from above: high in the tank bright, down by the sand dimmer
     float light = 0.62 + 0.5 * (f.p.y / H()), haze = 0.38 * (1.0 - f.depth) + 0.12 * (1.0 - f.p.y / H());
-    float rot = -f.pitch * sx;
+    // the body points along its nose: its tilt goes with the way the nose points,
+    // which in a turn swings round with the head, easing through level, so the
+    // tilt never snaps when the turn ends (tilting by the old way round, as the
+    // three.js tank did, had a climbing fish nose down for the turn's second half)
+    float facing = f.turnT < 1.0 ? f.from * cos(3.14159 * f.turnT) : f.dir;
+    float rot = f.pitch * facing;
     vec2 scale = vec2(f.len * sx, f.len * aspectOf(f.kind));
     float lod = log2(max(360.0 / f.len, 1.0));
     ampU = f.amp; bulgeU = f.bulge;
