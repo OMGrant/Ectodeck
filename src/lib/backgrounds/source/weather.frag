@@ -362,15 +362,14 @@ vec3 skyDirection(vec2 at) {
     float aspect = iResolution.x / iResolution.y;
     return normalize(((2.0 * at.x - 1.0) * aspect) * a.side + (2.0 * at.y - 1.0) * a.up + 1.5 * a.w);
 }
-// The sun and moon are placed on the screen of a clear sky; as the camera
-// tilts down onto the cloud tops they are kept where they are in the sky
+// The sun and moon, placed on the screen of the open sky. As the camera tilts
+// down onto the cloud they rise up the screen with the sky, into the band of
+// sky over the cloud sea, keeping their height order: a high sun near the
+// top, a setting sun on the cloud horizon. Seen from under the cloud they
+// stay where the open sky shows them.
 vec2 pinned(vec2 at, float lookAt, float lift, float swing, float flip, float clock) {
-    if (flip < 0.0 || (abs(lookAt - 3.35) < 1e-4 && abs(lift) < 1e-4 && abs(swing) < 1e-4)) return at;
-    Camera b = skyCamera(lookAt, lift, swing, clock);
-    vec3 d = skyDirection(at);
-    float z = dot(d, b.w), aspect = iResolution.x / iResolution.y;
-    if (z <= 0.01) return vec2(at.x, 9.0);
-    return vec2((1.5 * dot(d, b.side) / z / aspect + 1.0) * 0.5, (1.5 * dot(d, b.up) / z + 1.0) * 0.5);
+    float above = smoothstep(3.35, -1.0, lookAt) * step(0.0, flip);
+    return vec2(at.x, mix(at.y, 0.7 + 0.15 * clamp(at.y / 0.82, 0.0, 1.0), above));
 }
 
 // ---- 1. the state
@@ -484,25 +483,29 @@ const float constantTime = 1000.0;
 const float HURRICANE_SIZE = 2.2;
 float mapCloud(vec3 p, int octaves) {
     vec3 speed1 = vec3(0.5, 0.01, 1.0) * 0.5;
-    // A hurricane: the cloud field twisted into spiral bands round an eye, the
-    // whole storm turning slowly (as one, so the bands never wind up tighter)
-    float whirl = 0.0;
+    // A hurricane, as satellite pictures show one: a big bright central dense
+    // overcast, its top smoothed by the cirrus spread over it, round a small
+    // clear eye whose walls slope outward as they rise (the stadium effect);
+    // spiral bands curling out beyond the core, with lower cloud between them;
+    // and past them the ordinary broken cloud of the region. The whole storm
+    // turns slowly, as one, so the bands never wind up tighter
+    float whirl = 0.0, smooth_ = 0.0;
     if (spiral > 0.001) {
         vec2 c = p.xz / HURRICANE_SIZE;
         float r = length(c);
-        float a = spiral * (2.0 / (r + 0.4) + cloudClock * 0.12);
+        float a = spiral * (1.6 / (r + 0.45) + cloudClock * 0.12);
         vec2 d = mat2(cos(a), sin(a), -sin(a), cos(a)) * p.xz;
         float theta = atan(c.y, c.x) - a;
-        // spiral bands with clear gaps between them, a round clear eye ringed
-        // by a dense bright eyewall, and the storm fading out at its edge
-        // (the bands trail out long past the storm's dense core, and beyond it
-        // the ordinary broken cloud of the region)
-        float band = sin(2.0 * theta + 4.0 * log(r + 0.1));
-        whirl = spiral * (0.85 * band * smoothstep(0.35, 1.0, r)
-                        + (0.9 * smoothstep(0.2, 0.9, band) - 1.1) * smoothstep(1.3, 2.2, r) * (1.0 - smoothstep(3.2, 4.2, r))
-                        - 3.5 * smoothstep(0.26, 0.14, r) + 1.0 * exp(-(r - 0.36) * (r - 0.36) / 0.008)
-                        - 0.55 * smoothstep(3.2, 4.2, r));
-        p.xz = mix(p.xz, d, spiral * smoothstep(0.2, 0.45, r));
+        float band = sin(3.0 * theta + 5.0 * log(r + 0.1));
+        float eyeR = 0.075 + 0.07 * clamp(p.y + 0.7, 0.0, 1.5);
+        float core = smoothstep(0.95, 0.45, r);
+        whirl = spiral * (0.75 * core
+                        + (1.1 * smoothstep(-0.1, 0.8, band) - 0.75) * smoothstep(0.6, 1.1, r) * (1.0 - smoothstep(2.6, 3.4, r))
+                        - 4.0 * smoothstep(eyeR + 0.035, eyeR, r)
+                        + 0.45 * exp(-(r - eyeR - 0.05) * (r - eyeR - 0.05) / 0.003)
+                        - 0.45 * smoothstep(2.8, 3.6, r));
+        smooth_ = spiral * core * smoothstep(eyeR + 0.08, eyeR + 0.25, r);
+        p.xz = mix(p.xz, d, spiral * smoothstep(0.12, 0.35, r));
     }
     vec3 q = p * vec3(stretch, 1.0, stretch) - speed1 * (cloudClock * (1.0 - 0.9 * spiral) + constantTime);
     float f = 0.5 * noise3(q); q = q * 2.02;
@@ -510,6 +513,8 @@ float mapCloud(vec3 p, int octaves) {
     if (octaves > 2) { f += 0.125 * noise3(q); q = q * 2.01; }
     if (octaves > 3) { f += 0.0625 * noise3(q); q = q * 2.02; }
     if (octaves > 4) f += 0.03125 * noise3(q);
+    // the cirrus shield over the core is smooth, the lumps only faint under it
+    f = mix(f, 0.5 + (f - 0.5) * 0.35, smooth_);
     // the cloud's base: below it there is no cloud, so where the tops dip under
     // it the layer breaks and the world beneath shows through the gaps
     return clamp(1.5 - p.y - 2.0 + 1.75 * f - clearing + whirl, 0.0, 1.0) * smoothstep(cloudBase, cloudBase + 0.22, p.y);
@@ -554,7 +559,8 @@ vec3 skyRender(vec3 ro, vec3 rd) {
     col = mix(col, skyHorizonColor * 0.6 + skyTopColor * 0.25, smoothstep(0.0, -0.45, up));
     col += skyGlowColor * (0.3 * pow(sun, 16.0) + 0.14 * pow(sun, 4.0)) * (1.0 - smoothstep(0.0, 0.35, abs(up - sundir.y)));
     // Sky's own sun, over the cloud; looking up, the sun drawn in the sky is the sun
-    float ownSun = (1.0 - pow(clamp(clearing / 5.0, 0.0, 1.0), 3.0)) * step(0.0, flip) * smoothstep(2.4, 0.0, lookAtNow);
+    // the sun is the one drawn in the sky over the cloud (Sky's own would be a second)
+    float ownSun = 0.0;
     col += (0.3 * sunColor * pow(sun, 120.0) + 0.12 * sunGlareColor * pow(sun, 14.0)) * ownSun;
     vec4 res = raymarch(ro, rd, col);
     cloudCover = res.w;
@@ -825,7 +831,7 @@ vec3 drawPicture(vec2 frag) {
     vec2 shimmer = heat > 0.003 ? vec2(noise(vec2(frag.x * 0.02, frag.y * 0.08 - t * 3.0)) - 0.5, noise(vec2(frag.y * 0.05 + t * 2.0, frag.x * 0.03)) - 0.5) * heat * 6.0 * smoothstep(0.55, 0.0, uv.y) : vec2(0.0);
     vec4 skyPicture = softClouds(frag + shimmer);
     // how much of the view is open sky, where the sun, moon and stars can be seen
-    float skyOpen = clamp(aClear + aHaze, 0.0, 1.0);
+    float skyOpen = clamp(aClear + aHaze + aCloudy + aPartly + aWindy, 0.0, 1.0);
     // a clear sky's sun, drawn sharp at full size where Sky's camera sees it;
     // it fades with the clear sky, faster than the cloud forms, so it is
     // never drawn over cloud
@@ -883,8 +889,9 @@ vec3 drawPicture(vec2 frag) {
     float nightW = smoothstep(0.35, 1.0, night) * skyOpen;
     if (nightW > 0.003) {
         vec4 accN0 = acc; vec3 addN0 = add;
-        float clearSky = skyOpen / max(skyOpen + aCloudy, 1e-3);
-        float open = mix(smoothstep(0.88, 0.95, uv.y), smoothstep(0.0, 0.25, uv.y), clearSky);
+        // (the clouds, below, hide the stars where they are)
+        float clearSky = aClear + aHaze;
+        float open = smoothstep(0.0, 0.25, uv.y);
         vec2 mc = vec2(moonPos.x * aspect, moonPos.y); float mr = 0.13;
         float moonW = skyOpen * moonUp;
         float behind = mix(1.0, smoothstep(mr * 0.98, mr * 1.02, length(p - mc)), moonW);
