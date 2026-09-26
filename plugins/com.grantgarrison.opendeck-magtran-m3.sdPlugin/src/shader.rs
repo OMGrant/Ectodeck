@@ -10,7 +10,9 @@
 //! `iDate` is Shadertoy's: the year, the month from 0, the day of the month
 //! and the seconds since midnight, in the computer's local time;
 //! `iTimezone` is that time's offset from UTC in seconds, so a shader can
-//! work out the sun and moon for any moment.
+//! work out the sun and moon for any moment. `iZone` is the offset now, on
+//! the first of January and on the first of July, from which a shader can
+//! tell daylight saving (and so the hemisphere) when no place is chosen.
 //!
 //! Adjustable parameters follow ISF, the Interactive Shader Format: a JSON
 //! comment at the top of the source, `/*{ "INPUTS": [ ... ] }*/`, lists them
@@ -84,6 +86,7 @@ uniform vec3 iDials;
 uniform float iAudioBands[32];
 uniform float iAudioLevel;
 uniform float iTimezone;
+uniform vec3 iZone;
 uniform vec4 iPlace;
 uniform vec4 iWeather;
 out vec4 ectodeckFragColor;
@@ -184,6 +187,8 @@ fn load_picture(path: &str) -> Result<image::RgbaImage, String> {
 pub struct World {
     pub date: [f32; 4],
     pub timezone: f32,
+    /// the offset from UTC now, on 1 January and on 1 July, in seconds
+    pub zone: [f32; 3],
     pub place: [f32; 4],
     pub weather: [f32; 4],
 }
@@ -192,12 +197,13 @@ impl World {
     /// Now, at the place (if one is chosen) with its latest report (if one has come).
     pub fn now(place: Option<(f32, f32)>, report: Option<crate::weather::Report>) -> World {
         let (date, timezone) = local_date();
+        let zone = [timezone, offset_on(date[0] as i32, 0), offset_on(date[0] as i32, 6)];
         let (place, weather) = match (place, report) {
             (Some((lat, lon)), Some(r)) => ([lat, lon, r.offset as f32, 1.0], [r.code as f32, r.wind, r.sunrise, r.sunset]),
             (Some((lat, lon)), None) => ([lat, lon, timezone, 0.0], [-1.0, 0.0, 6.0 * 3600.0, 18.0 * 3600.0]),
             (None, _) => ([0.0, 0.0, timezone, 0.0], [-1.0, 0.0, 6.0 * 3600.0, 18.0 * 3600.0]),
         };
-        World { date, timezone, place, weather }
+        World { date, timezone, zone, place, weather }
     }
 }
 
@@ -213,6 +219,22 @@ fn local_date() -> ([f32; 4], f32) {
     }
     let seconds = (tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec) as f32 + now.subsec_millis() as f32 / 1000.0;
     ([(tm.tm_year + 1900) as f32, tm.tm_mon as f32, tm.tm_mday as f32, seconds], tm.tm_gmtoff as f32)
+}
+
+/// The computer's offset from UTC at noon on the first of a month (from 0) of a year.
+fn offset_on(year: i32, month: i32) -> f32 {
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    tm.tm_year = year - 1900;
+    tm.tm_mon = month;
+    tm.tm_mday = 1;
+    tm.tm_hour = 12;
+    tm.tm_isdst = -1;
+    let at = unsafe { libc::mktime(&mut tm) };
+    let mut out: libc::tm = unsafe { std::mem::zeroed() };
+    if at == -1 || unsafe { libc::localtime_r(&at, &mut out) }.is_null() {
+        return 0.0;
+    }
+    out.tm_gmtoff as f32
 }
 
 /// What the deck's controls are doing, for the interaction uniforms.
@@ -464,6 +486,7 @@ impl ShaderRenderer {
             let d = world.date;
             gl.uniform_4_f32(u("iDate").as_ref(), d[0], d[1], d[2], d[3]);
             gl.uniform_1_f32(u("iTimezone").as_ref(), world.timezone);
+            gl.uniform_3_f32(u("iZone").as_ref(), world.zone[0], world.zone[1], world.zone[2]);
             let (p, wx) = (world.place, world.weather);
             gl.uniform_4_f32(u("iPlace").as_ref(), p[0], p[1], p[2], p[3]);
             gl.uniform_4_f32(u("iWeather").as_ref(), wx[0], wx[1], wx[2], wx[3]);
@@ -668,6 +691,8 @@ mod tests {
         let (d, zone) = local_date();
         assert!(d[0] >= 2024.0 && (0.0..12.0).contains(&d[1]) && (1.0..32.0).contains(&d[2]) && (0.0..86_401.0).contains(&d[3]));
         assert!(zone.abs() <= 14.0 * 3600.0);
+        let world = World::now(None, None);
+        assert!(world.zone[0] == world.zone[1] || world.zone[0] == world.zone[2], "the offset now is January's or July's");
     }
 
     /// Draws on the graphics card: `cargo test --release -- --ignored`.
