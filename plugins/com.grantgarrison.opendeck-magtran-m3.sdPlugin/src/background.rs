@@ -108,6 +108,10 @@ fn bgcle_command() -> Vec<u8> {
 /// and declared at their portrait size.
 pub fn encode(picture: &RgbImage, quality: u8) -> Result<Vec<u8>, MirajazzError> {
     let rotated = imageops::rotate270(picture);
+    // libjpeg-turbo when the system has it; otherwise the image crate's encoder
+    if let Some(jpeg) = crate::turbo::compress(rotated.as_raw(), rotated.width(), rotated.height(), quality) {
+        return Ok(jpeg);
+    }
     let mut out = Cursor::new(Vec::new());
     let encoder = JpegEncoder::new_with_quality(&mut out, quality);
     rotated.write_with_encoder(encoder)?;

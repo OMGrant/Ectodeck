@@ -639,7 +639,7 @@ dependencies = [
 
 [[package]]
 name = "opendeck-magtran-m3"
-version = "0.9.17"
+version = "0.9.18"
 dependencies = [
  "base64",
  "cmake",
@@ -649,6 +649,7 @@ dependencies = [
  "image",
  "khronos-egl",
  "libc",
+ "libloading",
  "log",
  "mirajazz",
  "openaction",

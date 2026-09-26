@@ -20,6 +20,7 @@ mod frame;
 mod layout;
 mod watcher;
 mod weather;
+mod turbo;
 mod milkdrop;
 
 pub static DEVICES: LazyLock<RwLock<HashMap<String, Device>>> =
