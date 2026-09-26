@@ -46,7 +46,7 @@ impl Default for AudioFrame {
 /// Does this background ask for sound? Shaders by naming the uniforms,
 /// pages by listening for the event.
 pub fn wanted_by_shader(code: &str) -> bool {
-    code.contains("iAudioBands") || code.contains("iAudioLevel")
+    code.contains("iAudioBands") || code.contains("iAudioLevel") || code.contains("iAudioHits")
 }
 
 pub fn wanted_by_page(url: &str) -> bool {

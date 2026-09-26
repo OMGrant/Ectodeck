@@ -322,6 +322,7 @@ fn run_shader(
             let sound = t.frame();
             controls.audio_bands = sound.bands;
             controls.audio_level = sound.level;
+            controls.audio_hits = sound.hits.map(|h| h as f32);
         }
         let place = place_input.as_deref().and_then(|name| crate::weather::place_in(&values, name));
         if let Some(f) = &feed {

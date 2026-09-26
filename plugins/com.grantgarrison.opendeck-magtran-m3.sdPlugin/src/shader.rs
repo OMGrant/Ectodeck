@@ -31,6 +31,11 @@
 //!   drive a background directly; the app's Background Preset action switches
 //!   a background's saved settings instead.
 //!
+//! What the computer is playing, for a shader that uses any of these (the
+//! sound is listened to only then): `iAudioBands[32]`, 40 Hz to 11 kHz, and
+//! `iAudioLevel`, each 0 to 1; `iAudioHits`, the drum hits heard since the
+//! last frame in the bass, the middle and the highs.
+//!
 //! Pictures follow ISF's IMPORTED: `"IMPORTED": { "moon": { "PATH": ... } }`
 //! makes `moon` a `sampler2D` holding the picture, upright (its bottom row at
 //! v = 0), smoothed and mipmapped; `IMG_SIZE(moon)` is its size in pixels.
@@ -85,6 +90,7 @@ uniform vec4 iKeyPresses[8];
 uniform vec3 iDials;
 uniform float iAudioBands[32];
 uniform float iAudioLevel;
+uniform vec3 iAudioHits;
 uniform float iTimezone;
 uniform vec3 iZone;
 uniform vec4 iPlace;
@@ -247,6 +253,8 @@ pub struct Interaction {
     /// What is playing: 32 bands and the overall level, each 0 to 1.
     pub audio_bands: [f32; 32],
     pub audio_level: f32,
+    /// drum hits heard since the last frame, in the bass, the middle and the highs
+    pub audio_hits: [f32; 3],
 }
 
 // every channel is kept: buffers use alpha as data; the shown picture's
@@ -499,6 +507,8 @@ impl ShaderRenderer {
             gl.uniform_3_f32(u("iDials").as_ref(), 0.0, 0.0, 0.0);
             gl.uniform_1_f32_slice(u("iAudioBands").as_ref(), &interaction.audio_bands);
             gl.uniform_1_f32(u("iAudioLevel").as_ref(), interaction.audio_level);
+            let hits = interaction.audio_hits;
+            gl.uniform_3_f32(u("iAudioHits").as_ref(), hits[0], hits[1], hits[2]);
             for input in &self.inputs {
                 let value = params.get(&input.name).or_else(|| self.defaults.get(&input.name));
                 let n = |i: usize| value.and_then(|v| v.get(i)).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;

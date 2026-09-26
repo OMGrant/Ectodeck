@@ -5,7 +5,7 @@
 //!   times:   seconds to capture, e.g. 1,3,6          (default 1,3,6)
 //!   presses: key@seconds, e.g. 7@2.0,12@4.5          (keys 0-14, row by row)
 //!   params:  settings to render with, as JSON, e.g. {"style":2}
-//!   music:   "music" plays a synthetic 120 bpm beat into iAudioBands and iAudioLevel
+//!   music:   "music" plays a synthetic 120 bpm beat into iAudioBands, iAudioLevel and iAudioHits
 //!
 //! A shader with a place input is drawn at the place in its settings (its
 //! NAME + "At"), with the weather there from Open-Meteo, or with a pretend
@@ -87,6 +87,10 @@ fn main() {
 				*b = (low + high + 0.2 * (t * 1.3 + i as f32 * 0.4).sin().abs() * (1.0 - i as f32 / 32.0)).min(1.0);
 			}
 			controls.audio_level = (kick * 0.8 + 0.2).min(1.0);
+			// drum hits: the kick on each beat, the snare on the offbeat, the hats on sixteenths
+			let prev = t - 1.0 / fps;
+			let crossed = |rate: f32, shift: f32| ((t * rate + shift).floor() != (prev * rate + shift).floor()) as i32 as f32;
+			controls.audio_hits = [crossed(2.0, 0.0), crossed(2.0, 0.5), crossed(8.0, 0.0)];
 		}
 		if let Some((at, values)) = &change {
 			if t >= *at {
