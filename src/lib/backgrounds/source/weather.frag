@@ -534,9 +534,7 @@ float mapCloud(vec3 p, int octaves) {
         // between the windings are thinner cloud the ocean shows through, and no
         // winding ever stands as a step above the next
         float body = max(mass, max(0.8 * reach, 0.55 * around) * open_);
-        // (only the two broad arms shape it: the narrow feeder bands and streamers
-        // drew lines across the cloud, which a hurricane does not have)
-        lane = mix(1.0, mix(1.0, 0.55 + 0.45 * arm * arm * (3.0 - 2.0 * arm), open_), spiral);
+        lane = mix(1.0, pow(clamp(cover / max(body, 0.01), 0.0, 1.0), 1.6), spiral);
         whirl = spiral * ((mix(-0.72, 0.05, smoothstep(0.0, 0.7, body)) + 0.35 * body) * (1.0 - 0.15 * outer) - 0.03 * outer
                         // (the arms show on through the dense core as broad, gentle swells)
                         + 0.35 * (arm - 0.5) * smoothstep(0.4, 0.9, body) * smoothstep(0.3, 0.8, r) * (1.0 - open_)
