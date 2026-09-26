@@ -37,6 +37,7 @@
 	import blob from "$lib/backgrounds/blob.frag?raw";
 	import birds from "$lib/backgrounds/birds.frag?raw";
 	import aquarium from "$lib/backgrounds/aquarium.frag?raw";
+	import milkdrop from "$lib/backgrounds/milkdrop.frag?raw";
 	type Group = "scenes" | "abstract" | "music";
 	const builtinShaders: { id: string; name: string; source: string; group: Group }[] = [
 		{ id: "synthwave", name: "Synthwave", source: synthwave, group: "scenes" },
@@ -51,6 +52,7 @@
 		{ id: "ember", name: "Ember", source: ember, group: "abstract" },
 		{ id: "lava", name: "Lava Lamp", source: lava, group: "abstract" },
 		{ id: "spectrum", name: "Spectrum", source: spectrum, group: "music" },
+		{ id: "milkdrop", name: "Milkdrop", source: milkdrop, group: "music" },
 	];
 	// Built-in web pages, written to the configuration directory when chosen,
 	// since the page renderer opens files rather than the app's own assets.
@@ -58,7 +60,6 @@
 	const pageSources = import.meta.glob("$lib/backgrounds/*.html", { query: "?raw", import: "default" }) as Record<string, () => Promise<string>>;
 	const page = (file: string) => pageSources[`/src/lib/backgrounds/${file}`];
 	const builtinPages: { id: string; name: string; file: string; group: Group; load: () => Promise<string> }[] = [
-		{ id: "milkdrop", name: "Milkdrop", file: "milkdrop.html", group: "music", load: page("milkdrop.html") },
 	];
 
 	// A built-in page's address carries a fingerprint of its contents, so a
@@ -304,7 +305,7 @@
 		// which is Sky's clouds, keeping its time of day and wind. And the
 		// built-ins that were web pages and are now drawn by the deck's own
 		// renderer: a deck on the page moves to the shader, keeping its settings
-		const nowNative: Record<string, string> = { Sky: "Weather", Weather: "Weather", Ink: "Ink", Blob: "Blob", Birds: "Birds", Aquarium: "Aquarium" };
+		const nowNative: Record<string, string> = { Sky: "Weather", Weather: "Weather", Ink: "Ink", Blob: "Blob", Birds: "Birds", Aquarium: "Aquarium", Milkdrop: "Milkdrop" };
 		if (animated?.kind == "web" && nowNative[animated.name]) {
 			const shader = builtinShaders.find((b) => b.name == nowNative[animated!.name])!;
 			const params = { ...(animated.params ?? {}), ...(animated.name == "Sky" ? { weather: 1 } : {}) };

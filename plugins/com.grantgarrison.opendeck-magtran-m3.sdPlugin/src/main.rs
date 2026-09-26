@@ -20,6 +20,7 @@ mod frame;
 mod layout;
 mod watcher;
 mod weather;
+mod milkdrop;
 
 pub static DEVICES: LazyLock<RwLock<HashMap<String, Device>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
