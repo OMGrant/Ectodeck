@@ -509,7 +509,9 @@ float mapCloud(vec3 p, int octaves) {
         float outer = smoothstep(1.0, 2.0, r);
         // (thick arms: the gaps between them are narrow lanes)
         // (their edges sloping gently down, so they merge into the cloud beside them)
-        float cover = mass * mix(1.0, smoothstep(-0.1, 0.85, arm), open_);
+        // (never thinning to a line: between the arms the cloud only thins broadly, so
+        // neighbouring windings merge into each other)
+        float cover = mass * mix(1.0, 0.5 + 0.5 * arm * arm * (3.0 - 2.0 * arm), open_);
         // and many thinner feeder bands, wound the same way, reaching far out
         // (at the arms' own pitch, so every band branches from an arm and joins it)
         float feeder = 0.5 + 0.5 * sin(4.0 * theta + 12.0 * log(r + 0.05) + 1.2 * ragged);
@@ -561,7 +563,7 @@ float mapCloud(vec3 p, int octaves) {
     float top = -0.5 + 1.75 * f - clearing + whirl;
     // (a hurricane's cloud is flat against its size: its tops rise half as far over the base)
     top = mix(top, cloudBase + (top - cloudBase) * 0.5, spiral);
-    return clamp((top - p.y) * (1.0 + 1.5 * spiral), 0.0, 1.0) * smoothstep(cloudBase, cloudBase + 0.22, p.y) * smoothstep(0.15, 1.0, lane);
+    return clamp((top - p.y) * (1.0 + 1.5 * spiral), 0.0, 1.0) * smoothstep(cloudBase, cloudBase + 0.22, p.y) * mix(0.0, 1.0, lane);
 }
 vec4 integrate(vec4 sum, float dif, float den, vec3 bgcol, float t) {
     vec3 lin = cloudColor * 1.4 + sunlightColor * dif;
