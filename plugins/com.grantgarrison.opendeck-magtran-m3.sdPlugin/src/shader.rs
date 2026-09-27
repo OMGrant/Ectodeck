@@ -51,6 +51,14 @@
 //! - `iWeather`: the WMO weather code (-1 until it has come), the wind or its
 //!   gusts in km/h, whichever is stronger, and sunrise and sunset in seconds
 //!   after the place's midnight.
+//! - `iWeather2`: cloud cover from 0 to 1 (-1 until it has come), rain and
+//!   showers in mm an hour, and the direction the wind blows from, in degrees.
+//! - `iWeather3`: snow in mm an hour of water, the steady wind in km/h,
+//!   visibility in km and the temperature in degrees Celsius.
+//! - `iAir`: fine particles (PM2.5, -1 until known) and dust in micrograms a
+//!   cubic metre, the aerosol optical depth (haze, smoke), and the warning in
+//!   force in the United States: 0 none, 1 tropical storm, 2 hurricane (or
+//!   extreme wind), 3 tornado.
 //!
 //! Multi-pass shaders follow ISF's PASSES: the header lists passes, each
 //! drawing into a named TARGET buffer (PERSISTENT to keep its contents from
@@ -95,6 +103,9 @@ uniform float iTimezone;
 uniform vec3 iZone;
 uniform vec4 iPlace;
 uniform vec4 iWeather;
+uniform vec4 iWeather2;
+uniform vec4 iWeather3;
+uniform vec4 iAir;
 out vec4 ectodeckFragColor;
 ";
 
@@ -197,6 +208,12 @@ pub struct World {
     pub zone: [f32; 3],
     pub place: [f32; 4],
     pub weather: [f32; 4],
+    /// cloud cover (0 to 1), rain and showers (mm an hour), wind direction (degrees it blows from)
+    pub weather2: [f32; 4],
+    /// snow (mm an hour of water), steady wind (km/h), visibility (km), temperature (Celsius)
+    pub weather3: [f32; 4],
+    /// fine particles and dust (micrograms a cubic metre), aerosol optical depth, the warning in force
+    pub air: [f32; 4],
 }
 
 impl World {
@@ -204,12 +221,20 @@ impl World {
     pub fn now(place: Option<(f32, f32)>, report: Option<crate::weather::Report>) -> World {
         let (date, timezone) = local_date();
         let zone = [timezone, offset_on(date[0] as i32, 0), offset_on(date[0] as i32, 6)];
+        let (weather2, weather3, air) = match report.filter(|_| place.is_some()) {
+            Some(r) => (
+                [r.cloud, r.rain, r.showers, r.wind_from],
+                [r.snow, r.wind_speed, r.visibility, r.temperature],
+                [if r.air_known { r.pm25 } else { -1.0 }, r.dust, r.haze, r.alert as f32],
+            ),
+            None => ([-1.0, 0.0, 0.0, 270.0], [0.0, 0.0, 20.0, 15.0], [-1.0, 0.0, 0.0, 0.0]),
+        };
         let (place, weather) = match (place, report) {
             (Some((lat, lon)), Some(r)) => ([lat, lon, r.offset as f32, 1.0], [r.code as f32, r.wind, r.sunrise, r.sunset]),
             (Some((lat, lon)), None) => ([lat, lon, timezone, 0.0], [-1.0, 0.0, 6.0 * 3600.0, 18.0 * 3600.0]),
             (None, _) => ([0.0, 0.0, timezone, 0.0], [-1.0, 0.0, 6.0 * 3600.0, 18.0 * 3600.0]),
         };
-        World { date, timezone, zone, place, weather }
+        World { date, timezone, zone, place, weather, weather2, weather3, air }
     }
 }
 
@@ -498,6 +523,10 @@ impl ShaderRenderer {
             let (p, wx) = (world.place, world.weather);
             gl.uniform_4_f32(u("iPlace").as_ref(), p[0], p[1], p[2], p[3]);
             gl.uniform_4_f32(u("iWeather").as_ref(), wx[0], wx[1], wx[2], wx[3]);
+            let (w2, w3, a) = (world.weather2, world.weather3, world.air);
+            gl.uniform_4_f32(u("iWeather2").as_ref(), w2[0], w2[1], w2[2], w2[3]);
+            gl.uniform_4_f32(u("iWeather3").as_ref(), w3[0], w3[1], w3[2], w3[3]);
+            gl.uniform_4_f32(u("iAir").as_ref(), a[0], a[1], a[2], a[3]);
             let mut presses = [0.0f32; 32];
             for i in 0..8 {
                 let (x, y, age, key) = interaction.presses.get(i).copied().unwrap_or((0.0, 0.0, 1e6, -1.0));
@@ -728,7 +757,7 @@ mod tests {
         );
         let mut r = ShaderRenderer::new(&src, 8, 8).unwrap();
         assert_eq!(r.place_input(), Some("place"));
-        let report = crate::weather::Report { code: 3, wind: 10.0, sunrise: 0.0, sunset: 0.0, offset: 0 };
+        let report = crate::weather::Report { code: 3, wind: 10.0, ..Default::default() };
         let frame = r.render(0.0, &serde_json::Map::new(), &Interaction::default(), &World::now(Some((27.5, -82.0)), Some(report)));
         // the image's rows run top to bottom: red at the top, blue at the bottom
         assert_eq!(frame.get_pixel(1, 0).0, [255, 0, 0]);
